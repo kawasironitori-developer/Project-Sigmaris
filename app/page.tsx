@@ -6,6 +6,7 @@ import PersonaPanel from "@/components/PersonaPanel";
 import GrowthGraph from "@/components/GrowthGraph";
 import HistoryPanel from "@/components/HistoryPanel";
 import ReflectionPanel from "@/components/ReflectionPanel";
+import IntrospectionPanel from "@/components/IntrospectionPanel";
 
 // --- 型定義 ---
 interface Message {
@@ -30,18 +31,19 @@ export default function Home() {
   });
   const [growthLog, setGrowthLog] = useState<any[]>([]);
   const [reflectionText, setReflectionText] = useState("");
+  const [introspectionText, setIntrospectionText] = useState(""); // 🧠追加
+  const [metaSummary, setMetaSummary] = useState(""); // 🪞追加
   const [loading, setLoading] = useState(false);
 
-  // 表示モード（Persona / Graph / History / Reflection）
+  // 表示モード
   const [view, setView] = useState<
-    "persona" | "graph" | "history" | "reflection"
+    "persona" | "graph" | "history" | "reflection" | "introspection"
   >("persona");
 
   // === メッセージ送信処理 ===
   const handleSend = async () => {
     if (!input.trim()) return;
     const userMessage = input.trim();
-
     const newMessages = [...messages, { user: userMessage, ai: "..." }];
     setMessages(newMessages);
     setInput("");
@@ -63,13 +65,18 @@ export default function Home() {
 
       const aiText = data.reply || "……（無応答）";
       const reflection = data.reflection?.text || data.reflection || "";
+      const introspection = data.introspection || ""; // 🧠受け取り
+      const summary = data.metaSummary || ""; // 🪞受け取り
 
+      // ステート更新
       setMessages((prev) => [
         ...prev.slice(0, -1),
         { user: userMessage, ai: aiText },
       ]);
       setTraits(data.traits || traits);
       setReflectionText(reflection);
+      setIntrospectionText(introspection); // 🧠反映
+      setMetaSummary(summary); // 🪞反映
       setGrowthLog((prev) => [
         ...prev,
         { ...data.traits, timestamp: new Date().toISOString() },
@@ -89,7 +96,7 @@ export default function Home() {
     <main className="min-h-screen bg-gray-900 text-white p-4 flex flex-col items-center">
       <h1 className="text-2xl font-semibold mb-4">Sigmaris Studio</h1>
 
-      {/* --- チャット表示部（メイン画面） --- */}
+      {/* --- チャット表示部 --- */}
       <div className="w-full max-w-2xl mb-4 bg-gray-800 p-4 rounded-lg h-[300px] overflow-y-auto space-y-3">
         {messages.length === 0 && (
           <p className="text-gray-400 text-center">
@@ -125,43 +132,24 @@ export default function Home() {
         </button>
       </div>
 
-      {/* メインパネル切り替え */}
+      {/* パネル切替 */}
       <div className="flex gap-2 mb-4">
-        <button
-          onClick={() => setView("persona")}
-          className={`px-3 py-1 rounded ${
-            view === "persona" ? "bg-blue-600" : "bg-gray-700"
-          }`}
-        >
-          Persona
-        </button>
-        <button
-          onClick={() => setView("graph")}
-          className={`px-3 py-1 rounded ${
-            view === "graph" ? "bg-blue-600" : "bg-gray-700"
-          }`}
-        >
-          Graph
-        </button>
-        <button
-          onClick={() => setView("history")}
-          className={`px-3 py-1 rounded ${
-            view === "history" ? "bg-blue-600" : "bg-gray-700"
-          }`}
-        >
-          History
-        </button>
-        <button
-          onClick={() => setView("reflection")}
-          className={`px-3 py-1 rounded ${
-            view === "reflection" ? "bg-blue-600" : "bg-gray-700"
-          }`}
-        >
-          Reflect
-        </button>
+        {["persona", "graph", "history", "reflection", "introspection"].map(
+          (v) => (
+            <button
+              key={v}
+              onClick={() => setView(v as any)}
+              className={`px-3 py-1 rounded ${
+                view === v ? "bg-blue-600" : "bg-gray-700"
+              }`}
+            >
+              {v.charAt(0).toUpperCase() + v.slice(1)}
+            </button>
+          )
+        )}
       </div>
 
-      {/* パネル表示 */}
+      {/* パネル描画 */}
       <div className="w-full max-w-2xl">
         <AnimatePresence mode="wait">
           {view === "persona" && (
@@ -205,6 +193,20 @@ export default function Home() {
               exit={{ opacity: 0, y: -10 }}
             >
               <ReflectionPanel reflection={reflectionText} />
+            </motion.div>
+          )}
+
+          {view === "introspection" && (
+            <motion.div
+              key="introspection"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+            >
+              <IntrospectionPanel
+                introspection={introspectionText}
+                metaSummary={metaSummary}
+              />
             </motion.div>
           )}
         </AnimatePresence>

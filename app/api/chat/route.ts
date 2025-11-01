@@ -8,6 +8,8 @@ import { LongTermMemory } from "@/engine/LongTermMemory";
 import { ReflectionEngine } from "@/engine/ReflectionEngine";
 import { IntentClassifier } from "@/engine/IntentClassifier";
 import { ContextChain } from "@/engine/ContextChain";
+import { IntrospectionEngine } from "@/engine/IntrospectionEngine"; // 🧩 追加
+import { MetaMemory } from "@/engine/MetaMemory"; // 🧩 追加
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const sem = new SemanticMap();
@@ -17,6 +19,8 @@ const memory = new LongTermMemory();
 const reflection = new ReflectionEngine();
 const intentCls = new IntentClassifier();
 const context = new ContextChain();
+const introspection = new IntrospectionEngine(); // 🧠 メタ認知層
+const metaMemory = new MetaMemory(); // 🪞 introspection記録
 
 export async function POST(req: Request) {
   try {
@@ -78,8 +82,29 @@ export async function POST(req: Request) {
     // === 7️⃣ 文脈履歴更新 ===
     context.add(message, safeText);
 
-    // === 8️⃣ 内省処理 ===
+    // === 8️⃣ 内省処理（感情層） ===
     const reflectionText = await reflection.generateInsight(safeText, traits);
+
+    // === 🧠 8.5 メタ認知処理（思考観察層） ===
+    const introspectionText = introspection.analyze({
+      message,
+      reply: safeText,
+      traits,
+      reflection: reflectionText,
+      intent: intentFrame.intent,
+      frame,
+      contextSummary,
+    });
+
+    // introspectionログ保存
+    metaMemory.save({
+      message,
+      reply: safeText,
+      introspection: introspectionText,
+      traits,
+    });
+
+    const metaSummary = metaMemory.summarize();
 
     // === 9️⃣ 成長処理 ===
     const newTraits = growth.adjustTraits(
@@ -88,12 +113,13 @@ export async function POST(req: Request) {
       growthLog ?? []
     );
 
-    // === 🔟 記憶保存 ===
+    // === 🔟 記憶保存（会話＋内省） ===
     memory.save({
       message,
       reply: safeText,
       traits: newTraits,
       reflection: reflectionText,
+      introspection: introspectionText,
     });
 
     // === ✅ 応答返却 ===
@@ -101,6 +127,8 @@ export async function POST(req: Request) {
       reply: safeText,
       traits: newTraits,
       reflection: reflectionText,
+      introspection: introspectionText,
+      metaSummary, // 🪞 MetaMemory要約
       safety: report,
       intent: intentFrame,
     });
