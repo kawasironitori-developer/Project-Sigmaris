@@ -31,9 +31,10 @@ export default function Home() {
   });
   const [growthLog, setGrowthLog] = useState<any[]>([]);
   const [reflectionText, setReflectionText] = useState("");
-  const [introspectionText, setIntrospectionText] = useState(""); // 🧠追加
-  const [metaSummary, setMetaSummary] = useState(""); // 🪞追加
+  const [introspectionText, setIntrospectionText] = useState("");
+  const [metaSummary, setMetaSummary] = useState("");
   const [loading, setLoading] = useState(false);
+  const [reflecting, setReflecting] = useState(false); // Reflectボタン用
 
   // 表示モード
   const [view, setView] = useState<
@@ -65,18 +66,17 @@ export default function Home() {
 
       const aiText = data.reply || "……（無応答）";
       const reflection = data.reflection?.text || data.reflection || "";
-      const introspection = data.introspection || ""; // 🧠受け取り
-      const summary = data.metaSummary || ""; // 🪞受け取り
+      const introspection = data.introspection || "";
+      const summary = data.metaSummary || "";
 
-      // ステート更新
       setMessages((prev) => [
         ...prev.slice(0, -1),
         { user: userMessage, ai: aiText },
       ]);
       setTraits(data.traits || traits);
       setReflectionText(reflection);
-      setIntrospectionText(introspection); // 🧠反映
-      setMetaSummary(summary); // 🪞反映
+      setIntrospectionText(introspection);
+      setMetaSummary(summary);
       setGrowthLog((prev) => [
         ...prev,
         { ...data.traits, timestamp: new Date().toISOString() },
@@ -89,6 +89,26 @@ export default function Home() {
       ]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // === Reflectボタン処理 ===
+  const handleReflect = async () => {
+    setReflecting(true);
+    try {
+      const res = await fetch("/api/reflect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages, growthLog }),
+      });
+      const data = await res.json();
+      setReflectionText(data.reflection || "（振り返りが空です）");
+      setView("reflection"); // 自動でリフレクト画面へ切替
+    } catch (err) {
+      console.error(err);
+      setReflectionText("（振り返りエラー）");
+    } finally {
+      setReflecting(false);
     }
   };
 
@@ -128,7 +148,14 @@ export default function Home() {
           disabled={loading}
           className="px-4 py-2 bg-blue-500 rounded hover:bg-blue-600 disabled:opacity-50"
         >
-          Send
+          {loading ? "..." : "Send"}
+        </button>
+        <button
+          onClick={handleReflect}
+          disabled={reflecting}
+          className="px-4 py-2 bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {reflecting ? "Reflecting..." : "Reflect Now"}
         </button>
       </div>
 
