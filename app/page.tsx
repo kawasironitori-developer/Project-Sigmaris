@@ -34,7 +34,11 @@ export default function Home() {
   const [introspectionText, setIntrospectionText] = useState("");
   const [metaSummary, setMetaSummary] = useState("");
   const [loading, setLoading] = useState(false);
-  const [reflecting, setReflecting] = useState(false); // Reflectボタン用
+  const [introspectionHistory, setIntrospectionHistory] = useState<string[]>(
+    []
+  );
+  const [reflecting, setReflecting] = useState(false);
+  const [modelUsed, setModelUsed] = useState("gpt-4o-mini"); // 🧩 追加：使用モデル
 
   // 表示モード
   const [view, setView] = useState<
@@ -69,6 +73,8 @@ export default function Home() {
       const introspection = data.introspection || "";
       const summary = data.metaSummary || "";
 
+      setModelUsed(data.model || "unknown"); // 🧩 モデル名を反映
+
       setMessages((prev) => [
         ...prev.slice(0, -1),
         { user: userMessage, ai: aiText },
@@ -99,11 +105,26 @@ export default function Home() {
       const res = await fetch("/api/reflect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages, growthLog }),
+        body: JSON.stringify({
+          messages,
+          growthLog,
+          history: introspectionHistory,
+        }),
       });
+
       const data = await res.json();
-      setReflectionText(data.reflection || "（振り返りが空です）");
-      setView("reflection"); // 自動でリフレクト画面へ切替
+
+      setReflectionText(data.reflection || "（振り返りなし）");
+      setIntrospectionText(data.introspection || "");
+      setMetaSummary(data.metaSummary || "");
+      setView("reflection");
+
+      if (data.introspection) {
+        setIntrospectionHistory((prev) => [
+          ...prev.slice(-4),
+          data.introspection,
+        ]);
+      }
     } catch (err) {
       console.error(err);
       setReflectionText("（振り返りエラー）");
@@ -114,7 +135,11 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-gray-900 text-white p-4 flex flex-col items-center">
-      <h1 className="text-2xl font-semibold mb-4">Sigmaris Studio</h1>
+      <h1 className="text-2xl font-semibold mb-2">Sigmaris Studio</h1>
+      <p className="text-gray-400 text-sm mb-4">
+        Model in use:{" "}
+        <span className="text-blue-400 font-mono">{modelUsed}</span>
+      </p>
 
       {/* --- チャット表示部 --- */}
       <div className="w-full max-w-2xl mb-4 bg-gray-800 p-4 rounded-lg h-[300px] overflow-y-auto space-y-3">
@@ -219,7 +244,11 @@ export default function Home() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
             >
-              <ReflectionPanel reflection={reflectionText} />
+              <ReflectionPanel
+                reflection={reflectionText}
+                introspection={introspectionText}
+                metaSummary={metaSummary}
+              />
             </motion.div>
           )}
 

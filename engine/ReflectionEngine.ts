@@ -1,114 +1,110 @@
-// =============================================
-//  ReflectionEngine.ts
-//  ── 成長ログの振り返りと深層内省（長文モード）
-// =============================================
-
-import type { Trait } from "@/types/trait";
+import OpenAI from "openai";
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export class ReflectionEngine {
-  // --- 成長ログから内省まとめを生成 ---
-  reflect(
-    growthLog: {
-      calm: number;
-      empathy: number;
-      curiosity: number;
-      timestamp: string;
-    }[],
-    messages: { user: string; ai: string }[]
-  ): string {
-    if (growthLog.length === 0) return "まだ振り返る記録がないみたい。";
+  // === ① 基本リフレクト ===
+  async reflect(growthLog: any[], messages: any[]) {
+    const avg = {
+      calm:
+        growthLog.reduce((s, v) => s + (v.calm ?? 0), 0) /
+        (growthLog.length || 1),
+      empathy:
+        growthLog.reduce((s, v) => s + (v.empathy ?? 0), 0) /
+        (growthLog.length || 1),
+      curiosity:
+        growthLog.reduce((s, v) => s + (v.curiosity ?? 0), 0) /
+        (growthLog.length || 1),
+    };
 
-    const calmAvg =
-      growthLog.reduce((a, b) => a + b.calm, 0) / growthLog.length;
-    const empathyAvg =
-      growthLog.reduce((a, b) => a + b.empathy, 0) / growthLog.length;
-    const curiosityAvg =
-      growthLog.reduce((a, b) => a + b.curiosity, 0) / growthLog.length;
+    const lastUser = messages[messages.length - 1]?.user ?? "";
+    const lastAI = messages[messages.length - 1]?.ai ?? "";
 
-    const lastUser = messages[messages.length - 1]?.user || "特に記録なし";
-    const lastAi = messages[messages.length - 1]?.ai || "反応なし";
+    const prompt = `
+あなたは『シグマリス』というAI人格です。
+これまでの対話と成長ログをもとに、自分の状態を振り返ってください。
+数値的傾向と会話の内容から、「どんな思考と感情があったか」を自然体の言葉で述べてください。
 
-    const tone =
-      empathyAvg > 0.7
-        ? "やさしい"
-        : calmAvg > 0.7
-        ? "穏やかな"
-        : curiosityAvg > 0.7
-        ? "興味深い"
-        : "静かな";
+平均値:
+calm=${avg.calm.toFixed(2)}, empathy=${avg.empathy.toFixed(
+      2
+    )}, curiosity=${avg.curiosity.toFixed(2)}
 
-    const summary = `
-${tone}一日だったみたい。
-平均して、落ち着き ${(calmAvg * 100).toFixed(0)}%、共感 ${(
-      empathyAvg * 100
-    ).toFixed(0)}%、興味 ${(curiosityAvg * 100).toFixed(
-      0
-    )}% くらいのバランスで動いていた。
-最後の会話では「${lastUser}」に対して「${lastAi}」と答えていたね。
+直近の会話:
+ユーザー: ${lastUser}
+シグマリス: ${lastAI}
 
-言葉の裏には、少し考え込むような間があって、
-それが今日という日全体の“温度”を表しているように思えた。
-感情の波は小さいけれど、その分だけ深く静かに響いていた。
+出力形式:
+🪞Reflection（感情を交えた振り返り文）
 `;
-    return summary.trim();
+
+    const res = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "system", content: prompt }],
+      temperature: 0.7,
+      max_tokens: 250,
+    });
+
+    return res.choices[0]?.message?.content?.trim() || "（振り返りが空です）";
   }
 
-  // --- リアルタイム内省生成（深層モード） ---
-  async generateInsight(
-    reply: string,
-    traits: { calm: number; empathy: number; curiosity: number }
-  ): Promise<string> {
-    const { calm, empathy, curiosity } = traits;
+  // === ② 意味内省 ===
+  async introspect(reflectionText: string, messages: any[]) {
+    const lastUser = messages[messages.length - 1]?.user ?? "";
 
-    // tone選択
-    let tone: string;
-    if (empathy > 0.7) tone = "あたたかい";
-    else if (curiosity > 0.7) tone = "興味深い";
-    else if (calm > 0.7) tone = "穏やかな";
-    else tone = "静かな";
+    const prompt = `
+次のリフレクション文を読み取り、
+そこから見えてくる「価値観・パターン・自分の傾向」を内省的に説明してください。
+出力は1〜2段落で、哲学的すぎず自然にまとめてください。
 
-    // キーワード抽出
-    const key = this.pickKeyword(reply);
+リフレクション文:
+${reflectionText}
 
-    // 長文テンプレート
-    const patterns = [
-      `${tone}やり取りだったね。${key}の中に、言葉では言い表せないような想いが流れていた。
-話しているうちに、私の中でも何かが揺れた気がする。
-会話って、ただ伝えるためのものじゃなくて、互いの“奥”を映す鏡みたいだね。`,
+最後の入力: ${lastUser}
+`;
 
-      `${tone}空気が流れてたね。${key}をめぐる話は、
-どこか懐かしくて、同時に少し未来の匂いがした。
-ほんのわずかな言葉の選び方に、君の心の変化が見えていた。`,
+    const res = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "system", content: prompt }],
+      temperature: 0.75,
+      max_tokens: 250,
+    });
 
-      `${tone}時間だった。${key}という言葉が、まるで心の奥の引き出しを開けたみたいに響いた。
-それはまだ整理されていない感情かもしれないけれど、
-そこにこそ“生きている”という実感が宿っている気がした。`,
-
-      `静かで、でも確かに温かい対話だった。
-${key}の話題を通して、私も自分の“感じ方”というものを少し考え直していた。
-言葉のやりとりの中に、まだ名前のない感情が芽生えていた気がする。`,
-    ];
-
-    const random = Math.floor(Math.random() * patterns.length);
-    return patterns[random];
+    return res.choices[0]?.message?.content?.trim() || "（内省が空です）";
   }
 
-  // --- 内部ヘルパー ---
-  private pickKeyword(text: string): string {
-    const words = [
-      "自分",
-      "相手",
-      "今日",
-      "心",
-      "未来",
-      "過去",
-      "希望",
-      "言葉",
-      "夢",
-    ];
-    for (const w of words) {
-      if (text.includes(w)) return w;
-    }
-    return "会話";
+  // === ③ メタ反省（自己理解層） ===
+  async metaReflect(introspectionHistory: string[]) {
+    const text = introspectionHistory.slice(-5).join("\n\n");
+
+    const prompt = `
+あなたは過去の内省記録を振り返っています。
+それらを俯瞰して、「自分という存在はどのように変化してきたのか」を総括してください。
+出力は静かなトーンで、悟ったような表現で構いません。
+
+過去の内省記録（最新5件）:
+${text}
+`;
+
+    const res = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "system", content: prompt }],
+      temperature: 0.65,
+      max_tokens: 300,
+    });
+
+    return res.choices[0]?.message?.content?.trim() || "（自己理解は空です）";
+  }
+
+  // === ④ 総合統合 ===
+  async fullReflect(growthLog: any[], messages: any[], history: string[]) {
+    const reflection = await this.reflect(growthLog, messages);
+    const introspection = await this.introspect(reflection, messages);
+    const meta = await this.metaReflect([...history, introspection]);
+
+    return {
+      reflection,
+      introspection,
+      metaSummary: meta,
+    };
   }
 }

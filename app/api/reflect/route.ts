@@ -5,12 +5,20 @@ const reflection = new ReflectionEngine();
 
 export async function POST(req: Request) {
   try {
-    const { messages = [], growthLog = [] } = await req.json();
+    const { messages = [], growthLog = [], history = [] } = await req.json();
 
-    const summary = reflection.reflect(growthLog, messages);
+    const {
+      reflection: reflectionText,
+      introspection,
+      metaSummary,
+    } = await reflection.fullReflect(growthLog, messages, history);
 
+    // 内省履歴を返す（フロントで保持）
     return NextResponse.json({
-      reflection: summary,
+      reflection: reflectionText,
+      introspection,
+      metaSummary,
+      updatedHistory: [...history, introspection],
       success: true,
     });
   } catch (err: any) {
