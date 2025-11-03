@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import PersonaPanel from "@/components/PersonaPanel";
@@ -7,6 +7,11 @@ import GrowthGraph from "@/components/GrowthGraph";
 import HistoryPanel from "@/components/HistoryPanel";
 import ReflectionPanel from "@/components/ReflectionPanel";
 import IntrospectionPanel from "@/components/IntrospectionPanel";
+import StatePanel from "@/components/StatePanel";
+import EunoiaMeter from "@/components/EunoiaMeter"; // 💞 追加！
+
+// 🎭 Eunoia Core（感情トーン層）
+import { applyEunoiaTone } from "@/lib/eunoia";
 
 // --- 型定義 ---
 interface Message {
@@ -38,12 +43,60 @@ export default function Home() {
     []
   );
   const [reflecting, setReflecting] = useState(false);
-  const [modelUsed, setModelUsed] = useState("gpt-4o-mini"); // 🧩 追加：使用モデル
+  const [modelUsed, setModelUsed] = useState("AEI-Lite");
 
   // 表示モード
   const [view, setView] = useState<
     "persona" | "graph" | "history" | "reflection" | "introspection"
   >("persona");
+
+  // === PersonaDB連携 ===
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/persona");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || data.error) return;
+
+        setTraits({
+          calm: data.calm,
+          empathy: data.empathy,
+          curiosity: data.curiosity,
+        });
+        setReflectionText(data.reflection || "");
+        setMetaSummary(data.meta_summary || "");
+        setGrowthLog((prev) => [
+          ...prev,
+          { weight: data.growth || 0, timestamp: data.timestamp },
+        ]);
+
+        console.log("🧠 Persona loaded from DB:", data);
+      } catch (err) {
+        console.error("DB load failed:", err);
+      }
+    })();
+  }, []);
+
+  // 状態が変化したら自動保存
+  useEffect(() => {
+    (async () => {
+      try {
+        await fetch("/api/persona", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            traits,
+            reflectionText,
+            metaSummary,
+            growthWeight: growthLog[growthLog.length - 1]?.weight || 0,
+          }),
+        });
+      } catch (err) {
+        console.error("DB save failed:", err);
+      }
+    })();
+  }, [traits, reflectionText, metaSummary, growthLog]);
 
   // === メッセージ送信処理 ===
   const handleSend = async () => {
@@ -55,40 +108,47 @@ export default function Home() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/aei", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userMessage,
-          traits,
-          growthLog,
-          reflections: messages,
-        }),
+        body: JSON.stringify({ text: userMessage }),
       });
 
       const data = await res.json();
+      const rawText = data.output || "（応答なし）";
 
-      const aiText = data.reply || "……（無応答）";
-      const reflection = data.reflection?.text || data.reflection || "";
-      const introspection = data.introspection || "";
-      const summary = data.metaSummary || "";
+      // 🎭 Eunoia Core で“しぐちゃん”トーンに変換
+      const aiText = applyEunoiaTone(rawText, {
+        tone:
+          traits.empathy > 0.7
+            ? "friendly"
+            : traits.calm > 0.7
+            ? "gentle"
+            : "neutral",
+        empathyLevel: traits.empathy,
+      });
 
-      setModelUsed(data.model || "unknown"); // 🧩 モデル名を反映
-
+      // チャットに反映
       setMessages((prev) => [
         ...prev.slice(0, -1),
         { user: userMessage, ai: aiText },
       ]);
-      setTraits(data.traits || traits);
-      setReflectionText(reflection);
-      setIntrospectionText(introspection);
-      setMetaSummary(summary);
-      setGrowthLog((prev) => [
-        ...prev,
-        { ...data.traits, timestamp: new Date().toISOString() },
-      ]);
+
+      // 成長記録
+      if (data.growth?.weight) {
+        setGrowthLog((prev) => [
+          ...prev,
+          { weight: data.growth.weight, timestamp: new Date().toISOString() },
+        ]);
+      }
+
+      setModelUsed("AEI-Lite");
+      setReflectionText(data.reflection?.text || "");
+      setIntrospectionText(data.introspection || "");
+      setMetaSummary(data.metaSummary || "");
+      if (data.traits) setTraits(data.traits);
     } catch (err) {
-      console.error(err);
+      console.error("AEI fetch error:", err);
       setMessages((prev) => [
         ...prev.slice(0, -1),
         { user: userMessage, ai: "（通信エラー）" },
@@ -98,7 +158,7 @@ export default function Home() {
     }
   };
 
-  // === Reflectボタン処理 ===
+  // === Reflectボタン ===
   const handleReflect = async () => {
     setReflecting(true);
     try {
@@ -113,7 +173,6 @@ export default function Home() {
       });
 
       const data = await res.json();
-
       setReflectionText(data.reflection || "（振り返りなし）");
       setIntrospectionText(data.introspection || "");
       setMetaSummary(data.metaSummary || "");
@@ -133,6 +192,7 @@ export default function Home() {
     }
   };
 
+  // === JSX ===
   return (
     <main className="min-h-screen bg-gray-900 text-white p-4 flex flex-col items-center">
       <h1 className="text-2xl font-semibold mb-2">Sigmaris Studio</h1>
@@ -141,7 +201,7 @@ export default function Home() {
         <span className="text-blue-400 font-mono">{modelUsed}</span>
       </p>
 
-      {/* --- チャット表示部 --- */}
+      {/* --- チャット --- */}
       <div className="w-full max-w-2xl mb-4 bg-gray-800 p-4 rounded-lg h-[300px] overflow-y-auto space-y-3">
         {messages.length === 0 && (
           <p className="text-gray-400 text-center">
@@ -153,7 +213,7 @@ export default function Home() {
             <p className="text-blue-400 font-semibold">あなた：</p>
             <p className="mb-2">{m.user}</p>
             <p className="text-pink-400 font-semibold">シグマリス：</p>
-            <p className="mb-2">{m.ai}</p>
+            <p className="mb-2 whitespace-pre-line">{m.ai}</p>
           </div>
         ))}
       </div>
@@ -266,6 +326,21 @@ export default function Home() {
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* === 状態パネル === */}
+      <div className="mt-6">
+        <StatePanel
+          traits={traits}
+          reflection={reflectionText}
+          metaReflection={metaSummary}
+          safetyFlag={false}
+        />
+      </div>
+
+      {/* === Eunoia Meter（感情可視化） === */}
+      <div className="mt-6">
+        <EunoiaMeter traits={traits} />
       </div>
     </main>
   );
