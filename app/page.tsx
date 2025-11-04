@@ -3,22 +3,25 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import PersonaPanel from "@/components/PersonaPanel";
-import GrowthGraph from "@/components/GrowthGraph";
 import HistoryPanel from "@/components/HistoryPanel";
 import ReflectionPanel from "@/components/ReflectionPanel";
 import IntrospectionPanel from "@/components/IntrospectionPanel";
 import StatePanel from "@/components/StatePanel";
-import EunoiaMeter from "@/components/EunoiaMeter"; // 💞 感情可視化
+import EunoiaMeter from "@/components/EunoiaMeter";
 
-// 🎭 Eunoia Core（感情トーン層）
 import { applyEunoiaTone } from "@/lib/eunoia";
+import type { SafetyReport } from "@/engine/safety/SafetyLayer";
+
+// --- 可視化層 ---
+import { TraitVisualizer } from "@/ui/TraitVisualizer";
+import { SafetyIndicator } from "@/ui/SafetyIndicator";
+import { EmotionBadge } from "@/ui/EmotionBadge";
 
 // --- 型定義 ---
 interface Message {
   user: string;
   ai: string;
 }
-
 interface Trait {
   calm: number;
   empathy: number;
@@ -26,7 +29,6 @@ interface Trait {
 }
 
 export default function Home() {
-  // === ステート群 ===
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [traits, setTraits] = useState<Trait>({
@@ -44,13 +46,13 @@ export default function Home() {
   );
   const [reflecting, setReflecting] = useState(false);
   const [modelUsed, setModelUsed] = useState("AEI-Lite");
+  const [safetyReport, setSafetyReport] = useState<SafetyReport | undefined>();
 
-  // === 表示モード ===
   const [view, setView] = useState<
     "persona" | "graph" | "history" | "reflection" | "introspection"
   >("persona");
 
-  // === PersonaDB から初期値読み込み ===
+  // === PersonaDB初期ロード ===
   useEffect(() => {
     (async () => {
       try {
@@ -64,21 +66,26 @@ export default function Home() {
           empathy: data.empathy ?? 0.5,
           curiosity: data.curiosity ?? 0.5,
         });
+
         setReflectionText(data.reflection || "");
         setMetaSummary(data.meta_summary || "");
+
         setGrowthLog((prev) => [
           ...prev,
-          { weight: data.growth || 0, timestamp: data.timestamp },
+          {
+            calm: data.calm ?? 0.5,
+            empathy: data.empathy ?? 0.5,
+            curiosity: data.curiosity ?? 0.5,
+            timestamp: data.timestamp,
+          },
         ]);
-
-        console.log("🧠 Persona loaded from DB:", data);
       } catch (err) {
         console.error("DB load failed:", err);
       }
     })();
   }, []);
 
-  // === 状態が変化したら自動保存 ===
+  // === 状態変更で自動保存 ===
   useEffect(() => {
     (async () => {
       try {
@@ -98,7 +105,7 @@ export default function Home() {
     })();
   }, [traits, reflectionText, metaSummary, growthLog]);
 
-  // === メッセージ送信処理 ===
+  // === メッセージ送信 ===
   const handleSend = async () => {
     if (!input.trim()) return;
     const userMessage = input.trim();
@@ -113,11 +120,9 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: userMessage }),
       });
-
       const data = await res.json();
       const rawText = data.output || "（応答なし）";
 
-      // 🎭 Eunoia Core で“しぐちゃん”トーンに変換
       const aiText = applyEunoiaTone(rawText, {
         tone:
           traits.empathy > 0.7
@@ -128,13 +133,11 @@ export default function Home() {
         empathyLevel: traits.empathy,
       });
 
-      // チャットに反映
       setMessages((prev) => [
         ...prev.slice(0, -1),
         { user: userMessage, ai: aiText },
       ]);
 
-      // 成長ログ追加
       if (data.growth?.weight) {
         setGrowthLog((prev) => [
           ...prev,
@@ -142,7 +145,6 @@ export default function Home() {
         ]);
       }
 
-      // 内省・トレイト更新
       setModelUsed("AEI-Lite");
       setReflectionText(data.reflection?.text || "");
       setIntrospectionText(data.introspection || "");
@@ -159,7 +161,7 @@ export default function Home() {
     }
   };
 
-  // === Reflectボタン ===
+  // === Reflect ===
   const handleReflect = async () => {
     setReflecting(true);
     try {
@@ -177,7 +179,22 @@ export default function Home() {
       setReflectionText(data.reflection || "（振り返りなし）");
       setIntrospectionText(data.introspection || "");
       setMetaSummary(data.metaSummary || "");
+      setSafetyReport(data.safety || undefined);
       setView("reflection");
+
+      // ✅ Reflect後にtraitsを履歴として追加
+      if (data.traits) {
+        setTraits(data.traits);
+        setGrowthLog((prev) => [
+          ...prev,
+          {
+            calm: data.traits.calm,
+            empathy: data.traits.empathy,
+            curiosity: data.traits.curiosity,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+      }
 
       if (data.introspection) {
         setIntrospectionHistory((prev) => [
@@ -193,7 +210,7 @@ export default function Home() {
     }
   };
 
-  // === Safety 判定（リアルタイム状態監視） ===
+  // === Safety quick flag ===
   const safetyFlag: string | false =
     traits.calm < 0.3 && traits.curiosity > 0.7
       ? "思考過熱"
@@ -202,6 +219,18 @@ export default function Home() {
       : traits.calm > 0.9 && traits.empathy > 0.9
       ? "過安定（感情変化が鈍化）"
       : false;
+
+  // === Emotion tone color ===
+  const toneColor =
+    traits.empathy > 0.7 ? "#FFD2A0" : traits.calm > 0.7 ? "#A0E4FF" : "#AAA";
+
+  // === グラフ用データ ===（★修正）
+  const graphData = growthLog.map((g, i) => ({
+    time: g.timestamp ? new Date(g.timestamp).getTime() : Date.now(),
+    calm: g.calm ?? traits.calm,
+    empathy: g.empathy ?? traits.empathy,
+    curiosity: g.curiosity ?? traits.curiosity,
+  }));
 
   // === JSX ===
   return (
@@ -212,7 +241,9 @@ export default function Home() {
         <span className="text-blue-400 font-mono">{modelUsed}</span>
       </p>
 
-      {/* --- チャット --- */}
+      <EmotionBadge tone="Current Tone" color={toneColor} />
+
+      {/* === チャット === */}
       <div className="w-full max-w-2xl mb-4 bg-gray-800 p-4 rounded-lg h-[300px] overflow-y-auto space-y-3">
         {messages.length === 0 && (
           <p className="text-gray-400 text-center">
@@ -272,48 +303,41 @@ export default function Home() {
         )}
       </div>
 
-      {/* パネル描画 */}
+      {/* === パネル描画 === */}
       <div className="w-full max-w-2xl">
         <AnimatePresence mode="wait">
           {view === "persona" && (
             <motion.div
               key="persona"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
             >
               <PersonaPanel traits={traits} />
             </motion.div>
           )}
-
           {view === "graph" && (
             <motion.div
               key="graph"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
             >
-              <GrowthGraph logs={growthLog} />
+              <TraitVisualizer key={graphData.length} data={graphData} />
             </motion.div>
           )}
-
           {view === "history" && (
             <motion.div
               key="history"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
             >
               <HistoryPanel messages={messages} />
             </motion.div>
           )}
-
           {view === "reflection" && (
             <motion.div
               key="reflection"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
             >
               <ReflectionPanel
                 reflection={reflectionText}
@@ -322,13 +346,11 @@ export default function Home() {
               />
             </motion.div>
           )}
-
           {view === "introspection" && (
             <motion.div
               key="introspection"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
             >
               <IntrospectionPanel
                 introspection={introspectionText}
@@ -339,7 +361,13 @@ export default function Home() {
         </AnimatePresence>
       </div>
 
-      {/* === 状態パネル（Safety統合） === */}
+      <div className="mt-6">
+        <SafetyIndicator
+          message={safetyFlag ? safetyFlag : "Stable"}
+          level={safetyFlag ? "notice" : "ok"}
+        />
+      </div>
+
       <div className="mt-6">
         <StatePanel
           traits={traits}
@@ -349,9 +377,8 @@ export default function Home() {
         />
       </div>
 
-      {/* === Eunoia Meter（感情可視化） === */}
       <div className="mt-6">
-        <EunoiaMeter traits={traits} />
+        <EunoiaMeter traits={traits} safety={safetyReport} />
       </div>
     </main>
   );

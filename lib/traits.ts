@@ -1,4 +1,3 @@
-// /lib/traits.ts
 /**
  * シグちゃん人格システムの Trait（特性ベクトル）定義
  * calm：落ち着き 0〜1
@@ -30,4 +29,40 @@ export function blendTraits(a: TraitVector, b: TraitVector): TraitVector {
     empathy: (a.empathy + b.empathy) / 2,
     curiosity: (a.curiosity + b.curiosity) / 2,
   };
+}
+
+/**
+ * Trait間の距離（ユークリッド距離）を計算
+ * - 内省成長率やSafetyLayer安定度計測に利用
+ */
+export function traitDistance(a: TraitVector, b: TraitVector): number {
+  const dc = a.calm - b.calm;
+  const de = a.empathy - b.empathy;
+  const du = a.curiosity - b.curiosity;
+  return Math.sqrt(dc * dc + de * de + du * du);
+}
+
+/**
+ * Traitを0〜1範囲に正規化
+ */
+export function normalizeTraits(t: TraitVector): TraitVector {
+  return {
+    calm: safeTraitValue(t.calm),
+    empathy: safeTraitValue(t.empathy),
+    curiosity: safeTraitValue(t.curiosity),
+  };
+}
+
+/**
+ * 安定指数を算出（1に近いほど安定）
+ * - SafetyLayerなどで過熱や過安定の判定に使用
+ */
+export function stabilityIndex(t: TraitVector): number {
+  const avg = (t.calm + t.empathy + t.curiosity) / 3;
+  const dist = Math.sqrt(
+    Math.pow(t.calm - avg, 2) +
+      Math.pow(t.empathy - avg, 2) +
+      Math.pow(t.curiosity - avg, 2)
+  );
+  return Math.max(0, 1 - dist * 3); // 距離が大きいほど不安定
 }

@@ -1,5 +1,20 @@
-{
-  "weight": 0.12000000000000002,
-  "trend": "concise",
-  "last_update": 1762157147995
-}
+[
+  {
+    "calm": 0.647,
+    "empathy": 0.6715,
+    "curiosity": 0.6224999999999999,
+    "timestamp": "2025-11-04T11:50:23.398Z"
+  },
+  {
+    "calm": 0.6562,
+    "empathy": 0.6829,
+    "curiosity": 0.6295,
+    "timestamp": "2025-11-04T11:50:44.258Z"
+  },
+  {
+    "calm": 0.6562,
+    "empathy": 0.6829,
+    "curiosity": 0.6295,
+    "timestamp": "2025-11-04T11:50:44.292Z"
+  }
+]

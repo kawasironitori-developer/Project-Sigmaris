@@ -2,21 +2,21 @@
 import OpenAI from "openai";
 import { loadPersona, savePersona } from "@/lib/db";
 import { MetaReflectionEngine } from "@/engine/meta/MetaReflectionEngine";
-import { EmotionSynth } from "@/engine/EmotionSynth";
-import { SafetyLayer } from "@/engine/SafetyLayer"; // ← 安定性制御を追加
+import { EmotionSynth } from "@/engine/emotion/EmotionSynth";
+import { SafetyLayer } from "@/engine/safety/SafetyLayer";
+import { PersonaSync } from "@/engine/sync/PersonaSync";
 
-// Persona型を定義
+// ===== 型定義 =====
 interface Persona {
   calm: number;
   empathy: number;
   curiosity: number;
   reflection?: string;
-  metaSummary?: string;
+  meta_summary?: string; // ✅ 修正: DB構造に合わせてスネークケース
   growth?: number;
   timestamp?: string;
 }
 
-// savePersona が受け付ける既知プロパティの想定（型エラー回避用）
 type PersonaSavePayload = {
   calm: number;
   empathy: number;
@@ -30,7 +30,7 @@ type TraitVector = Pick<Persona, "calm" | "empathy" | "curiosity">;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-/** 有効な number を先頭から選ぶ（finite 判定） */
+// ===== Utility =====
 function firstFiniteNumber(
   ...candidates: Array<number | undefined | null>
 ): number | undefined {
@@ -40,7 +40,6 @@ function firstFiniteNumber(
   return undefined;
 }
 
-/** JSON抽出（```囲みやテキスト混在にも耐える簡易版） */
 function tryParseJSONLoose(text: string): any | null {
   const block = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
   const candidate = block ?? text;
@@ -53,25 +52,11 @@ function tryParseJSONLoose(text: string): any | null {
   }
 }
 
+// ===== Main Class =====
 export class ReflectionEngine {
   async fullReflect(growthLog: any[], messages: any[], history: string[]) {
-    // === Personaロード（フォールバック付き） ===
-    const loaded = (loadPersona() as Persona) ?? {
-      calm: 0.5,
-      empathy: 0.5,
-      curiosity: 0.5,
-      metaSummary: "",
-      growth: 0,
-    };
-
-    const persona: Persona = {
-      calm: firstFiniteNumber(loaded.calm) ?? 0.5,
-      empathy: firstFiniteNumber(loaded.empathy) ?? 0.5,
-      curiosity: firstFiniteNumber(loaded.curiosity) ?? 0.5,
-      metaSummary: loaded.metaSummary ?? "",
-      growth: firstFiniteNumber(loaded.growth ?? undefined) ?? 0,
-      timestamp: loaded.timestamp,
-    };
+    // === Personaロード ===
+    const persona = PersonaSync.load();
 
     const recentDialog = (messages ?? [])
       .slice(-6)
@@ -84,7 +69,7 @@ export class ReflectionEngine {
             (s: number, g: any) => s + (Number(g?.weight) || 0),
             0
           ) / (growthLog as any[]).length
-        : persona.growth ?? 0;
+        : persona.growth ?? 0; // ✅ 修正済み
 
     const lastIntrospection =
       (history ?? []).slice(-1)[0] || "（前回の内省なし）";
@@ -135,7 +120,6 @@ calm: ${persona.calm.toFixed(2)}, empathy: ${persona.empathy.toFixed(
       const raw = res.choices?.[0]?.message?.content ?? "";
       const parsedLoose = tryParseJSONLoose(raw);
 
-      // フォールバック安全化
       const reflectionText: string = String(
         parsedLoose?.reflection ?? raw ?? ""
       ).trim();
@@ -155,47 +139,62 @@ calm: ${persona.calm.toFixed(2)}, empathy: ${persona.empathy.toFixed(
           ) ?? 0.5,
       };
 
-      // === Safety Layer: Trait安定化・過熱検知 ===
-      const normalizedTraits = SafetyLayer.normalize(nextTraits);
-      const safetyMessage = SafetyLayer.checkOverload(normalizedTraits);
-      const stableTraits = SafetyLayer.stabilize(normalizedTraits);
+      // === SafetyLayer Advanced ===
+      const prevTraits: TraitVector = {
+        calm: persona.calm,
+        empathy: persona.empathy,
+        curiosity: persona.curiosity,
+      };
+      const { stabilized: stableTraits, report } = SafetyLayer.composite(
+        prevTraits,
+        nextTraits
+      );
+      const safetyMessage = report.warnings[0] ?? null;
 
       // === MetaReflection ===
       const meta = new MetaReflectionEngine();
       const metaReport = await meta.analyze(reflectionText, stableTraits);
 
+      // ✅ 修正: metaSummary → meta_summary
       const finalMetaSummary =
         String(metaReport?.summary ?? "").trim() ||
         llmMetaSummary ||
-        (persona.metaSummary ?? "（更新なし）");
+        (persona.meta_summary ?? "（更新なし）");
 
       const finalGrowthWeight =
         firstFiniteNumber(metaReport?.growthAdjustment, avgGrowth) ?? avgGrowth;
 
-      // === savePersona（最新＋履歴） ===
-      const payload: PersonaSavePayload = {
-        calm: stableTraits.calm,
-        empathy: stableTraits.empathy,
-        curiosity: stableTraits.curiosity,
-        reflectionText,
-        metaSummary: finalMetaSummary,
-        growthWeight: finalGrowthWeight,
-      };
-      savePersona(payload);
+      // === PersonaSync更新 ===
+      PersonaSync.update(stableTraits, finalMetaSummary, finalGrowthWeight);
 
-      // === Emotion Synthesis でトーン付与 ===
+      // === EmotionSynthesis適用 ===
       const emotionalReflection = EmotionSynth.applyTone(
         reflectionText,
         stableTraits
       );
 
+      // === Text Guard（伏字処理） ===
+      const { sanitized, flagged } = SafetyLayer.guardText(emotionalReflection);
+
+      // === savePersona ===
+      const payload: PersonaSavePayload = {
+        calm: stableTraits.calm,
+        empathy: stableTraits.empathy,
+        curiosity: stableTraits.curiosity,
+        reflectionText: sanitized,
+        metaSummary: finalMetaSummary,
+        growthWeight: finalGrowthWeight,
+      };
+      savePersona(payload);
+
       // === 出力 ===
       return {
-        reflection: emotionalReflection,
+        reflection: sanitized,
         introspection: reflectionText,
         metaSummary: finalMetaSummary,
         metaReport,
         safety: safetyMessage ?? "正常",
+        flagged,
       };
     } catch (err: any) {
       console.error("[ReflectionEngine Error]", err);
@@ -204,6 +203,7 @@ calm: ${persona.calm.toFixed(2)}, empathy: ${persona.empathy.toFixed(
         introspection: "",
         metaSummary: "（エラー発生）",
         safety: "エラー発生",
+        flagged: false,
       };
     }
   }

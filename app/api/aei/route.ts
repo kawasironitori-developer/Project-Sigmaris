@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { PersonaSync } from "@/engine/sync/PersonaSync";
+import { SafetyLayer } from "@/engine/safety/SafetyLayer";
+import { EmotionSynth } from "@/engine/emotion/EmotionSynth";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// --- 型定義 ---
 interface Traits {
   calm: number;
   empathy: number;
@@ -19,6 +23,7 @@ interface Reflection {
   traitsSnapshot: Traits;
 }
 
+// --- 内部状態（軽量記憶） ---
 let traits: Traits = { calm: 0.65, empathy: 0.7, curiosity: 0.6 };
 let shortTermMemory: MemoryLog[] = [];
 let reflections: Reflection[] = [];
@@ -45,6 +50,7 @@ function evolveTraits(input: string, tr: Traits): Traits {
   if (/(落ち着|安心|大丈夫)/.test(text)) tr.calm = Math.min(1, tr.calm + 0.02);
   if (/(なぜ|どうして|なんで|知りたい|気になる)/.test(text))
     tr.curiosity = Math.min(1, tr.curiosity + 0.03);
+  // 自然回帰
   tr.calm = tr.calm * 0.98 + 0.5 * 0.02;
   tr.empathy = tr.empathy * 0.98 + 0.5 * 0.02;
   tr.curiosity = tr.curiosity * 0.98 + 0.5 * 0.02;
@@ -137,21 +143,25 @@ export async function POST(req: Request) {
     const body = await req.json();
     const userText = body.text || "こんにちは";
 
+    // === メモリ更新 ===
     shortTermMemory.push({ role: "user", content: userText });
     if (shortTermMemory.length > 10) shortTermMemory.shift();
 
+    // === Trait進化 & 安定化 ===
     traits = evolveTraits(userText, traits);
+    const stableTraits = SafetyLayer.stabilize(traits);
 
+    // === 応答生成 ===
     const comp = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
-          content: `あなたはSigmaris。calm=${traits.calm.toFixed(
+          content: `あなたはSigmaris。calm=${stableTraits.calm.toFixed(
             2
-          )}, empathy=${traits.empathy.toFixed(
+          )}, empathy=${stableTraits.empathy.toFixed(
             2
-          )}, curiosity=${traits.curiosity.toFixed(
+          )}, curiosity=${stableTraits.curiosity.toFixed(
             2
           )}。思いやりと理性の両方を保ちながら応答してください。`,
         },
@@ -162,26 +172,44 @@ export async function POST(req: Request) {
     });
 
     let base = comp.choices[0]?.message?.content?.trim() || "";
-    let { safeText, flagged } = guardianFilter(base);
-    const out = applyEmpathyTone(safeText, traits);
+    const { safeText, flagged } = guardianFilter(base);
+    const out = applyEmpathyTone(safeText, stableTraits);
 
-    const reflectionText = await generateReflection(userText, out, traits);
-    reflections.push({ text: reflectionText, traitsSnapshot: { ...traits } });
+    // === EmotionSynth適用（Sigmarisらしいトーン補正） ===
+    const emotionalOutput = EmotionSynth.applyTone(out, stableTraits);
+
+    // === Reflection & MetaReflection ===
+    const reflectionText = await generateReflection(
+      userText,
+      emotionalOutput,
+      stableTraits
+    );
+    reflections.push({
+      text: reflectionText,
+      traitsSnapshot: { ...stableTraits },
+    });
     if (reflections.length > 5) reflections.shift();
 
     let meta = "";
     if (reflections.length >= 3)
       meta = await generateMetaReflection(reflections);
 
-    shortTermMemory.push({ role: "assistant", content: out });
+    // === PersonaSync更新（DBへ永続化） ===
+    PersonaSync.update(stableTraits, meta || reflectionText, 0.5);
+
+    // === 短期記憶更新 ===
+    shortTermMemory.push({ role: "assistant", content: emotionalOutput });
     if (shortTermMemory.length > 10) shortTermMemory.shift();
 
+    // === Safety層メッセージ ===
+    const safetyMsg = flagged ? "⚠️ 不適切ワード検知" : "正常";
+
     return NextResponse.json({
-      output: out,
+      output: emotionalOutput,
       reflection: reflectionText,
       metaReflection: meta,
-      traits,
-      safety: { flagged },
+      traits: stableTraits,
+      safety: { flagged, message: safetyMsg },
     });
   } catch (e) {
     console.error("[/api/aei] error:", e);
