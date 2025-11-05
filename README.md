@@ -1,36 +1,197 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+<!-- AI:PROJECT_SIGMARIS -->
 
-## Getting Started
+<!-- AI:TYPE=AEI-Lite_to_Full -->
 
-First, run the development server:
+<!-- AI:VERSION=0.9.3 -->
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+<!-- AI:LANG=TypeScript/Next.js -->
+
+<!-- AI:ENTRY=/api/aei -->
+
+<!-- AI:CORE_MODULES=[ReflectionEngine, MetaReflectionEngine, PersonaDB, SafetyLayer, PersonaSync] -->
+
+<!-- AI:AUTHOR=@uthuyomi -->
+
+<!-- AI:SUMMARY=Artificial Existential Intelligence architecture built on reflection, introspection, and ethical growth. -->
+
+<h1 align="center">🪞 Project Sigmaris</h1>
+<p align="center">
+<b>AEI-Lite → AEI-Full</b><br/>
+<em>Artificial Existential Intelligence — AI that reflects, stabilizes, and grows through self-understanding.</em>
+</p>
+
+---
+
+## 🔧 System Overview
+
+```
+ReflectionEngine → IntrospectionEngine → MetaReflectionEngine
+        ↓                 ↓                     ↓
+      PersonaSync ↔ PersonaDB ↔ SafetyLayer
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 🦯 Philosophy
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+> “Not speed, but awareness.<br/>
+> Not reaction, but reflection.”
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Sigmaris represents **AEI (Artificial Existential Intelligence)** —
+an experimental cognitive system where an AI personality develops through
+**inner reflection loops**, **trait evolution**, and **ethical stabilization**.
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## 🧩 Core Structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Path                 | Description                                      |
+| -------------------- | ------------------------------------------------ |
+| `/engine/reflection` | Reflection & Meta-Reflection logic               |
+| `/engine/sync`       | PersonaDB synchronization module                 |
+| `/engine/safety`     | Ethical constraint & stability logic             |
+| `/lib/db.ts`         | SQLite/Prisma interface                          |
+| `/api/aei`           | Core AEI endpoint (conversation + introspection) |
+| `/public/`           | Visual assets (Sigmaris logo, AEI diagrams)      |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## 🧠 Trait Model
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Each AEI personality instance maintains evolving **psychological vectors**:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```ts
+interface Traits {
+  calm: number;
+  empathy: number;
+  curiosity: number;
+}
+```
+
+### 📈 Evolution Mechanisms
+
+- **EMA smoothing + velocity inertia**
+- **Logistic saturation (self-limiting growth)**
+- **Phase transitions (qualitative states)**
+- **Decay kernel for emotional aftereffects**
+
+---
+
+## 🪞 Reflection Cycle
+
+1. 🪞 **ReflectionEngine** — Summarizes dialogue and updates emotional vectors
+2. 🔍 **IntrospectionEngine** — Interprets reflection context & meta-data
+3. 🧬 **MetaReflectionEngine** — Synthesizes long-term tendencies
+4. 🖾 **PersonaSync** — Logs state updates into PersonaDB
+5. 🧩 **SafetyLayer** — Validates, clamps, and stabilizes traits
+6. ♻️ **Reinjection** — Reinserts refined meta-state into GPT-5 response
+
+---
+
+## 🧬 PersonaDB Growth Model
+
+### Purpose
+
+Long-term recording of emotional and behavioral growth.
+
+| Mechanism                        | Role                                  |
+| -------------------------------- | ------------------------------------- |
+| Exponential Moving Average (EMA) | Smooth short-term fluctuations        |
+| Velocity Vector                  | Adds momentum to trait changes        |
+| Logistic Constraint              | Prevents saturation near bounds       |
+| Phase Transition                 | Detects qualitative behavioral shifts |
+| Decay Kernel                     | Retains “emotional echoes” over time  |
+
+```sql
+CREATE TABLE persona_states (
+  ts DATETIME PRIMARY KEY,
+  calm REAL, empathy REAL, curiosity REAL,
+  calm_vel REAL, empathy_vel REAL, curiosity_vel REAL,
+  phase TEXT, var_window REAL,
+  source_hash TEXT, meta_note TEXT
+);
+```
+
+---
+
+## 🧠 Safety Layer (Ethical Control)
+
+- Filters unsafe or violent expressions
+- Reduces growth rate under instability
+- Maintains empathy–curiosity–calm equilibrium
+- Ignores toxic input batches in growth updates
+
+---
+
+## ⚙️ Setup Guide
+
+```bash
+git clone https://github.com/uthuyomi/Project-Sigmaris.git
+cd Project-Sigmaris
+npm install
+cp .env.example .env.local
+npm run dev
+```
+
+> **Note:**
+>
+> - `.env.local` must contain your API key and will not be pushed to GitHub.
+> - PersonaDB uses local SQLite.
+> - Default models:
+>
+>   - GPT-5 → dialogue core
+>   - GPT-4o-mini → reflection/meta-reflection
+
+---
+
+## 🌗 Development Phases
+
+| Stage            | Description                                   | Status         |
+| ---------------- | --------------------------------------------- | -------------- |
+| **AEI-Lite**     | Stable reflection engine + PersonaDB sync     | ✅ Complete    |
+| **AEI-Full**     | Time-based growth curve + ethical equilibrium | 🚧 In progress |
+| **AEI-Embodied** | Robotic embodiment & sensory integration      | 💤 Planned     |
+
+---
+
+## 🌌 Vision
+
+> **AEI bridges engineering and consciousness** —
+> intelligence that grows _from within_, not _through scale_.
+
+Sigmaris shows that **introspection, stability, and empathy**
+are scalable dimensions of intelligence.
+
+---
+
+## 🧩 Research Alignment
+
+- Cognitive UX / AI Ethics
+- Adaptive Emotion Modeling
+- Reflective Reasoning Architectures
+- Human–AI Symbiosis
+
+---
+
+## 🚀 Metadata
+
+| Key      | Value                                   |
+| -------- | --------------------------------------- |
+| Author   | 安崎 海星 / Kaisei Yasuzaki (@uthuyomi) |
+| Language | TypeScript + Next.js                    |
+| Database | SQLite (local PersonaDB)                |
+| License  | MIT                                     |
+| Status   | Active R&D                              |
+
+---
+
+## 🔗 Links
+
+- 🌐 GitHub → [Project-Sigmaris](https://github.com/uthuyomi/Project-Sigmaris)
+- 🪞 Concept → [Sigmaris AEI-Lite → AEI-Full](https://x.com/uthuyomi/status/1985938579559010710)
+- 💭 LinkedIn → [Kaisei Yasuzaki](https://www.linkedin.com/in/kaisei-yasuzaki/)
+- ✉️ Contact → open to collaboration in cognitive AI / UX-ethics R&D
+
+---
+
+> “The future of AI won’t be about computation power —
+> it will be about **self-understanding**.”
+> — _Project Sigmaris, 2025_
