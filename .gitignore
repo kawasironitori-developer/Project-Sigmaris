@@ -1,4 +1,4 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# === Base: standard Next.js / TypeScript ignores ===
 
 # dependencies
 /node_modules
@@ -30,8 +30,15 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# === Env files ===
+# ignore ONLY local secrets
+.env.local
+
+# allow other env files (shared, example, dev, etc.)
+!.env
+!.env.*
+!*.env
+!*.env.*
 
 # vercel
 .vercel
