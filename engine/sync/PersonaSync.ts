@@ -1,32 +1,58 @@
 // /engine/sync/PersonaSync.ts
-import { loadPersona, savePersona } from "@/lib/db";
+import { supabaseServer } from "@/lib/supabaseServer";
 import { TraitVector } from "@/lib/traits";
 
 /**
- * PersonaSync v2.2
- * - PersonaDB（SQLite）との双方向同期を担当
+ * PersonaSync v3.0（Cloud Edition）
+ * - Supabase の persona テーブルと同期
  * - ReflectionEngine / MetaReflectionEngine と連携
  * - SafetyLayer適用後の人格値＋メタ内省を永続化
- * - 再注入フェーズ対応
+ * - 旧SQLite I/Oを廃止（loadPersona/savePersona 不要）
  */
 export class PersonaSync {
-  /** 最新の人格情報をロード（DB → メモリ） */
-  static load(): TraitVector & {
-    reflection?: string;
-    meta_summary?: string;
-    growth?: number;
-    timestamp?: string;
-  } {
-    const row = loadPersona();
-    return {
-      calm: row?.calm ?? 0.5,
-      empathy: row?.empathy ?? 0.5,
-      curiosity: row?.curiosity ?? 0.5,
-      reflection: row?.reflection ?? "",
-      meta_summary: row?.meta_summary ?? "",
-      growth: row?.growth ?? 0,
-      timestamp: row?.timestamp ?? new Date().toISOString(),
-    };
+  /**
+   * 最新の人格情報をロード（Supabase → メモリ）
+   */
+  static async load(userId: string): Promise<
+    TraitVector & {
+      reflection?: string;
+      meta_summary?: string;
+      growth?: number;
+      timestamp?: string;
+    }
+  > {
+    try {
+      const { data, error } = await supabaseServer
+        .from("persona")
+        .select(
+          "calm, empathy, curiosity, reflection, meta_summary, growth, updated_at"
+        )
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      return {
+        calm: data?.calm ?? 0.5,
+        empathy: data?.empathy ?? 0.5,
+        curiosity: data?.curiosity ?? 0.5,
+        reflection: data?.reflection ?? "",
+        meta_summary: data?.meta_summary ?? "",
+        growth: data?.growth ?? 0,
+        timestamp: data?.updated_at ?? new Date().toISOString(),
+      };
+    } catch (err) {
+      console.error("⚠️ PersonaSync.load failed:", err);
+      return {
+        calm: 0.5,
+        empathy: 0.5,
+        curiosity: 0.5,
+        reflection: "",
+        meta_summary: "",
+        growth: 0,
+        timestamp: new Date().toISOString(),
+      };
+    }
   }
 
   /**
@@ -35,48 +61,82 @@ export class PersonaSync {
    * @param metaSummary 最新のメタ内省（人格傾向）
    * @param growthWeight 学習重み
    */
-  static update(
+  static async update(
     traits: TraitVector,
     metaSummary?: string,
     growthWeight?: number
   ) {
-    // 🔹 metaSummary と reflectionText を安全に保存
-    const reflectionText =
-      "(auto-reflection updated at " +
-      new Date().toLocaleTimeString("ja-JP") +
-      ")";
+    try {
+      // ユーザー情報を取得
+      const {
+        data: { user },
+        error: userError,
+      } = await supabaseServer.auth.getUser();
 
-    savePersona({
-      calm: traits.calm,
-      empathy: traits.empathy,
-      curiosity: traits.curiosity,
-      reflectionText,
-      metaSummary: metaSummary ?? "",
-      growthWeight: growthWeight ?? 0,
-    });
+      if (userError || !user) throw new Error("No user found");
 
-    console.log("💾 PersonaSync: persona updated", {
-      calm: traits.calm.toFixed(2),
-      empathy: traits.empathy.toFixed(2),
-      curiosity: traits.curiosity.toFixed(2),
-      metaSummary: metaSummary?.slice(0, 80) ?? "(none)",
-      growthWeight,
-    });
+      const reflectionText =
+        "(auto-reflection updated at " +
+        new Date().toLocaleTimeString("ja-JP") +
+        ")";
+
+      // Supabase に upsert
+      const { error: dbError } = await supabaseServer.from("persona").upsert(
+        {
+          user_id: user.id,
+          calm: traits.calm,
+          empathy: traits.empathy,
+          curiosity: traits.curiosity,
+          reflection: reflectionText,
+          meta_summary: metaSummary ?? "",
+          growth: growthWeight ?? 0,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      );
+
+      if (dbError) throw dbError;
+
+      console.log("☁️ PersonaSync (Supabase): persona updated", {
+        calm: traits.calm.toFixed(2),
+        empathy: traits.empathy.toFixed(2),
+        curiosity: traits.curiosity.toFixed(2),
+        metaSummary: metaSummary?.slice(0, 80) ?? "(none)",
+        growthWeight,
+      });
+    } catch (err) {
+      console.error("⚠️ PersonaSync.update failed:", err);
+    }
   }
 
   /**
    * Personaの初期化（開発・テスト用）
    */
-  static reset() {
-    savePersona({
-      calm: 0.5,
-      empathy: 0.5,
-      curiosity: 0.5,
-      reflectionText: "",
-      metaSummary: "Reset state",
-      growthWeight: 0,
-    });
-    console.log("🧹 PersonaSync: persona reset to neutral state.");
+  static async reset() {
+    try {
+      const {
+        data: { user },
+      } = await supabaseServer.auth.getUser();
+      if (!user) throw new Error("No user found");
+
+      await supabaseServer.from("persona").upsert(
+        {
+          user_id: user.id,
+          calm: 0.5,
+          empathy: 0.5,
+          curiosity: 0.5,
+          reflection: "",
+          meta_summary: "Reset state",
+          growth: 0,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      );
+
+      console.log("🧹 PersonaSync: persona reset to neutral state (Supabase).");
+    } catch (err) {
+      console.error("⚠️ PersonaSync.reset failed:", err);
+    }
   }
 
   /**

@@ -1,18 +1,15 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import PersonaPanel from "@/components/PersonaPanel";
-import HistoryPanel from "@/components/HistoryPanel";
 import ReflectionPanel from "@/components/ReflectionPanel";
-import IntrospectionPanel from "@/components/IntrospectionPanel";
 import StatePanel from "@/components/StatePanel";
 import EunoiaMeter from "@/components/EunoiaMeter";
 
 import { applyEunoiaTone } from "@/lib/eunoia";
 import type { SafetyReport } from "@/engine/safety/SafetyLayer";
 
-// --- 可視化層 ---
 import { TraitVisualizer } from "@/ui/TraitVisualizer";
 import { SafetyIndicator } from "@/ui/SafetyIndicator";
 import { EmotionBadge } from "@/ui/EmotionBadge";
@@ -27,8 +24,14 @@ interface Trait {
   empathy: number;
   curiosity: number;
 }
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+}
 
 export default function Home() {
+  // ===== ステート =====
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [traits, setTraits] = useState<Trait>({
@@ -38,21 +41,46 @@ export default function Home() {
   });
   const [growthLog, setGrowthLog] = useState<any[]>([]);
   const [reflectionText, setReflectionText] = useState("");
-  const [introspectionText, setIntrospectionText] = useState("");
   const [metaSummary, setMetaSummary] = useState("");
   const [loading, setLoading] = useState(false);
-  const [introspectionHistory, setIntrospectionHistory] = useState<string[]>(
-    []
-  );
   const [reflecting, setReflecting] = useState(false);
-  const [modelUsed, setModelUsed] = useState("AEI-Lite");
+  const [modelUsed, setModelUsed] = useState("AEI-Core");
   const [safetyReport, setSafetyReport] = useState<SafetyReport | undefined>();
 
-  const [view, setView] = useState<
-    "persona" | "graph" | "history" | "reflection" | "introspection"
-  >("persona");
+  // ===== マルチチャット =====
+  const [chats, setChats] = useState<ChatSession[]>([]);
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
 
-  // === PersonaDB初期ロード ===
+  // ===== ドロワー制御 =====
+  const [leftOpen, setLeftOpen] = useState(false);
+  const [rightOpen, setRightOpen] = useState(true);
+  const toggleLeft = useCallback(() => setLeftOpen((v) => !v), []);
+  const toggleRight = useCallback(() => setRightOpen((v) => !v), []);
+  const closeLeft = () => setLeftOpen(false);
+  const closeRight = () => setRightOpen(false);
+  const drawerTransition = { type: "tween", duration: 0.28, ease: "easeOut" };
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const isMobile = window.matchMedia("(max-width: 1023px)").matches;
+      if (isMobile) setRightOpen(false);
+    }
+  }, []);
+
+  // ===== 新規チャット =====
+  const handleNewChat = () => {
+    const newId = crypto.randomUUID();
+    const newChat: ChatSession = {
+      id: newId,
+      title: `チャット ${chats.length + 1}`,
+      messages: [],
+    };
+    setChats((prev) => [...prev, newChat]);
+    setCurrentChatId(newId);
+    setMessages([]);
+  };
+
+  // ===== Persona ロード =====
   useEffect(() => {
     (async () => {
       try {
@@ -66,26 +94,40 @@ export default function Home() {
           empathy: data.empathy ?? 0.5,
           curiosity: data.curiosity ?? 0.5,
         });
-
         setReflectionText(data.reflection || "");
         setMetaSummary(data.meta_summary || "");
-
-        setGrowthLog((prev) => [
-          ...prev,
+        setGrowthLog([
           {
             calm: data.calm ?? 0.5,
             empathy: data.empathy ?? 0.5,
             curiosity: data.curiosity ?? 0.5,
-            timestamp: data.timestamp,
+            timestamp: data.updated_at,
           },
         ]);
       } catch (err) {
-        console.error("DB load failed:", err);
+        console.error("Persona load failed:", err);
       }
     })();
   }, []);
 
-  // === 状態変更で自動保存 ===
+  // ===== AEI メッセージロード =====
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/aei");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.messages?.length) return;
+
+        // ペアリング済み messages を受け取る
+        setMessages(data.messages);
+      } catch (err) {
+        console.error("AEI message load failed:", err);
+      }
+    })();
+  }, []);
+
+  // ===== Persona 自動保存 =====
   useEffect(() => {
     (async () => {
       try {
@@ -100,17 +142,17 @@ export default function Home() {
           }),
         });
       } catch (err) {
-        console.error("DB save failed:", err);
+        console.error("Persona save failed:", err);
       }
     })();
   }, [traits, reflectionText, metaSummary, growthLog]);
 
-  // === メッセージ送信 ===
+  // ===== メッセージ送信 =====
   const handleSend = async () => {
     if (!input.trim()) return;
     const userMessage = input.trim();
-    const newMessages = [...messages, { user: userMessage, ai: "..." }];
-    setMessages(newMessages);
+    const tempMessages = [...messages, { user: userMessage, ai: "..." }];
+    setMessages(tempMessages);
     setInput("");
     setLoading(true);
 
@@ -121,8 +163,8 @@ export default function Home() {
         body: JSON.stringify({ text: userMessage }),
       });
       const data = await res.json();
-      const rawText = data.output || "（応答なし）";
 
+      const rawText = data.output || "（応答なし）";
       const aiText = applyEunoiaTone(rawText, {
         tone:
           traits.empathy > 0.7
@@ -133,25 +175,18 @@ export default function Home() {
         empathyLevel: traits.empathy,
       });
 
-      setMessages((prev) => [
-        ...prev.slice(0, -1),
+      const updatedMessages = [
+        ...tempMessages.slice(0, -1),
         { user: userMessage, ai: aiText },
-      ]);
-
-      if (data.growth?.weight) {
-        setGrowthLog((prev) => [
-          ...prev,
-          { weight: data.growth.weight, timestamp: new Date().toISOString() },
-        ]);
-      }
-
-      setModelUsed("AEI-Lite");
-      setReflectionText(data.reflection?.text || "");
-      setIntrospectionText(data.introspection || "");
-      setMetaSummary(data.metaSummary || "");
+      ];
+      setMessages(updatedMessages);
       if (data.traits) setTraits(data.traits);
+      if (data.reflection) setReflectionText(data.reflection);
+      if (data.metaSummary) setMetaSummary(data.metaSummary);
+
+      setModelUsed("AEI-Core");
     } catch (err) {
-      console.error("AEI fetch error:", err);
+      console.error("AEI send failed:", err);
       setMessages((prev) => [
         ...prev.slice(0, -1),
         { user: userMessage, ai: "（通信エラー）" },
@@ -161,28 +196,20 @@ export default function Home() {
     }
   };
 
-  // === Reflect ===
+  // ===== Reflect =====
   const handleReflect = async () => {
     setReflecting(true);
     try {
       const res = await fetch("/api/reflect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages,
-          growthLog,
-          history: introspectionHistory,
-        }),
+        body: JSON.stringify({ messages, growthLog }),
       });
-
       const data = await res.json();
+
       setReflectionText(data.reflection || "（振り返りなし）");
-      setIntrospectionText(data.introspection || "");
       setMetaSummary(data.metaSummary || "");
       setSafetyReport(data.safety || undefined);
-      setView("reflection");
-
-      // ✅ Reflect後にtraitsを履歴として追加
       if (data.traits) {
         setTraits(data.traits);
         setGrowthLog((prev) => [
@@ -195,22 +222,15 @@ export default function Home() {
           },
         ]);
       }
-
-      if (data.introspection) {
-        setIntrospectionHistory((prev) => [
-          ...prev.slice(-4),
-          data.introspection,
-        ]);
-      }
     } catch (err) {
-      console.error("Reflect fetch error:", err);
+      console.error("Reflect failed:", err);
       setReflectionText("（振り返りエラー）");
     } finally {
       setReflecting(false);
     }
   };
 
-  // === Safety quick flag ===
+  // ===== Safety Flag =====
   const safetyFlag: string | false =
     traits.calm < 0.3 && traits.curiosity > 0.7
       ? "思考過熱"
@@ -220,166 +240,188 @@ export default function Home() {
       ? "過安定（感情変化が鈍化）"
       : false;
 
-  // === Emotion tone color ===
   const toneColor =
     traits.empathy > 0.7 ? "#FFD2A0" : traits.calm > 0.7 ? "#A0E4FF" : "#AAA";
 
-  // === グラフ用データ ===（★修正）
-  const graphData = growthLog.map((g, i) => ({
+  const graphData = growthLog.map((g) => ({
     time: g.timestamp ? new Date(g.timestamp).getTime() : Date.now(),
     calm: g.calm ?? traits.calm,
     empathy: g.empathy ?? traits.empathy,
     curiosity: g.curiosity ?? traits.curiosity,
   }));
 
-  // === JSX ===
+  // ===== JSX =====
   return (
-    <main className="min-h-screen bg-gray-900 text-white p-4 flex flex-col items-center">
-      <h1 className="text-2xl font-semibold mb-2">Sigmaris Studio</h1>
-      <p className="text-gray-400 text-sm mb-4">
-        Model in use:{" "}
-        <span className="text-blue-400 font-mono">{modelUsed}</span>
-      </p>
-
-      <EmotionBadge tone="Current Tone" color={toneColor} />
-
-      {/* === チャット === */}
-      <div className="w-full max-w-2xl mb-4 bg-gray-800 p-4 rounded-lg h-[300px] overflow-y-auto space-y-3">
-        {messages.length === 0 && (
-          <p className="text-gray-400 text-center">
-            ここに会話が表示されます。
-          </p>
+    <main className="h-screen w-full bg-[#111] text-white overflow-hidden flex">
+      {/* 左ドロワー */}
+      <AnimatePresence>
+        {leftOpen && (
+          <>
+            <div
+              className="fixed inset-0 bg-black/50 lg:hidden z-40"
+              onClick={closeLeft}
+            />
+            <motion.aside
+              initial={{ x: -320, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -320, opacity: 0 }}
+              transition={drawerTransition}
+              className="fixed lg:static z-50 top-0 left-0 h-full w-[280px] bg-[#1a1a1a] border-r border-gray-800 p-4 flex flex-col"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold">チャット</h2>
+                <button
+                  onClick={closeLeft}
+                  className="lg:hidden text-gray-400 hover:text-gray-200"
+                >
+                  ✕
+                </button>
+              </div>
+              <button
+                onClick={handleNewChat}
+                className="mt-3 mb-4 w-full px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm"
+              >
+                + 新しいチャット
+              </button>
+              <div className="flex-1 overflow-y-auto space-y-2 text-sm">
+                {chats.map((c) => (
+                  <div
+                    key={c.id}
+                    onClick={() => {
+                      setCurrentChatId(c.id);
+                      setMessages(c.messages);
+                      closeLeft();
+                    }}
+                    className={`cursor-pointer rounded px-2 py-2 ${
+                      currentChatId === c.id
+                        ? "bg-blue-700"
+                        : "bg-gray-800/60 hover:bg-gray-700/70"
+                    }`}
+                  >
+                    <p className="truncate text-sm font-medium">{c.title}</p>
+                  </div>
+                ))}
+              </div>
+            </motion.aside>
+          </>
         )}
-        {messages.map((m, i) => (
-          <div key={i}>
-            <p className="text-blue-400 font-semibold">あなた：</p>
-            <p className="mb-2">{m.user}</p>
-            <p className="text-pink-400 font-semibold">シグマリス：</p>
-            <p className="mb-2 whitespace-pre-line">{m.ai}</p>
-          </div>
-        ))}
-      </div>
+      </AnimatePresence>
 
-      {/* 入力欄 */}
-      <div className="flex gap-2 w-full max-w-2xl mb-4">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSend()}
-          className="flex-grow px-3 py-2 rounded bg-gray-800 focus:outline-none"
-          placeholder="メッセージを入力..."
-        />
-        <button
-          onClick={handleSend}
-          disabled={loading}
-          className="px-4 py-2 bg-blue-500 rounded hover:bg-blue-600 disabled:opacity-50"
-        >
-          {loading ? "..." : "Send"}
-        </button>
-        <button
-          onClick={handleReflect}
-          disabled={reflecting}
-          className="px-4 py-2 bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {reflecting ? "Reflecting..." : "Reflect Now"}
-        </button>
-      </div>
-
-      {/* パネル切替 */}
-      <div className="flex gap-2 mb-4">
-        {["persona", "graph", "history", "reflection", "introspection"].map(
-          (v) => (
+      {/* 中央チャット */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="flex items-center justify-between px-4 lg:px-6 py-3 border-b border-gray-800 bg-[#111]">
+          <div className="flex items-center gap-2">
             <button
-              key={v}
-              onClick={() => setView(v as any)}
-              className={`px-3 py-1 rounded ${
-                view === v ? "bg-blue-600" : "bg-gray-700"
-              }`}
+              onClick={toggleLeft}
+              className="px-2 py-1 rounded hover:bg-gray-800"
             >
-              {v.charAt(0).toUpperCase() + v.slice(1)}
+              ☰
             </button>
-          )
-        )}
+            <h1 className="text-lg font-semibold">Sigmaris Studio</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="hidden sm:block text-xs text-gray-400">
+              Model: <span className="text-blue-400">{modelUsed}</span>
+            </span>
+            <button
+              onClick={toggleRight}
+              className="px-2 py-1 rounded hover:bg-gray-800"
+            >
+              🧠
+            </button>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-4 lg:px-6 py-4 space-y-4 custom-scroll">
+          {messages.length === 0 ? (
+            <p className="text-gray-500 text-center mt-20">
+              ここに会話が表示されます。
+            </p>
+          ) : (
+            messages.map((m, i) => (
+              <div key={i} className="space-y-1">
+                <div className="flex justify-end">
+                  <div className="max-w-[80%] bg-blue-600 text-white rounded-2xl px-4 py-2 shadow-md whitespace-pre-line">
+                    {m.user}
+                  </div>
+                </div>
+                <div className="flex justify-start">
+                  <div className="max-w-[80%] bg-gray-800 text-gray-100 rounded-2xl px-4 py-2 shadow-md whitespace-pre-line">
+                    {m.ai}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <footer className="border-t border-gray-800 p-3 flex items-center gap-2 bg-[#0d0d0d]">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSend()}
+            placeholder="メッセージを入力..."
+            className="flex-grow bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+          />
+          <button
+            onClick={handleSend}
+            disabled={loading}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm disabled:opacity-50"
+          >
+            {loading ? "..." : "Send"}
+          </button>
+          <button
+            onClick={handleReflect}
+            disabled={reflecting}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-sm disabled:opacity-50"
+          >
+            {reflecting ? "Reflecting..." : "Reflect"}
+          </button>
+        </footer>
       </div>
 
-      {/* === パネル描画 === */}
-      <div className="w-full max-w-2xl">
-        <AnimatePresence mode="wait">
-          {view === "persona" && (
-            <motion.div
-              key="persona"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-            >
+      {/* 右ドロワー */}
+      <AnimatePresence>
+        {rightOpen && (
+          <motion.aside
+            initial={{ x: 320, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 320, opacity: 0 }}
+            transition={drawerTransition}
+            className="fixed lg:static z-50 right-0 h-full w-[300px] bg-[#1a1a1a] border-l border-gray-800 p-4 overflow-y-auto custom-scroll"
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">Sigmaris Mind</h2>
+              <button onClick={closeRight} className="lg:hidden text-gray-400">
+                ✕
+              </button>
+            </div>
+            <div className="mt-3">
+              <EmotionBadge tone="Current Tone" color={toneColor} />
+            </div>
+            <div className="mt-4 space-y-6">
+              <SafetyIndicator
+                message={safetyFlag ? safetyFlag : "Stable"}
+                level={safetyFlag ? "notice" : "ok"}
+              />
               <PersonaPanel traits={traits} />
-            </motion.div>
-          )}
-          {view === "graph" && (
-            <motion.div
-              key="graph"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-            >
               <TraitVisualizer key={graphData.length} data={graphData} />
-            </motion.div>
-          )}
-          {view === "history" && (
-            <motion.div
-              key="history"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-            >
-              <HistoryPanel messages={messages} />
-            </motion.div>
-          )}
-          {view === "reflection" && (
-            <motion.div
-              key="reflection"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-            >
               <ReflectionPanel
                 reflection={reflectionText}
-                introspection={introspectionText}
                 metaSummary={metaSummary}
               />
-            </motion.div>
-          )}
-          {view === "introspection" && (
-            <motion.div
-              key="introspection"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-            >
-              <IntrospectionPanel
-                introspection={introspectionText}
-                metaSummary={metaSummary}
+              <StatePanel
+                traits={traits}
+                reflection={reflectionText}
+                metaReflection={metaSummary}
+                safetyFlag={safetyFlag}
               />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      <div className="mt-6">
-        <SafetyIndicator
-          message={safetyFlag ? safetyFlag : "Stable"}
-          level={safetyFlag ? "notice" : "ok"}
-        />
-      </div>
-
-      <div className="mt-6">
-        <StatePanel
-          traits={traits}
-          reflection={reflectionText}
-          metaReflection={metaSummary}
-          safetyFlag={safetyFlag}
-        />
-      </div>
-
-      <div className="mt-6">
-        <EunoiaMeter traits={traits} safety={safetyReport} />
-      </div>
+              <EunoiaMeter traits={traits} safety={safetyReport} />
+            </div>
+          </motion.aside>
+        )}
+      </AnimatePresence>
     </main>
   );
 }

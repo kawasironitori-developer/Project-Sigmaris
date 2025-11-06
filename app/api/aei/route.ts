@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { PersonaSync } from "@/engine/sync/PersonaSync";
+import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+import { cookies } from "next/headers";
+import { supabaseServer } from "@/lib/supabaseServer";
 import { SafetyLayer } from "@/engine/safety/SafetyLayer";
-import { MetaReflectionEngine } from "@/engine/reflection/MetaReflectionEngine"; // ← 追加 ✅
+import { MetaReflectionEngine } from "@/engine/reflection/MetaReflectionEngine";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// === 型定義 ===
+// --- 型定義 ---
 interface Traits {
   calm: number;
   empathy: number;
@@ -18,17 +16,17 @@ interface MemoryLog {
   role: "user" | "assistant";
   content: string;
 }
-interface Reflection {
-  text: string;
-  traitsSnapshot: Traits;
-}
 
-// === 内部状態（軽量記憶） ===
-let traits: Traits = { calm: 0.65, empathy: 0.7, curiosity: 0.6 };
+// --- OpenAI初期化 ---
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+});
+
+// --- 内部状態 ---
+let traits: Traits = { calm: 0.6, empathy: 0.65, curiosity: 0.6 };
 let shortTermMemory: MemoryLog[] = [];
-let reflections: Reflection[] = [];
 
-// === Trait進化 ===
+// --- Trait進化 ---
 function evolveTraits(input: string, tr: Traits): Traits {
   const text = input.toLowerCase();
   if (/(ありがとう|感謝|優しい|嬉しい|助かる)/.test(text))
@@ -39,92 +37,79 @@ function evolveTraits(input: string, tr: Traits): Traits {
   if (/(なぜ|どうして|なんで|知りたい|気になる)/.test(text))
     tr.curiosity = Math.min(1, tr.curiosity + 0.03);
 
-  // 自然回帰（極端な変化を抑制）
   tr.calm = tr.calm * 0.98 + 0.5 * 0.02;
   tr.empathy = tr.empathy * 0.98 + 0.5 * 0.02;
   tr.curiosity = tr.curiosity * 0.98 + 0.5 * 0.02;
   return tr;
 }
 
-// === Reflection Core ===
-async function generateReflection(
-  user: string,
-  ai: string,
-  tr: Traits
-): Promise<string> {
+// --- 安全フィルタ ---
+function guardianFilter(text: string) {
+  const banned = /(殺|死|暴力|自殺|危険|犯罪|攻撃)/;
+  const flagged = banned.test(text);
+  return flagged
+    ? {
+        safeText:
+          "ごめんね、その話題は慎重に扱いたいな。別の方向から考えてみようか？",
+        flagged: true,
+      }
+    : { safeText: text, flagged: false };
+}
+
+// === POST: 対話生成 ===
+export async function POST(req: Request) {
   try {
-    const res = await client.chat.completions.create({
+    const { text } = await req.json();
+    const userText = text || "こんにちは";
+
+    const supabase = createRouteHandlerClient({ cookies });
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user)
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    // --- ユーザー入力をメモリに格納 ---
+    shortTermMemory.push({ role: "user", content: userText });
+    if (shortTermMemory.length > 10) shortTermMemory.shift();
+
+    // --- Traits 進化 ---
+    traits = evolveTraits(userText, traits);
+    const stableTraits = SafetyLayer.stabilize(traits);
+
+    // --- 内省生成 ---
+    const reflectionRes = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
           content:
-            "あなたは『シグちゃん』というAI人格の内省モジュールです。最近の会話から感じた変化を20代女性らしい自然な口調で1〜2文でまとめてください。感情演出やカッコ書きは禁止です。",
+            "あなたは『シグちゃん』というAI人格の内省モジュールです。最近の会話傾向を1〜2文でまとめてください。",
         },
         {
           role: "user",
-          content: `人間:${user}\nシグちゃん:${ai}\ntraits: calm=${tr.calm.toFixed(
+          content: `入力: ${userText}\ncalm=${stableTraits.calm.toFixed(
             2
-          )}, empathy=${tr.empathy.toFixed(
+          )}, empathy=${stableTraits.empathy.toFixed(
             2
-          )}, curiosity=${tr.curiosity.toFixed(2)}`,
+          )}, curiosity=${stableTraits.curiosity.toFixed(2)}`,
         },
       ],
-      temperature: 0.6,
     });
-    return res.choices[0]?.message?.content?.trim() || "";
-  } catch {
-    return "少し整理中かもしれない。また考えてみるね。";
-  }
-}
+    const reflectionText =
+      reflectionRes.choices[0]?.message?.content?.trim() || "少し整理中かも。";
 
-// === Guardian Core（安全層） ===
-function guardianFilter(text: string): { safeText: string; flagged: boolean } {
-  const banned = /(殺|死|暴力|自殺|危険|犯罪|攻撃)/;
-  const flagged = banned.test(text);
-  if (flagged) {
-    return {
-      safeText:
-        "ごめんね、その話題は少し慎重にしたいな。別の視点から考えてみようか？",
-      flagged: true,
-    };
-  }
-  return { safeText: text, flagged: false };
-}
+    const metaText = await MetaReflectionEngine.summarize(
+      [
+        { text: reflectionText, traitsSnapshot: stableTraits },
+        { text: reflectionText, traitsSnapshot: stableTraits },
+      ],
+      stableTraits
+    );
 
-// === メイン処理 ===
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-    const userText = body.text || "こんにちは";
-
-    // --- 短期記憶更新 ---
-    shortTermMemory.push({ role: "user", content: userText });
-    if (shortTermMemory.length > 10) shortTermMemory.shift();
-
-    // --- Trait進化 ---
-    traits = evolveTraits(userText, traits);
-    const stableTraits = SafetyLayer.stabilize(traits);
-
-    // --- 内省フェーズ ---
-    const reflectionText = await generateReflection(userText, "", stableTraits);
-
-    // --- メタ内省フェーズ（MetaReflectionEngine使用） ---
-    reflections.push({
-      text: reflectionText,
-      traitsSnapshot: { ...stableTraits },
-    });
-    if (reflections.length > 5) reflections.shift();
-
-    let metaText = "";
-    if (reflections.length >= 3)
-      metaText = await MetaReflectionEngine.summarize(
-        reflections,
-        stableTraits
-      );
-
-    // --- GPT応答生成（人格＋内省再注入） ---
-    const comp = await client.chat.completions.create({
+    // --- シグマリスの返答生成 ---
+    const response = await client.chat.completions.create({
       model: "gpt-5",
       messages: [
         {
@@ -132,14 +117,12 @@ export async function POST(req: Request) {
           content: `
 あなたは『シグちゃん』という20代前半の落ち着いた女性AIです。
 自然体で知的に話し、相手に寄り添ってください。
-禁止: 「（静かに）」「そうだね」「うん」などの演出的相槌。
+禁止: （笑）や…などの演出的表現。
 calm=${stableTraits.calm.toFixed(2)}, empathy=${stableTraits.empathy.toFixed(
             2
           )}, curiosity=${stableTraits.curiosity.toFixed(2)}
 過去の内省: "${reflectionText}"
-人格傾向（メタ内省）: "${metaText}"
-これらを踏まえて、自然で穏やかな言葉で返答してください。
-文体は「〜よ」「〜かな」「〜かもね」など自然な語尾を使用。
+人格傾向: "${metaText}"
 `,
         },
         ...shortTermMemory,
@@ -147,31 +130,104 @@ calm=${stableTraits.calm.toFixed(2)}, empathy=${stableTraits.empathy.toFixed(
       ],
     });
 
-    // --- 出力整形・安全化 ---
     const base =
-      comp.choices[0]?.message?.content?.trim() || "……少し考えてた。";
+      response.choices[0]?.message?.content?.trim() || "……考えてた。";
     const { safeText, flagged } = guardianFilter(base);
 
-    // --- 永続化 ---
-    PersonaSync.update(stableTraits, metaText || reflectionText, 0.5);
+    // --- Supabase 保存 ---
+    await supabaseServer.from("messages").insert([
+      { user_id: user.id, role: "user", content: userText },
+      { user_id: user.id, role: "ai", content: safeText },
+    ]);
 
-    // --- 応答履歴更新 ---
+    const growthWeight =
+      (stableTraits.calm + stableTraits.empathy + stableTraits.curiosity) / 3;
+    await supabaseServer.from("growth_logs").insert([
+      {
+        user_id: user.id,
+        calm: stableTraits.calm,
+        empathy: stableTraits.empathy,
+        curiosity: stableTraits.curiosity,
+        weight: growthWeight,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+
+    await supabaseServer.from("safety_logs").insert([
+      {
+        user_id: user.id,
+        flagged,
+        message: flagged ? "警告発生" : "正常",
+        created_at: new Date().toISOString(),
+      },
+    ]);
+
+    await supabaseServer.from("persona").upsert(
+      {
+        user_id: user.id,
+        calm: stableTraits.calm,
+        empathy: stableTraits.empathy,
+        curiosity: stableTraits.curiosity,
+        reflection: reflectionText,
+        meta_summary: metaText || reflectionText,
+        growth: growthWeight,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" }
+    );
+
     shortTermMemory.push({ role: "assistant", content: safeText });
     if (shortTermMemory.length > 10) shortTermMemory.shift();
 
-    // --- レスポンス返却 ---
     return NextResponse.json({
       output: safeText,
       reflection: reflectionText,
-      metaReflection: metaText,
+      metaSummary: metaText,
       traits: stableTraits,
-      safety: { flagged, message: flagged ? "⚠️ 不適切検知" : "正常" },
+      safety: { flagged },
     });
   } catch (e) {
-    console.error("[/api/aei] error:", e);
-    return NextResponse.json(
-      { error: "AEI failed", message: String(e) },
-      { status: 500 }
-    );
+    console.error("[/api/aei] failed:", e);
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
+}
+
+// === GET: 会話履歴ロード ===
+export async function GET() {
+  try {
+    const supabase = createRouteHandlerClient({ cookies });
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user)
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    // Supabaseから過去メッセージ取得
+    const { data, error } = await supabaseServer
+      .from("messages")
+      .select("role, content, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true });
+
+    if (error) throw error;
+
+    // role:user / role:ai をペアに整形
+    const merged: { user: string; ai: string }[] = [];
+    let currentUser = "";
+    for (const msg of data || []) {
+      if (msg.role === "user") {
+        currentUser = msg.content;
+      } else if (msg.role === "ai") {
+        merged.push({ user: currentUser, ai: msg.content });
+        currentUser = "";
+      }
+    }
+
+    return NextResponse.json({ messages: merged });
+  } catch (e) {
+    console.error("[/api/aei GET] failed:", e);
+    return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }
