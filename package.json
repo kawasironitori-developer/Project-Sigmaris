@@ -2,12 +2,15 @@
   "name": "sigmaris-studio",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
+  "dev": "next dev",
+  "build": "next build",
+  "start": "next start",
+  "lint": "eslint",
+  "meta": "node --loader ts-node/esm tools/buildMetaProject.ts"
+},
+
   "dependencies": {
     "better-sqlite3": "^12.4.1",
     "framer-motion": "^12.23.24",
@@ -17,15 +20,17 @@
     "react-dom": "19.2.0",
     "recharts": "^3.3.0"
   },
+
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^20",
+    "@types/node": "^20.19.24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.0.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }
