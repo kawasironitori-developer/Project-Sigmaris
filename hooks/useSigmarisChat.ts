@@ -54,6 +54,10 @@ export function useSigmarisChat() {
   const [growthLog, setGrowthLog] = useState<any[]>([]);
   const [reflectionText, setReflectionText] = useState("");
   const [metaSummary, setMetaSummary] = useState("");
+  // ★ 英語キャッシュ（DBは日本語のまま）
+  const [reflectionTextEn, setReflectionTextEn] = useState("");
+  const [metaSummaryEn, setMetaSummaryEn] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [reflecting, setReflecting] = useState(false);
   const [modelUsed, setModelUsed] = useState("AEI-Core");
@@ -142,6 +146,9 @@ export function useSigmarisChat() {
             timestamp: data.updated_at,
           },
         ]);
+        // 初回は英語空でOK（Reflect時に生成）
+        setReflectionTextEn("");
+        setMetaSummaryEn("");
       } catch (err) {
         console.error("Persona load failed:", err);
       }
@@ -158,6 +165,7 @@ export function useSigmarisChat() {
     setLoading(true);
 
     try {
+      // 1) 日本語で送信
       const res = await fetch("/api/aei", {
         method: "POST",
         headers: {
@@ -180,11 +188,13 @@ export function useSigmarisChat() {
         empathyLevel: traits.empathy,
       });
 
+      // 2) 双方向を英訳（UI切替用キャッシュ）
       const [userEn, aiEn] = await Promise.all([
         translateToEnglish(userMessage),
         translateToEnglish(aiText),
       ]);
 
+      // 3) 両言語を保存
       const updatedMessages = [
         ...tempMessages.slice(0, -1),
         { user: userMessage, ai: aiText, user_en: userEn, ai_en: aiEn },
@@ -192,6 +202,7 @@ export function useSigmarisChat() {
       setMessages(updatedMessages);
       await loadSessions();
 
+      // 4) 付随情報を反映（DBは日本語）
       if (data.traits) setTraits(data.traits);
       if (data.reflection) setReflectionText(data.reflection);
       if (data.metaSummary) setMetaSummary(data.metaSummary);
@@ -203,7 +214,7 @@ export function useSigmarisChat() {
     }
   };
 
-  // ====== Reflect（翻訳キャッシュ対応版） ======
+  // ====== Reflect（英訳キャッシュ生成 & 出し分け） ======
   const handleReflect = async () => {
     if (!currentChatId) return;
     setReflecting(true);
@@ -219,7 +230,7 @@ export function useSigmarisChat() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Reflect API error");
 
-      // 日本語ベースの内省とメタ内省を取得
+      // 日本語ベースの内省とメタ内省
       const reflectionJa = data.reflection || "";
       const metaJa = data.metaSummary || "";
 
@@ -229,7 +240,11 @@ export function useSigmarisChat() {
         translateToEnglish(metaJa),
       ]);
 
-      // 言語トグルに応じて反映
+      // キャッシュ保持
+      setReflectionTextEn(reflectionEn);
+      setMetaSummaryEn(metaEn);
+
+      // 表示は言語に応じて
       setReflectionText(lang === "en" ? reflectionEn : reflectionJa);
       setMetaSummary(lang === "en" ? metaEn : metaJa);
 
@@ -241,6 +256,21 @@ export function useSigmarisChat() {
       setReflecting(false);
     }
   };
+
+  // ====== 言語切替時に表示を即時反映 ======
+  useEffect(() => {
+    // 既にキャッシュがある場合は切替、無ければ既存（日本語）を優先
+    if (lang === "en") {
+      if (reflectionTextEn) setReflectionText(reflectionTextEn);
+      if (metaSummaryEn) setMetaSummary(metaSummaryEn);
+    } else {
+      // 日本語は常に保持している想定
+      // （ここでは set* を呼ばなくても良いが、差分がある場合に備え反映可能に）
+      // setReflectionText(reflectionText); // 現状のままでOK
+      // setMetaSummary(metaSummary);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang, reflectionTextEn, metaSummaryEn]);
 
   // ====== 新規チャット ======
   const handleNewChat = () => {
