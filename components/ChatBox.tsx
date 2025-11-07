@@ -39,7 +39,7 @@ export default function ChatBox({ onSend, messages, loading }: ChatBoxProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           className="flex-1 px-3 py-2 rounded bg-neutral-800 text-white outline-none focus:ring-2 focus:ring-teal-500"
-          placeholder="メッセージを入力..."
+          placeholder="type your message..."
         />
         <button
           type="submit"

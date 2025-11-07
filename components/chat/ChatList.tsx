@@ -47,7 +47,7 @@ export default function ChatList({
           >
             {/* ヘッダー */}
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold">チャット履歴</h2>
+              <h2 className="text-base font-semibold">Conversation History</h2>
               <button
                 onClick={onClose}
                 className="lg:hidden text-gray-400 hover:text-gray-200"
@@ -61,14 +61,14 @@ export default function ChatList({
               onClick={onNewChat}
               className="mt-3 mb-4 w-full px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-sm"
             >
-              + 新しいチャット
+              + New Chat
             </button>
 
             {/* チャット一覧 */}
             <div className="flex-1 overflow-y-auto space-y-2 text-sm">
               {chats.length === 0 ? (
                 <div className="text-gray-500 text-sm px-2">
-                  まだ履歴がありません。
+                  No chats yet. Click "New Chat" to start!
                 </div>
               ) : (
                 chats.map((c) => (
@@ -133,11 +133,11 @@ export default function ChatList({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (confirm(`「${c.title}」を削除しますか？`)) {
+                              if (confirm(`「${c.title}」delete this chat?`)) {
                                 onDelete(c.id);
                               }
                             }}
-                            title="スレッドを削除"
+                            title="Delete Thread"
                             className="text-xs text-gray-400 hover:text-red-400"
                           >
                             🗑

@@ -1,29 +1,52 @@
 "use client";
 
 interface ReflectionPanelProps {
-  reflection: string;
+  reflection?: string;
   introspection?: string;
   metaSummary?: string;
+  lang?: "ja" | "en";
 }
 
 export default function ReflectionPanel({
   reflection,
   introspection,
   metaSummary,
+  lang = "en",
 }: ReflectionPanelProps) {
+  // ==== ラベル辞書 ====
+  const labels = {
+    reflection: {
+      ja: "🪞 振り返り",
+      en: "🪞 Reflection",
+    },
+    introspection: {
+      ja: "🧠 内省",
+      en: "🧠 Introspection",
+    },
+    meta: {
+      ja: "🌌 自己理解（メタ内省）",
+      en: "🌌 Meta-Reflection",
+    },
+    noRecord: {
+      ja: "（まだ記録はありません）",
+      en: "(No records yet)",
+    },
+  };
+
+  // ==== セクション構成 ====
   const sections = [
     {
-      label: "🪞 Reflection（振り返り）",
+      label: lang === "ja" ? labels.reflection.ja : labels.reflection.en,
       text: reflection,
       color: "text-blue-300",
     },
     {
-      label: "🧠 Introspection（内省）",
+      label: lang === "ja" ? labels.introspection.ja : labels.introspection.en,
       text: introspection,
       color: "text-emerald-300",
     },
     {
-      label: "🌌 Meta-Reflection（自己理解）",
+      label: lang === "ja" ? labels.meta.ja : labels.meta.en,
       text: metaSummary,
       color: "text-purple-300",
     },
@@ -37,7 +60,9 @@ export default function ReflectionPanel({
           <p className="whitespace-pre-wrap text-gray-100 mt-1">
             {s.text && s.text.trim().length > 0
               ? s.text
-              : "（まだ記録はありません）"}
+              : lang === "ja"
+              ? labels.noRecord.ja
+              : labels.noRecord.en}
           </p>
         </div>
       ))}

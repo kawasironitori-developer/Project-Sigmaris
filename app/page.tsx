@@ -14,8 +14,11 @@ import { EmotionBadge } from "@/ui/EmotionBadge";
 
 export default function Home() {
   // ====== UI制御 ======
-  const [leftOpen, setLeftOpen] = useState(false); // 初期クローズ
-  const [rightOpen, setRightOpen] = useState(false); // 初期クローズ
+  const [leftOpen, setLeftOpen] = useState(false);
+  const [rightOpen, setRightOpen] = useState(false);
+  const [lang, setLang] = useState<"ja" | "en">("en"); // 🌐 言語トグル
+  const toggleLang = () => setLang((prev) => (prev === "ja" ? "en" : "ja"));
+
   const toggleLeft = () => setLeftOpen((v) => !v);
   const toggleRight = () => setRightOpen((v) => !v);
   const closeLeft = () => setLeftOpen(false);
@@ -48,22 +51,18 @@ export default function Home() {
     handleRenameChat,
   } = useSigmarisChat();
 
-  // ====== 初回マウント時に自動で新規チャット作成（入力を最初から有効にする） ======
+  // ====== 初回マウント時にチャット作成 ======
   useEffect(() => {
-    if (!currentChatId) {
-      handleNewChat();
-    }
+    if (!currentChatId) handleNewChat();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // 初回のみ
+  }, []);
 
-  // ====== currentChatId が無い場合でも送信可能にするスマート送信 ======
+  // ====== Smart Send ======
   const handleSmartSend = useCallback(async () => {
     if (!input?.trim()) return;
     let chatId = currentChatId;
     if (!chatId) {
-      await handleNewChat(); // 先にチャットを作る
-      // フック側が state 反映するまでのタイムラグを吸収
-      // 次ティックで送る
+      await handleNewChat();
       setTimeout(() => handleSend(), 0);
       return;
     }
@@ -73,11 +72,17 @@ export default function Home() {
   // ====== Safety Flag ======
   const safetyFlag: string | false =
     traits.calm < 0.3 && traits.curiosity > 0.7
-      ? "思考過熱"
+      ? lang === "ja"
+        ? "思考過熱"
+        : "Overthinking"
       : traits.empathy < 0.3 && traits.calm < 0.3
-      ? "情動低下"
+      ? lang === "ja"
+        ? "情動低下"
+        : "Emotional Decline"
       : traits.calm > 0.9 && traits.empathy > 0.9
-      ? "過安定（感情変化が鈍化）"
+      ? lang === "ja"
+        ? "過安定（感情変化が鈍化）"
+        : "Overstability (Low Variance)"
       : false;
 
   const toneColor =
@@ -137,7 +142,9 @@ export default function Home() {
         <div className="flex-1 overflow-y-auto px-4 lg:px-6 py-4 space-y-4">
           {messages.length === 0 ? (
             <p className="text-gray-500 text-center mt-20">
-              ここに会話が表示されます。
+              {lang === "ja"
+                ? "ここに会話が表示されます。"
+                : "Your conversation will appear here."}
             </p>
           ) : (
             messages.map((m, i) => (
@@ -164,7 +171,9 @@ export default function Home() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSmartSend()}
-            placeholder="メッセージを入力..."
+            placeholder={
+              lang === "ja" ? "メッセージを入力..." : "Type your message..."
+            }
             className="flex-grow bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
           />
           <button
@@ -172,14 +181,20 @@ export default function Home() {
             disabled={loading}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm disabled:opacity-50"
           >
-            {loading ? "..." : "Send"}
+            {loading ? "..." : lang === "ja" ? "送信" : "Send"}
           </button>
           <button
             onClick={handleReflect}
             disabled={reflecting || !currentChatId}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-sm disabled:opacity-50"
           >
-            {reflecting ? "Reflecting..." : "Reflect"}
+            {reflecting
+              ? lang === "ja"
+                ? "内省中..."
+                : "Reflecting..."
+              : lang === "ja"
+              ? "内省"
+              : "Reflect"}
           </button>
         </footer>
       </div>
@@ -196,34 +211,61 @@ export default function Home() {
           >
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold">Sigmaris Mind</h2>
-              <button
-                onClick={closeRight}
-                className="lg:hidden text-gray-400"
-                aria-label="Close right panel"
-              >
-                ✕
-              </button>
+
+              <div className="flex items-center gap-2">
+                {/* 🌐 言語トグルボタン */}
+                <button
+                  onClick={toggleLang}
+                  className="text-xs border border-gray-600 rounded px-2 py-1 hover:bg-gray-800 transition"
+                >
+                  {lang === "ja" ? "EN" : "JP"}
+                </button>
+
+                <button
+                  onClick={closeRight}
+                  className="lg:hidden text-gray-400"
+                  aria-label="Close right panel"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
+
             <div className="mt-3">
-              <EmotionBadge tone="Current Tone" color={toneColor} />
+              <EmotionBadge
+                tone={lang === "ja" ? "現在のトーン" : "Current Tone"}
+                color={toneColor}
+              />
             </div>
+
             <div className="mt-4 space-y-6">
               <SafetyIndicator
-                message={safetyFlag ? safetyFlag : "Stable"}
+                message={
+                  safetyFlag ? safetyFlag : lang === "ja" ? "安定" : "Stable"
+                }
                 level={safetyFlag ? "notice" : "ok"}
               />
+
               <PersonaPanel traits={traits} />
+
               <TraitVisualizer key={graphData.length} data={graphData} />
+
+              {/* ReflectionPanel に言語を渡す */}
               <ReflectionPanel
                 reflection={reflectionText}
                 metaSummary={metaSummary}
+                lang={lang}
               />
+
+              {/* StatePanel にも言語を渡す */}
               <StatePanel
                 traits={traits}
                 reflection={reflectionText}
                 metaReflection={metaSummary}
                 safetyFlag={safetyFlag}
+                lang={lang}
               />
+
               <EunoiaMeter traits={traits} safety={safetyReport} />
             </div>
           </motion.aside>

@@ -32,11 +32,11 @@ export default function PersonaChart() {
   }, []);
 
   if (!data.length)
-    return <p className="text-center text-gray-400">データを読み込み中...</p>;
+    return <p className="text-center text-gray-400">Loading data...</p>;
 
   return (
     <div className="w-full h-96 p-4 bg-neutral-900 rounded-2xl shadow-lg">
-      <h2 className="text-white text-lg mb-2">シグちゃん成長ログ</h2>
+      <h2 className="text-white text-lg mb-2">Sigmaris Growth Log</h2>
       <ResponsiveContainer width="100%" height="90%">
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#333" />

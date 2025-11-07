@@ -4,9 +4,12 @@ import { v4 as uuidv4 } from "uuid";
 import { applyEunoiaTone } from "@/lib/eunoia";
 import type { SafetyReport } from "@/engine/safety/SafetyLayer";
 
+// ===== 型定義 =====
 interface Message {
   user: string;
   ai: string;
+  user_en?: string;
+  ai_en?: string;
 }
 interface Trait {
   calm: number;
@@ -20,6 +23,23 @@ interface ChatSession {
   lastMessage?: string;
   updatedAt?: string;
   messageCount?: number;
+}
+
+// ===== 翻訳関数 =====
+async function translateToEnglish(text: string): Promise<string> {
+  if (!text?.trim()) return "";
+  try {
+    const res = await fetch("/api/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, targetLang: "en" }),
+    });
+    const data = await res.json();
+    return data.translation || text;
+  } catch (err) {
+    console.error("Translation failed:", err);
+    return text;
+  }
 }
 
 export function useSigmarisChat() {
@@ -40,6 +60,7 @@ export function useSigmarisChat() {
   const [safetyReport, setSafetyReport] = useState<SafetyReport | undefined>();
   const [chats, setChats] = useState<ChatSession[]>([]);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [lang, setLang] = useState<"ja" | "en">("ja"); // 言語モード
 
   // ====== セッション一覧 ======
   const loadSessions = useCallback(async () => {
@@ -59,12 +80,11 @@ export function useSigmarisChat() {
       );
       setChats(supabaseChats);
 
-      // --- 前回の選択状態を復元 ---
       if (typeof window !== "undefined") {
         const persisted = localStorage.getItem("sigmaris_current_session");
         const stillExists = supabaseChats.find((c) => c.id === persisted);
         if (!currentChatId) {
-          if (persisted && stillExists) setCurrentChatId(persisted);
+          if (persisted && stillExists) setCurrentChatId(persisted as string);
           else if (supabaseChats.length > 0)
             setCurrentChatId(supabaseChats[0].id);
         }
@@ -94,8 +114,9 @@ export function useSigmarisChat() {
   useEffect(() => {
     if (!currentChatId) return;
     loadMessages(currentChatId);
-    if (typeof window !== "undefined")
+    if (typeof window !== "undefined") {
       localStorage.setItem("sigmaris_current_session", currentChatId);
+    }
   }, [currentChatId, loadMessages]);
 
   // ====== ペルソナロード ======
@@ -127,7 +148,7 @@ export function useSigmarisChat() {
     })();
   }, []);
 
-  // ====== メッセージ送信 ======
+  // ====== メッセージ送信（日英翻訳対応） ======
   const handleSend = async () => {
     if (!input.trim() || !currentChatId) return;
     const userMessage = input.trim();
@@ -159,12 +180,17 @@ export function useSigmarisChat() {
         empathyLevel: traits.empathy,
       });
 
+      const [userEn, aiEn] = await Promise.all([
+        translateToEnglish(userMessage),
+        translateToEnglish(aiText),
+      ]);
+
       const updatedMessages = [
         ...tempMessages.slice(0, -1),
-        { user: userMessage, ai: aiText },
+        { user: userMessage, ai: aiText, user_en: userEn, ai_en: aiEn },
       ];
       setMessages(updatedMessages);
-      await loadSessions(); // 送信後にセッション更新
+      await loadSessions();
 
       if (data.traits) setTraits(data.traits);
       if (data.reflection) setReflectionText(data.reflection);
@@ -177,7 +203,7 @@ export function useSigmarisChat() {
     }
   };
 
-  // ====== Reflect ======
+  // ====== Reflect（翻訳キャッシュ対応版） ======
   const handleReflect = async () => {
     if (!currentChatId) return;
     setReflecting(true);
@@ -192,8 +218,21 @@ export function useSigmarisChat() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Reflect API error");
-      setReflectionText(data.reflection || "");
-      setMetaSummary(data.metaSummary || "");
+
+      // 日本語ベースの内省とメタ内省を取得
+      const reflectionJa = data.reflection || "";
+      const metaJa = data.metaSummary || "";
+
+      // 🌐 英訳を生成（DBには保存しない）
+      const [reflectionEn, metaEn] = await Promise.all([
+        translateToEnglish(reflectionJa),
+        translateToEnglish(metaJa),
+      ]);
+
+      // 言語トグルに応じて反映
+      setReflectionText(lang === "en" ? reflectionEn : reflectionJa);
+      setMetaSummary(lang === "en" ? metaEn : metaJa);
+
       setSafetyReport(data.safety || undefined);
       if (data.traits) setTraits(data.traits);
     } catch (err) {
@@ -208,7 +247,7 @@ export function useSigmarisChat() {
     const newId = uuidv4();
     const newChat: ChatSession = {
       id: newId,
-      title: `チャット ${chats.length + 1}`,
+      title: `Chat ${chats.length + 1}`,
       messages: [],
     };
     setChats((prev) => [newChat, ...prev]);
@@ -272,6 +311,8 @@ export function useSigmarisChat() {
     reflecting,
     safetyReport,
     modelUsed,
+    lang,
+    setLang, // 言語切替
     handleSend,
     handleReflect,
     handleNewChat,

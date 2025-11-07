@@ -60,7 +60,7 @@ export default function ChatWindow({
         ))}
         {loading && (
           <div className="text-gray-400 text-sm animate-pulse">
-            シグちゃんが考え中…
+            Sigmaris is thinking...
           </div>
         )}
       </div>
@@ -68,7 +68,7 @@ export default function ChatWindow({
       <div className="border-t border-gray-700 p-3 flex bg-gray-800">
         <input
           className="flex-1 bg-gray-700 text-gray-100 rounded-lg px-3 py-2 focus:outline-none"
-          placeholder="メッセージを入力…"
+          placeholder="type your message..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}

@@ -37,7 +37,7 @@ export default function IntrospectionPanel({
           </p>
         ) : (
           <p className="text-sm text-neutral-400">
-            まだ自己観察の記録はないみたい。
+            It seems there are no self-reflection records yet.
           </p>
         )}
 

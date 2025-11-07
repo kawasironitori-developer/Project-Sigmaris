@@ -80,7 +80,7 @@ export default function EunoiaMeter({ traits, safety }: Props) {
       {/* トーン／安全表示 */}
       <div className="mt-4 text-center text-sm text-gray-400 space-y-1">
         <div>
-          現在のトーン：
+          Current Tone：
           <span className="font-semibold" style={{ color }}>
             {traits.empathy > 0.7
               ? "優しい"
