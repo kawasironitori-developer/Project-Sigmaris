@@ -246,7 +246,7 @@ export default function Home() {
                 level={safetyFlag ? "notice" : "ok"}
               />
 
-              <PersonaPanel traits={traits} />
+              {/*<PersonaPanel traits={traits} />*/}
 
               <TraitVisualizer key={graphData.length} data={graphData} />
 
@@ -267,7 +267,7 @@ export default function Home() {
                 lang={lang}
               />
 
-              <EunoiaMeter traits={traits} safety={safetyReport} />
+              {/*<EunoiaMeter traits={traits} safety={safetyReport} />*/}
             </div>
           </motion.aside>
         )}
