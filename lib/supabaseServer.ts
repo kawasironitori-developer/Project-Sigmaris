@@ -13,10 +13,6 @@ import { cookies } from "next/headers";
  * -----------------------------------------
  */
 
-console.log(
-  "🔑 Supabase Auth Session:",
-  cookies ? "SESSION COOKIE LOADED" : "NO COOKIES FOUND"
-);
 
 export const getSupabaseServer = () => {
   const client = createServerComponentClient({ cookies });

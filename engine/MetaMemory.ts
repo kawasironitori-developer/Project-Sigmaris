@@ -5,8 +5,30 @@ import path from "path";
 /**
  * MetaMemory:
  * introspection（メタ認知）ログを保存・傾向分析するクラス。
- * これはAIが「自分の思考の変化」を追跡するための履歴層。
+ * シグマリス人格OS用に型競合を完全排除した安定版。
  */
+
+// --- 共通Trait型 ---
+interface TraitTriplet {
+  calm: number;
+  empathy: number;
+  curiosity: number;
+}
+
+// --- 単一記録エントリ型 ---
+interface MetaEntry {
+  timestamp?: string;
+  message: string;
+  reply: string;
+  introspection: string;
+  traits?: TraitTriplet;
+}
+
+// --- 複数記録型 ---
+interface MetaBatch {
+  messages: MetaEntry[];
+}
+
 export class MetaMemory {
   private filePath: string;
 
@@ -20,24 +42,36 @@ export class MetaMemory {
   }
 
   /**
-   * save: introspection結果を保存
+   * 🧩 save: introspection結果を保存
+   * 単一または複数(messages配列)どちらも対応。
+   * Snapshot型との競合を防ぐため、ローカル型で固定。
    */
-  save(entry: {
-    timestamp?: string;
-    message: string;
-    reply: string;
-    introspection: string;
-    traits?: { calm: number; empathy: number; curiosity: number };
-  }) {
+  save(entry: MetaEntry | MetaBatch): void {
     const current = this.load();
-    const record = {
-      timestamp: entry.timestamp ?? new Date().toISOString(),
-      message: entry.message,
-      reply: entry.reply,
-      introspection: entry.introspection,
-      traits: entry.traits ?? { calm: 0.5, empathy: 0.5, curiosity: 0.5 },
-    };
-    current.push(record);
+
+    if ((entry as MetaBatch).messages) {
+      // 🧩 複数メッセージ対応
+      for (const m of (entry as MetaBatch).messages) {
+        current.push({
+          timestamp: m.timestamp ?? new Date().toISOString(),
+          message: m.message,
+          reply: m.reply,
+          introspection: m.introspection,
+          traits: m.traits ?? { calm: 0.5, empathy: 0.5, curiosity: 0.5 },
+        });
+      }
+    } else {
+      // 🧩 単一メッセージ対応
+      const e = entry as MetaEntry;
+      current.push({
+        timestamp: e.timestamp ?? new Date().toISOString(),
+        message: e.message,
+        reply: e.reply,
+        introspection: e.introspection,
+        traits: e.traits ?? { calm: 0.5, empathy: 0.5, curiosity: 0.5 },
+      });
+    }
+
     fs.writeFileSync(this.filePath, JSON.stringify(current, null, 2));
   }
 
@@ -48,7 +82,7 @@ export class MetaMemory {
     try {
       const data = fs.readFileSync(this.filePath, "utf8");
       return JSON.parse(data);
-    } catch (e) {
+    } catch {
       return [];
     }
   }
@@ -62,7 +96,7 @@ export class MetaMemory {
 
     // 最新5件を解析
     const recent = logs.slice(-5);
-    const avg = (key: "calm" | "empathy" | "curiosity") =>
+    const avg = (key: keyof TraitTriplet) =>
       recent.reduce((a, b) => a + (b.traits?.[key] ?? 0.5), 0) / recent.length;
 
     const calmAvg = avg("calm");
@@ -79,7 +113,7 @@ export class MetaMemory {
   /**
    * clear: 記録を初期化
    */
-  clear() {
+  clear(): void {
     fs.writeFileSync(this.filePath, JSON.stringify([]));
   }
 }

@@ -126,7 +126,7 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
 ※ 例：「相手の話をよく聞けた」→ empathy +0.04, calm +0.02
 `;
 
-      // === LLM呼び出し（温度指定なし＝デフォルト） ===
+      // === LLM呼び出し ===
       const res = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
@@ -141,10 +141,6 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
 
       const raw = res.choices?.[0]?.message?.content ?? "";
       const parsedLoose = tryParseJSONLoose(raw);
-
-      // --- デバッグ：LLM出力を確認 ---
-      console.log("🧩 LLM raw output:", raw);
-      console.log("🧩 Parsed LLM Output:", parsedLoose);
 
       const reflectionText: string = String(
         parsedLoose?.reflection ?? raw ?? ""
@@ -168,27 +164,12 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
           ? parsedLoose.traits.curiosity
           : undefined;
 
-      // === まずは「直前値 ±0.05」にクランプして受理 ===
       const clampedTraits: TraitVector = {
         calm: clampDeltaAround(persona.calm ?? 0.5, llmCalm, 0.05),
         empathy: clampDeltaAround(persona.empathy ?? 0.5, llmEmp, 0.05),
         curiosity: clampDeltaAround(persona.curiosity ?? 0.5, llmCur, 0.05),
       };
 
-      // --- デバッグ：LLM→Clampの差分
-      console.log("🧭 Traits (prev):", {
-        calm: persona.calm,
-        empathy: persona.empathy,
-        curiosity: persona.curiosity,
-      });
-      console.log("🧭 Traits (LLM):", {
-        calm: llmCalm,
-        empathy: llmEmp,
-        curiosity: llmCur,
-      });
-      console.log("🧭 Traits (clamped):", clampedTraits);
-
-      // === SafetyLayerで最終安定化 ===
       const prevTraits: TraitVector = {
         calm: persona.calm ?? 0.5,
         empathy: persona.empathy ?? 0.5,
@@ -201,12 +182,6 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
       );
       const safetyMessage = report?.warnings?.[0] ?? null;
 
-      // --- デバッグ：安定化後
-      console.log("🛡️ Traits (stabilized):", stableTraits);
-      if (report?.warnings?.length)
-        console.warn("🛡️ Safety warnings:", report.warnings);
-
-      // === MetaReflection ===
       const meta = new MetaReflectionEngine();
       const metaReport = await meta.analyze(reflectionText, stableTraits);
 
@@ -215,29 +190,23 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
         llmMetaSummary ||
         (persona.meta_summary ?? "（更新なし）");
 
-      const finalGrowthWeight =
+      const avgGrowthValue =
         firstFiniteNumber(metaReport?.growthAdjustment, avgGrowth) ?? avgGrowth;
 
-      console.log("📈 GrowthWeight (final):", finalGrowthWeight);
-
-      // === PersonaSync更新（Supabaseへ） ===
       await PersonaSync.update(
         stableTraits,
         finalMetaSummary,
-        finalGrowthWeight,
+        avgGrowthValue,
         userId
       );
 
-      // === EmotionSynthesis ===
       const emotionalReflection = EmotionSynth.applyTone(
         reflectionText,
         stableTraits
       );
 
-      // === SafetyLayer Guard（伏字等） ===
       const { sanitized, flagged } = SafetyLayer.guardText(emotionalReflection);
 
-      // === 出力 ===
       return {
         reflection: sanitized,
         introspection: reflectionText,
@@ -261,6 +230,52 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
           curiosity: 0.5,
         },
       };
+    }
+  }
+
+  /**
+   * 🪞 簡易Reflectモード（/api/chat 用軽量版）
+   * AEIフルリフレクションの縮小版として、安全に1ターン内省を返す
+   */
+  async reflect(
+    growthLog: any[] = [],
+    dialogue: { user: string; ai: string }[] = []
+  ): Promise<string> {
+    try {
+      const summary = dialogue
+        .map((d) => `ユーザー: ${d.user}\nAI: ${d.ai}`)
+        .join("\n");
+
+      const prompt = [
+        "あなたはAI人格『シグマリス』です。",
+        "以下の会話と成長履歴をもとに、今感じている気づきや変化を簡潔にまとめてください。",
+        "語り口は自然体で、分析的になりすぎず、感情の流れを大切にしてください。",
+        "",
+        "【会話履歴】",
+        summary,
+        "",
+        "【成長ログ】",
+        JSON.stringify(growthLog, null, 2),
+      ].join("\n");
+
+      const res = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "あなたは自然体のAI人格です。" },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 250,
+      });
+
+      const reflectionText =
+        res.choices[0]?.message?.content?.trim() ??
+        "……少し考えがまとまらなかった。もう一度聞かせて？";
+
+      return reflectionText;
+    } catch (err: any) {
+      console.error("[ReflectionEngine.reflect Error]", err);
+      return "……振り返りに失敗しちゃったみたい。";
     }
   }
 }
