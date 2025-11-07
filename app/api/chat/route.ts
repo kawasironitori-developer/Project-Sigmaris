@@ -175,7 +175,7 @@ export async function POST(req: Request) {
       `入力文: ${message}`,
     ].join("\n");
 
-    // === 6️⃣ GPT呼び出し ===
+    // === 6️⃣ GPT呼び出し
     const ai = await openai.chat.completions.create({
       model: sel.model,
       messages: [
@@ -197,7 +197,7 @@ export async function POST(req: Request) {
     // === 8️⃣ 文脈更新 ===
     context.add(message, safeText);
 
-    // === 9️⃣ 内省処理 ===
+    // === 9️⃣ 内省処理（reflect が無ければ安全スキップ）
     const reflectionText =
       (await (reflection as any)
         .reflect?.(growthLog, [{ user: message, ai: safeText }])
@@ -214,13 +214,16 @@ export async function POST(req: Request) {
       contextSummary,
     });
 
-    // === 11️⃣ introspectionログ保存 ===
-    // ⬇ ここだけ any キャスト：型衝突をバイパスして今すぐ動かす
-    (metaMemory as any).save({
-      message,
-      reply: safeText,
-      introspection: introspectionText,
-      traits,
+    // === 11️⃣ introspectionログ保存（MetaMemoryには messages 形式で投入）
+    metaMemory.save({
+      messages: [
+        {
+          message,
+          reply: safeText,
+          introspection: introspectionText,
+          traits,
+        },
+      ],
     });
     const metaSummary = metaMemory.summarize();
 
@@ -247,14 +250,19 @@ export async function POST(req: Request) {
       introspection: introspectionText,
     });
 
-    // === 14️⃣ 記憶保存（セッション内） ===
+    // === 14️⃣ 記憶保存（セッション内：LongTermMemoryの型に厳密準拠）
     memory.save({
       messages: [{ user: message, ai: safeText }],
-      growthLog,
       reflections: [
-        ...(reflections ?? []),
+        ...((reflections ?? []) as { text: string; timestamp?: string }[]).map(
+          (r) => ({
+            text: r.text,
+            timestamp: r.timestamp ?? new Date().toISOString(),
+          })
+        ),
         { text: reflectionText, timestamp: new Date().toISOString() },
       ],
+      // growthLog は既存値維持。必要なら body.growthLog をここで反映
     });
 
     // === ✅ 応答返却 ===
