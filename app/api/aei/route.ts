@@ -9,6 +9,7 @@ import { MetaReflectionEngine } from "@/engine/meta/MetaReflectionEngine";
 import { PersonaSync } from "@/engine/sync/PersonaSync";
 import { runParallel } from "@/lib/parallelTasks";
 import { flushSessionMemory } from "@/lib/memoryFlush";
+import { guardUsageOrTrial } from "@/lib/guard"; // 🆕 課金・上限ガード
 import type { TraitVector } from "@/lib/traits";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
   try {
     const { text, recent = [], summary = "" } = await req.json();
     const userText = text?.trim() || "こんにちは";
-    // 🟢 UUID固定でセッション維持
+    // 🟢 UUID固定でセッション維持（ヘッダー未指定時は新規発行）
     const sessionId = req.headers.get("x-session-id") || crypto.randomUUID();
 
     // === 認証 ===
@@ -45,6 +46,19 @@ export async function POST(req: Request) {
     } = await supabaseAuth.auth.getUser();
     if (authError || !user)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    // 🛡️ 課金／試用ガード（ここで利用回数もカウント）
+    await guardUsageOrTrial(
+      {
+        id: user.id,
+        email: user.email ?? undefined,
+        plan: (user as any).plan ?? undefined,
+        trial_end: (user as any).trial_end ?? null,
+        is_billing_exempt: (user as any).is_billing_exempt ?? false,
+      },
+      "aei"
+    );
+
     const userId = user.id;
     const supabase = getSupabaseServer();
 

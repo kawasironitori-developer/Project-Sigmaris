@@ -7,8 +7,9 @@ import { getSupabaseServer } from "@/lib/supabaseServer";
 import { ReflectionEngine } from "@/engine/ReflectionEngine";
 import { PersonaSync } from "@/engine/sync/PersonaSync";
 import { summarize } from "@/lib/summary";
-import { runParallel } from "@/lib/parallelTasks"; // 🆕 並列実行
-import { flushSessionMemory } from "@/lib/memoryFlush"; // 🆕 履歴圧縮
+import { runParallel } from "@/lib/parallelTasks"; // 並列実行
+import { flushSessionMemory } from "@/lib/memoryFlush"; // 履歴圧縮
+import { guardUsageOrTrial } from "@/lib/guard"; // 🆕 課金・上限ガード
 import type { TraitVector } from "@/lib/traits";
 import type { MetaReport } from "@/engine/meta/MetaReflectionEngine";
 
@@ -28,6 +29,7 @@ interface ReflectionResult {
  * === POST: Reflection 実行エンドポイント ===
  * - ReflectionEngine → MetaReflectionEngine → PersonaSync（Supabase同期）
  * - summarize + flush を組み込み、高速化・安定化
+ * - 課金／試用ガード（reflect カウント）
  */
 export async function POST(req: Request) {
   try {
@@ -42,10 +44,10 @@ export async function POST(req: Request) {
     const growthLog = body.growthLog ?? [];
     const history = body.history ?? [];
 
-    // === セッションID取得（x-session-id ヘッダー or default）===
-    const sessionId = req.headers.get("x-session-id") || "default-session";
+    // === セッションID（ヘッダー or 新規UUID）===
+    const sessionId = req.headers.get("x-session-id") || crypto.randomUUID();
 
-    // === 認証情報取得 ===
+    // === 認証 ===
     const supabaseAuth = createRouteHandlerClient({ cookies });
     const {
       data: { user },
@@ -57,6 +59,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // 🛡️ 課金／試用ガード（reflect 用）— 型ずれ回避のため軽く正規化
+    const billingUser = {
+      id: user.id,
+      email: (user as any)?.email ?? undefined,
+      plan: (user as any)?.plan ?? undefined,
+      trial_end: (user as any)?.trial_end ?? null,
+      is_billing_exempt: (user as any)?.is_billing_exempt ?? false,
+    };
+    await guardUsageOrTrial(billingUser, "reflect");
+
     const userId = user.id;
     const now = new Date().toISOString();
     console.log("🚀 [ReflectAPI] Start reflection for:", { userId, sessionId });
@@ -66,6 +78,7 @@ export async function POST(req: Request) {
       {
         label: "summary",
         run: async () => {
+          // 直近は ReflectionEngine に渡すので、前段を要約
           return await summarize(messages.slice(0, -10));
         },
       },
@@ -75,8 +88,8 @@ export async function POST(req: Request) {
           const engine = new ReflectionEngine();
           return (await engine.fullReflect(
             growthLog,
-            messages.slice(-10),
-            "", // summaryは後で注入
+            messages.slice(-10), // 直近のみ詳細を渡す
+            "", // summaryは後で使う（LLM負荷分離）
             userId
           )) as ReflectionResult;
         },
@@ -183,7 +196,7 @@ export async function POST(req: Request) {
       threshold: 120,
       keepRecent: 25,
     });
-    if (flushResult.didFlush) {
+    if (flushResult?.didFlush) {
       console.log(
         `🧹 Memory flushed: deleted ${flushResult.deletedCount}, kept ${flushResult.keptCount}`
       );
