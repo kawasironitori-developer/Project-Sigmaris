@@ -13,13 +13,14 @@ export default function Home() {
   // ====== UI制御 ======
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
-  const [lang, setLang] = useState<"ja" | "en">("en"); // 🌐 言語トグル
+  const [lang, setLang] = useState<"ja" | "en">("en");
   const toggleLang = () => setLang((prev) => (prev === "ja" ? "en" : "ja"));
 
   const toggleLeft = () => setLeftOpen((v) => !v);
   const toggleRight = () => setRightOpen((v) => !v);
   const closeLeft = () => setLeftOpen(false);
   const closeRight = () => setRightOpen(false);
+
   const drawerTransition = {
     type: "tween" as const,
     duration: 0.28,
@@ -29,7 +30,7 @@ export default function Home() {
   // ====== メッセージエリア参照 ======
   const messageEndRef = useRef<HTMLDivElement | null>(null);
 
-  // ====== シグマリスチャットフック ======
+  // ====== シグマリスチャット ======
   const {
     chats,
     currentChatId,
@@ -41,9 +42,9 @@ export default function Home() {
     modelUsed,
     traits,
     reflectionText,
-    reflectionTextEn, // ← 英語キャッシュ
+    reflectionTextEn,
     metaSummary,
-    metaSummaryEn, // ← 英語キャッシュ
+    metaSummaryEn,
     safetyReport,
     handleSend,
     handleReflect,
@@ -53,24 +54,20 @@ export default function Home() {
     handleRenameChat,
   } = useSigmarisChat();
 
-  // ====== 初回マウント時にチャット作成 ======
+  // ====== 初期化 ======
   useEffect(() => {
     if (!currentChatId) handleNewChat();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [currentChatId, handleNewChat]);
 
   // ====== メッセージ追加時に自動スクロール ======
   useEffect(() => {
-    if (messageEndRef.current) {
-      messageEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
+    messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   // ====== Smart Send ======
   const handleSmartSend = useCallback(async () => {
     if (!input?.trim()) return;
-    let chatId = currentChatId;
-    if (!chatId) {
+    if (!currentChatId) {
       await handleNewChat();
       setTimeout(() => handleSend(), 0);
       return;
@@ -97,7 +94,7 @@ export default function Home() {
   const toneColor =
     traits.empathy > 0.7 ? "#FFD2A0" : traits.calm > 0.7 ? "#A0E4FF" : "#AAA";
 
-  // ====== グラフ履歴（長期運用対応） ======
+  // ====== グラフ履歴 ======
   const [graphData, setGraphData] = useState([
     {
       time: Date.now(),
@@ -107,7 +104,6 @@ export default function Home() {
     },
   ]);
 
-  // traitsが変わるたびに履歴を追記（最大50件保持）
   useEffect(() => {
     setGraphData((prev) => {
       const newPoint = {
@@ -121,12 +117,12 @@ export default function Home() {
     });
   }, [traits.calm, traits.empathy, traits.curiosity]);
 
-  // ====== 言語に応じた本文出し分け（英語未生成時は日本語フォールバック） ======
+  // ====== 言語出し分け ======
   const reflectionForUI =
     lang === "ja" ? reflectionText : reflectionTextEn || reflectionText;
-  const metaForUI =
-    lang === "ja" ? metaSummary : metaSummaryEn || metaSummary;
+  const metaForUI = lang === "ja" ? metaSummary : metaSummaryEn || metaSummary;
 
+  // ====== UI構成 ======
   return (
     <main className="h-screen w-full bg-[#111] text-white overflow-hidden flex">
       {/* 左ドロワー */}
@@ -144,28 +140,10 @@ export default function Home() {
       {/* 中央チャット */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="flex items-center justify-between px-4 lg:px-6 py-3 border-b border-gray-800 bg-[#111]">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={toggleLeft}
-              className="px-2 py-1 rounded hover:bg-gray-800"
-              aria-label="Toggle chat list"
-            >
-              ☰
-            </button>
-            <h1 className="text-lg font-semibold">Sigmaris Studio</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden sm:block text-xs text-gray-400">
-              Model: <span className="text-blue-400">{modelUsed}</span>
-            </span>
-            <button
-              onClick={toggleRight}
-              className="px-2 py-1 rounded hover:bg-gray-800"
-              aria-label="Toggle right panel"
-            >
-              🧠
-            </button>
-          </div>
+          <h1 className="text-lg font-semibold">Sigmaris Studio</h1>
+          <span className="hidden sm:block text-xs text-gray-400">
+            Model: <span className="text-blue-400">{modelUsed}</span>
+          </span>
         </header>
 
         {/* メッセージエリア */}
@@ -192,7 +170,6 @@ export default function Home() {
               </div>
             ))
           )}
-          {/* 👇 スクロールアンカー */}
           <div ref={messageEndRef} />
         </div>
 
@@ -231,7 +208,7 @@ export default function Home() {
         </footer>
       </div>
 
-      {/* 右ドロワー（Sigmaris Mind） */}
+      {/* 右ドロワー */}
       <AnimatePresence>
         {rightOpen && (
           <motion.aside
@@ -239,28 +216,16 @@ export default function Home() {
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 320, opacity: 0 }}
             transition={drawerTransition}
-            className="fixed lg:static z-50 right-0 h-full w-[300px] bg-[#1a1a1a] border-l border-gray-800 p-4 overflow-y-auto custom-scroll"
+            className="fixed lg:static z-50 right-0 h-full w-[300px] bg-[#1a1a1a] border-l border-gray-800 p-4 overflow-y-auto"
           >
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold">Sigmaris Mind</h2>
-
-              <div className="flex items-center gap-2">
-                {/* 🌐 言語トグルボタン */}
-                <button
-                  onClick={toggleLang}
-                  className="text-xs border border-gray-600 rounded px-2 py-1 hover:bg-gray-800 transition"
-                >
-                  {lang === "ja" ? "EN" : "JP"}
-                </button>
-
-                <button
-                  onClick={closeRight}
-                  className="lg:hidden text-gray-400"
-                  aria-label="Close right panel"
-                >
-                  ✕
-                </button>
-              </div>
+              <button
+                onClick={toggleLang}
+                className="text-xs border border-gray-600 rounded px-2 py-1 hover:bg-gray-800"
+              >
+                {lang === "ja" ? "EN" : "JP"}
+              </button>
             </div>
 
             <div className="mt-3">
@@ -277,9 +242,7 @@ export default function Home() {
                 }
                 level={safetyFlag ? "notice" : "ok"}
               />
-
               <TraitVisualizer data={graphData} />
-
               <StatePanel
                 traits={traits}
                 reflection={reflectionForUI}
@@ -291,6 +254,25 @@ export default function Home() {
           </motion.aside>
         )}
       </AnimatePresence>
+
+      {/* 🌐 フローティングボタン */}
+      <motion.button
+        onClick={toggleLeft}
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        className="fixed bottom-6 left-6 bg-blue-600 hover:bg-blue-700 text-white text-2xl rounded-full w-12 h-12 shadow-lg flex items-center justify-center"
+      >
+        💬
+      </motion.button>
+
+      <motion.button
+        onClick={toggleRight}
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        className="fixed bottom-6 right-6 bg-indigo-600 hover:bg-indigo-700 text-white text-2xl rounded-full w-12 h-12 shadow-lg flex items-center justify-center"
+      >
+        🪞
+      </motion.button>
     </main>
   );
 }
