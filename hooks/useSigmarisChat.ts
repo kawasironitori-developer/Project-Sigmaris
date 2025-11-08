@@ -259,16 +259,11 @@ export function useSigmarisChat() {
 
   // ====== 言語切替時に表示を即時反映 ======
   useEffect(() => {
-    // 既にキャッシュがある場合は切替、無ければ既存（日本語）を優先
     if (lang === "en") {
       if (reflectionTextEn) setReflectionText(reflectionTextEn);
       if (metaSummaryEn) setMetaSummary(metaSummaryEn);
-    } else {
-      // 日本語は常に保持している想定
-      // （ここでは set* を呼ばなくても良いが、差分がある場合に備え反映可能に）
-      // setReflectionText(reflectionText); // 現状のままでOK
-      // setMetaSummary(metaSummary);
     }
+    // 日本語時は既存値（DB由来）をそのまま使う
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang, reflectionTextEn, metaSummaryEn]);
 
@@ -350,5 +345,8 @@ export function useSigmarisChat() {
     handleDeleteChat,
     handleRenameChat,
     handleDeleteMessage,
+    // 🟢 英語キャッシュも公開しておく（UI側で切替する用）
+    reflectionTextEn,
+    metaSummaryEn,
   };
 }

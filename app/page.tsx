@@ -1,13 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react"; // ← useRefを追加
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import ChatList from "@/components/chat/ChatList";
 import { useSigmarisChat } from "@/hooks/useSigmarisChat";
-import PersonaPanel from "@/components/PersonaPanel";
-import ReflectionPanel from "@/components/ReflectionPanel";
 import StatePanel from "@/components/StatePanel";
-import EunoiaMeter from "@/components/EunoiaMeter";
 import { TraitVisualizer } from "@/ui/TraitVisualizer";
 import { SafetyIndicator } from "@/ui/SafetyIndicator";
 import { EmotionBadge } from "@/ui/EmotionBadge";
@@ -44,7 +41,9 @@ export default function Home() {
     modelUsed,
     traits,
     reflectionText,
+    reflectionTextEn, // ← 英語キャッシュ
     metaSummary,
+    metaSummaryEn, // ← 英語キャッシュ
     safetyReport,
     handleSend,
     handleReflect,
@@ -106,6 +105,11 @@ export default function Home() {
       curiosity: traits.curiosity,
     },
   ];
+
+  // ====== 言語に応じた本文出し分け（英語未生成時は日本語フォールバック） ======
+  const reflectionForUI =
+    lang === "ja" ? reflectionText : reflectionTextEn || reflectionText;
+  const metaForUI = lang === "ja" ? metaSummary : metaSummaryEn || metaSummary;
 
   return (
     <main className="h-screen w-full bg-[#111] text-white overflow-hidden flex">
@@ -260,10 +264,11 @@ export default function Home() {
 
               <TraitVisualizer key={graphData.length} data={graphData} />
 
+              {/* Reflection / Meta Reflection は言語に応じて出し分け */}
               <StatePanel
                 traits={traits}
-                reflection={reflectionText}
-                metaReflection={metaSummary}
+                reflection={reflectionForUI}
+                metaReflection={metaForUI}
                 safetyFlag={safetyFlag}
                 lang={lang}
               />
