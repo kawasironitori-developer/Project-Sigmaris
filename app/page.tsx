@@ -97,19 +97,35 @@ export default function Home() {
   const toneColor =
     traits.empathy > 0.7 ? "#FFD2A0" : traits.calm > 0.7 ? "#A0E4FF" : "#AAA";
 
-  const graphData = [
+  // ====== グラフ履歴（長期運用対応） ======
+  const [graphData, setGraphData] = useState([
     {
       time: Date.now(),
       calm: traits.calm,
       empathy: traits.empathy,
       curiosity: traits.curiosity,
     },
-  ];
+  ]);
+
+  // traitsが変わるたびに履歴を追記（最大50件保持）
+  useEffect(() => {
+    setGraphData((prev) => {
+      const newPoint = {
+        time: Date.now(),
+        calm: traits.calm,
+        empathy: traits.empathy,
+        curiosity: traits.curiosity,
+      };
+      const updated = [...prev, newPoint];
+      return updated.length > 50 ? updated.slice(-50) : updated;
+    });
+  }, [traits.calm, traits.empathy, traits.curiosity]);
 
   // ====== 言語に応じた本文出し分け（英語未生成時は日本語フォールバック） ======
   const reflectionForUI =
     lang === "ja" ? reflectionText : reflectionTextEn || reflectionText;
-  const metaForUI = lang === "ja" ? metaSummary : metaSummaryEn || metaSummary;
+  const metaForUI =
+    lang === "ja" ? metaSummary : metaSummaryEn || metaSummary;
 
   return (
     <main className="h-screen w-full bg-[#111] text-white overflow-hidden flex">
@@ -262,9 +278,8 @@ export default function Home() {
                 level={safetyFlag ? "notice" : "ok"}
               />
 
-              <TraitVisualizer key={graphData.length} data={graphData} />
+              <TraitVisualizer data={graphData} />
 
-              {/* Reflection / Meta Reflection は言語に応じて出し分け */}
               <StatePanel
                 traits={traits}
                 reflection={reflectionForUI}
