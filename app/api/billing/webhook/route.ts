@@ -1,18 +1,35 @@
+// /app/api/billing/webhook/route.ts
 import { NextResponse } from "next/server";
-import Stripe from "stripe";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-// ↑ apiVersion は明示しない（パッケージ同梱の型とのズレ回避）
+let stripe: any = null;
+try {
+  // ⚙️ Stripe SDK の動的ロード（キー未設定でも安全）
+  const Stripe = require("stripe");
+  if (process.env.STRIPE_SECRET_KEY) {
+    stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: "2024-06-20",
+    });
+  } else {
+    console.warn("⚠️ Stripe key not found — mock mode enabled (webhook)");
+  }
+} catch (e) {
+  console.warn("⚠️ Stripe SDK unavailable (webhook):", e);
+}
 
-/** Subscription の課金期末 UNIX を堅牢に取得（型差異に対応） */
-function getSubPeriodEndUnix(sub: Stripe.Subscription): number | null {
-  // 旧: current_period_end(number), 新: current_period?.end(number) の両対応
-  const v =
-    (sub as any).current_period_end ?? (sub as any).current_period?.end ?? null;
+/**
+ * Subscription の課金期末 UNIX を堅牢に取得（型差異対応）
+ */
+function getSubPeriodEndUnix(sub: any): number | null {
+  const v = sub.current_period_end ?? sub.current_period?.end ?? null;
   return typeof v === "number" ? v : null;
 }
 
+/**
+ * 📦 Stripe Webhook ハンドラー
+ * - Stripeキー未設定時はモック応答でビルド通過
+ * - 通常は署名検証して Supabase を更新
+ */
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
   if (!sig)
@@ -20,7 +37,16 @@ export async function POST(req: Request) {
 
   const raw = await req.text();
 
-  let event: Stripe.Event;
+  // ✅ Stripeキーが無い or SDK未ロード時 → モック応答で安全化
+  if (!stripe) {
+    console.log("💤 Mock Stripe Webhook triggered (審査中モード)");
+    return NextResponse.json({
+      ok: true,
+      message: "mock webhook ok (Stripe審査中)",
+    });
+  }
+
+  let event: any;
   try {
     event = stripe.webhooks.constructEvent(
       raw,
@@ -36,10 +62,10 @@ export async function POST(req: Request) {
 
   try {
     switch (event.type) {
-      // 新規/更新（期末の更新やプラン変更など）
+      // 🆕 新規 / 更新（期末やプラン変更）
       case "customer.subscription.created":
       case "customer.subscription.updated": {
-        const subscription = event.data.object as Stripe.Subscription;
+        const subscription = event.data.object;
         const stripeCustomerId = subscription.customer as string;
 
         const periodEndUnix = getSubPeriodEndUnix(subscription);
@@ -47,34 +73,33 @@ export async function POST(req: Request) {
           ? new Date(periodEndUnix * 1000).toISOString()
           : null;
 
-        // プラン判定（Price ID で分岐）
+        // 💡 Price ID でプラン判定
         const priceId = subscription.items.data[0]?.price?.id;
         const plan =
           priceId === process.env.STRIPE_PRICE_PRO_ID
             ? "pro"
             : priceId === process.env.STRIPE_PRICE_ENTERPRISE_ID
             ? "enterprise"
-            : "pro"; // デフォルトは pro に寄せる
+            : "pro";
 
         await supabase
           .from("users")
           .update({
             plan,
-            // ここでは「課金サイクルの期末」を trial_end に格納しておく（名称は流用）
             trial_end: currentPeriodEndISO,
           })
           .eq("stripe_customer_id", stripeCustomerId);
 
-        console.log(`✅ Subscription upserted for ${stripeCustomerId}`, {
+        console.log(`✅ Subscription updated for ${stripeCustomerId}`, {
           plan,
           currentPeriodEndISO,
         });
         break;
       }
 
-      // 解約
+      // 🧹 解約
       case "customer.subscription.deleted": {
-        const subscription = event.data.object as Stripe.Subscription;
+        const subscription = event.data.object;
         const stripeCustomerId = subscription.customer as string;
 
         await supabase
@@ -89,13 +114,13 @@ export async function POST(req: Request) {
         break;
       }
 
-      // 初回チェックアウト（支払い完了）
+      // 💰 初回チェックアウト（支払い完了）
       case "checkout.session.completed": {
-        const session = event.data.object as Stripe.Checkout.Session;
+        const session = event.data.object;
         const stripeCustomerId = session.customer as string | null;
 
         if (stripeCustomerId) {
-          // 初回は 30 日の有効期限を暫定付与（必要なら Price の期間を参照して置換）
+          // 暫定で30日分の有効期限を付与
           const plus30d = new Date(
             Date.now() + 30 * 24 * 60 * 60 * 1000
           ).toISOString();
@@ -115,16 +140,15 @@ export async function POST(req: Request) {
         break;
       }
 
-      default: {
+      default:
         console.log(`ℹ️ Unhandled event: ${event.type}`);
-      }
     }
 
     return NextResponse.json({ received: true });
   } catch (err: any) {
-    console.error("Webhook handling error:", err);
+    console.error("⚠️ Webhook handling error:", err);
     return NextResponse.json(
-      { error: err?.message ?? "internal error" },
+      { error: err?.message ?? "Internal error" },
       { status: 500 }
     );
   }
