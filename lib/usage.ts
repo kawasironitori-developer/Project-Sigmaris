@@ -1,5 +1,7 @@
-// /lib/usage.ts
-"use server";
+/**
+ * 🕒 シグマリスOS — 利用状況・試用期間ユーティリティ
+ * 各APIで import { checkTrialExpired, getUsage, incrementUsage } from "@/lib/usage";
+ */
 
 import { getSupabaseServer } from "@/lib/supabaseServer";
 import { plans } from "@/lib/plan";
@@ -19,7 +21,9 @@ function periodKey(type: "day" | "month"): string {
  */
 export function checkTrialExpired(trial_end?: string | null): boolean {
   if (!trial_end) return true;
-  return new Date() > new Date(trial_end);
+  const end = new Date(trial_end);
+  if (isNaN(end.getTime())) return true;
+  return new Date() > end;
 }
 
 /**
@@ -29,21 +33,32 @@ export async function getUsage(
   userId: string,
   type: "aei" | "reflect"
 ): Promise<number> {
+  if (!userId) {
+    console.warn("⚠️ getUsage called without userId");
+    return 0;
+  }
+
   const supabase = getSupabaseServer();
+  if (!supabase) {
+    console.error("❌ Supabase client not initialized");
+    return 0;
+  }
 
   const { data, error } = await supabase
     .from("usage_counters")
     .select("aei_calls, reflect_calls")
     .eq("user_id", userId)
     .eq("period", periodKey("month"))
-    .single();
+    .maybeSingle(); // 安全な1件取得
 
-  if (error || !data) {
-    console.warn("⚠️ getUsage error:", error);
+  if (error) {
+    console.warn("⚠️ getUsage error:", error.message);
     return 0;
   }
 
-  // 🧩 型安全な参照（曖昧さ回避）
+  if (!data) return 0;
+
+  // 型安全に値を取得
   const value =
     type === "aei"
       ? (data as { aei_calls?: number }).aei_calls ?? 0
@@ -59,14 +74,20 @@ export async function incrementUsage(
   userId: string,
   type: "aei" | "reflect"
 ): Promise<void> {
-  const supabase = getSupabaseServer();
-  const key = periodKey("month");
+  if (!userId) {
+    console.error("❌ incrementUsage called without userId");
+    return;
+  }
 
-  // 現在の使用量を取得
+  const supabase = getSupabaseServer();
+  if (!supabase) {
+    console.error("❌ Supabase client not initialized");
+    return;
+  }
+
+  const key = periodKey("month");
   const currentUsage = await getUsage(userId, type);
   const nextUsage = currentUsage + 1;
-
-  // upsertで更新または挿入
   const fieldName = `${type}_calls`;
 
   const { error } = await supabase.from("usage_counters").upsert(
@@ -79,7 +100,7 @@ export async function incrementUsage(
   );
 
   if (error) {
-    console.error(`⚠️ incrementUsage failed (${type}):`, error);
+    console.error(`⚠️ incrementUsage failed (${type}):`, error.message);
   } else {
     console.log(`✅ incrementUsage: ${fieldName} -> ${nextUsage}`);
   }

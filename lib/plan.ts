@@ -1,6 +1,3 @@
-// /lib/plan.ts
-"use server";
-
 /**
  * 🧭 シグマリスOS — 課金プラン定義と開発者免除
  * 各APIで import { plans, isBillingExempt, getPlanLimit } from "@/lib/plan";
@@ -18,6 +15,9 @@ export interface PlanDefinition {
   trialDays?: number;
 }
 
+/**
+ * 💰 プラン定義一覧
+ */
 export const plans: Record<string, PlanDefinition> = {
   free: {
     name: "Free",
@@ -39,7 +39,7 @@ export const plans: Record<string, PlanDefinition> = {
 
 /**
  * 🔓 開発者・特定ユーザーの課金免除判定
- * Supabase側の is_billing_exempt=true or メールアドレス指定
+ * Supabase 側の is_billing_exempt=true または特定メールアドレスで判定
  */
 export function isBillingExempt(user: any): boolean {
   if (!user) return false;
@@ -47,12 +47,16 @@ export function isBillingExempt(user: any): boolean {
     "kaiseif4e@gmail.com", // ← 開発者
     "sigmaris-dev@example.com", // ← 追加テスター
   ];
-  return !!user?.is_billing_exempt || bypassEmails.includes(user.email);
+  return Boolean(user?.is_billing_exempt || bypassEmails.includes(user.email));
 }
 
 /**
  * 🧮 プラン上限を取得
  */
 export function getPlanLimit(plan: string, type: "aei" | "reflect"): number {
-  return plans[plan]?.limits?.[type] ?? plans.free.limits[type];
+  const target = plans[plan];
+  if (target && target.limits && type in target.limits) {
+    return target.limits[type];
+  }
+  return plans.free.limits[type];
 }
