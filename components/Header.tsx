@@ -14,10 +14,11 @@ export default function Header() {
     home: lang === "ja" ? "ホーム" : "Home",
     about: lang === "ja" ? "概要" : "About",
     sigmaris: "Sigmaris",
+    vision: lang === "ja" ? "理念" : "Vision",
     docs: lang === "ja" ? "ドキュメント" : "Docs",
     plans: lang === "ja" ? "プラン" : "Plans",
     funding: lang === "ja" ? "支援" : "Funding",
-    tokushoho: lang === "ja" ? "特定商取引法" : "Legal Disclosure",
+    tokushoho: lang === "ja" ? "特定商取引法" : "Legal",
     switch: lang === "ja" ? "EN" : "JP",
   };
 
@@ -59,6 +60,12 @@ export default function Header() {
           className="text-[#c9d2df] hover:text-[#4c7cf7] transition"
         >
           {text.sigmaris}
+        </Link>
+        <Link
+          href="/vision"
+          className="text-[#c9d2df] hover:text-[#4c7cf7] transition"
+        >
+          {text.vision}
         </Link>
         <Link
           href="/docs"
@@ -126,48 +133,24 @@ export default function Header() {
             transition={{ duration: 0.3 }}
             className="absolute top-16 left-0 w-full bg-[#0e141b]/95 backdrop-blur-xl border-t border-[#1f2835] flex flex-col items-center gap-5 py-6 text-sm md:hidden"
           >
-            <Link
-              href="/about"
-              onClick={() => setMenuOpen(false)}
-              className="hover:text-[#4c7cf7]"
-            >
-              {text.about}
-            </Link>
-            <Link
-              href="/about/sigmaris"
-              onClick={() => setMenuOpen(false)}
-              className="hover:text-[#4c7cf7]"
-            >
-              {text.sigmaris}
-            </Link>
-            <Link
-              href="/docs"
-              onClick={() => setMenuOpen(false)}
-              className="hover:text-[#4c7cf7]"
-            >
-              {text.docs}
-            </Link>
-            <Link
-              href="/plans"
-              onClick={() => setMenuOpen(false)}
-              className="hover:text-[#4c7cf7]"
-            >
-              {text.plans}
-            </Link>
-            <Link
-              href="/funding"
-              onClick={() => setMenuOpen(false)}
-              className="hover:text-[#4c7cf7]"
-            >
-              {text.funding}
-            </Link>
-            <Link
-              href="/tokushoho"
-              onClick={() => setMenuOpen(false)}
-              className="hover:text-[#4c7cf7]"
-            >
-              {text.tokushoho}
-            </Link>
+            {[
+              { href: "/about", label: text.about },
+              { href: "/about/sigmaris", label: text.sigmaris },
+              { href: "/vision", label: text.vision },
+              { href: "/docs", label: text.docs },
+              { href: "/plans", label: text.plans },
+              { href: "/funding", label: text.funding },
+              { href: "/tokushoho", label: text.tokushoho },
+            ].map((link, i) => (
+              <Link
+                key={i}
+                href={link.href}
+                onClick={() => setMenuOpen(false)}
+                className="hover:text-[#4c7cf7] transition"
+              >
+                {link.label}
+              </Link>
+            ))}
 
             <button
               onClick={() => {
