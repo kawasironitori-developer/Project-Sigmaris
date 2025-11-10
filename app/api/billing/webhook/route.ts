@@ -1,3 +1,4 @@
+// /app/api/billing/webhook/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -49,9 +50,9 @@ export async function POST(req: Request) {
       case "checkout.session.completed": {
         const session = event.data.object;
         const userId = session.metadata?.userId ?? null;
+        const email = session.customer_details?.email ?? null;
         const chargeType = session.metadata?.charge_type ?? "";
 
-        // 金額→クレジット変換
         const creditsToAdd = chargeType.includes("3000")
           ? 400
           : chargeType.includes("1000")
@@ -69,46 +70,64 @@ export async function POST(req: Request) {
           creditsToAdd,
         });
 
-        // 🔍 auth_user_idで取得する（ここがポイント）
-        const { data: profile, error: fetchErr } = await supabase
+        // 🔍 既存ユーザー確認
+        const { data: existing, error: fetchErr } = await supabase
           .from("user_profiles")
-          .select("credit_balance")
+          .select("*")
           .eq("auth_user_id", userId)
           .maybeSingle();
 
         if (fetchErr) {
-          console.error("⚠️ Failed to fetch user:", fetchErr);
+          console.error("⚠️ DB fetch error:", fetchErr);
           break;
         }
 
-        const currentCredits = Number(profile?.credit_balance ?? 0);
-        const newCredits = currentCredits + creditsToAdd;
-
-        console.log("⚙️ Updating credits:", {
-          currentCredits,
-          added: creditsToAdd,
-          newCredits,
-        });
-
         const plus30d = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-        const { error: updateErr } = await supabase
-          .from("user_profiles")
-          .update({
-            plan: "pro",
-            credit_balance: newCredits,
-            trial_end: plus30d.toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("auth_user_id", userId);
+        if (!existing) {
+          // 🆕 初回課金の場合 → 行を自動作成
+          console.log("🪄 No profile found — creating new user_profiles row");
 
-        if (updateErr) {
-          console.error("⚠️ Failed to update user profile:", updateErr);
+          const { error: insertErr } = await supabase
+            .from("user_profiles")
+            .insert({
+              auth_user_id: userId,
+              email,
+              plan: "pro",
+              credit_balance: creditsToAdd,
+              trial_end: plus30d.toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+
+          if (insertErr) {
+            console.error("❌ Failed to insert new profile:", insertErr);
+          } else {
+            console.log("✅ New user_profiles row created");
+          }
         } else {
-          console.log("✅ Credit balance updated successfully", {
-            userId,
-            total: newCredits,
-          });
+          // 🧾 既存行がある場合 → クレジット加算
+          const currentCredits = Number(existing.credit_balance ?? 0);
+          const newCredits = currentCredits + creditsToAdd;
+
+          const { error: updateErr } = await supabase
+            .from("user_profiles")
+            .update({
+              plan: "pro",
+              credit_balance: newCredits,
+              trial_end: plus30d.toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("auth_user_id", userId);
+
+          if (updateErr) {
+            console.error("⚠️ Failed to update user profile:", updateErr);
+          } else {
+            console.log("✅ Credit balance updated successfully", {
+              userId,
+              total: newCredits,
+            });
+          }
         }
 
         break;
