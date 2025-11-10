@@ -108,26 +108,30 @@ export async function POST(req: Request) {
       });
     }
 
-    // === トライアルガード ===
+    // === トライアルガード（残高0の時のみ実行） ===
     step.phase = "trial-guard";
     let trialExpired = false;
-    try {
-      await guardUsageOrTrial(
-        {
-          id: userId,
-          email: (user as any)?.email ?? undefined,
-          plan: (user as any)?.plan ?? undefined,
-          trial_end: (user as any)?.trial_end ?? null,
-          is_billing_exempt: (user as any)?.is_billing_exempt ?? false,
-        },
-        "reflect"
-      );
-    } catch (err: any) {
-      trialExpired = true;
-      console.warn("⚠️ Trial expired — reflect blocked");
-      await debugLog("reflect_trial_expired", { userId, err: err?.message });
+
+    if (currentCredits <= 0) {
+      try {
+        await guardUsageOrTrial(
+          {
+            id: userId,
+            email: (user as any)?.email ?? undefined,
+            plan: (user as any)?.plan ?? undefined,
+            trial_end: (user as any)?.trial_end ?? null,
+            is_billing_exempt: (user as any)?.is_billing_exempt ?? false,
+          },
+          "reflect"
+        );
+      } catch (err: any) {
+        trialExpired = true;
+        console.warn("⚠️ Trial expired — reflect blocked");
+        await debugLog("reflect_trial_expired", { userId, err: err?.message });
+      }
     }
 
+    // ⚠️ トライアル終了時のブロック
     if (trialExpired) {
       const message =
         "💬 トライアル期間が終了しました。プランをアップグレードして再開してください。";
