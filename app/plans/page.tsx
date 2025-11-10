@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import {
   SigmarisLangProvider,
@@ -30,26 +31,27 @@ export default function PlansPage(): JSX.Element {
 function PlansContent(): JSX.Element {
   const { lang } = useSigmarisLang();
   const supabase = createClientComponentClient();
+  const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ ログイン確認
+  // ✅ ログイン確認（未ログインなら即リダイレクト）
   useEffect(() => {
     const checkUser = async () => {
       const { data } = await supabase.auth.getUser();
-      setUser(data?.user ?? null);
+      if (!data?.user) {
+        router.replace("/auth/login");
+      } else {
+        setUser(data.user);
+      }
       setLoading(false);
     };
     checkUser();
-  }, [supabase]);
+  }, [supabase, router]);
 
   const t = {
     ja: {
       title: "Sigmaris OS — 利用クレジットとチャージ案内",
-      loginSectionTitle: "🔐 ログインが必要です",
-      loginSectionText:
-        "クレジット残高やチャージ履歴を確認するには、ログインしてください。",
-      loginButton: "ログインページへ",
       aboutTitle: "🧠 Sigmaris OSとは",
       aboutText:
         "Sigmaris OSは、人間のように内省・成長するAI人格を体験できるシステムです。対話・内省・自己修正を通じて“思考の構造”を理解することを目的としています。\n\n現在は「チャージ式（プリペイド制）」で運用しており、チャージした分の利用クレジットを消費して対話・内省を行う仕組みになっています。",
@@ -68,10 +70,6 @@ function PlansContent(): JSX.Element {
     },
     en: {
       title: "Sigmaris OS — Usage Credits & Charge Plans",
-      loginSectionTitle: "🔐 Login Required",
-      loginSectionText:
-        "Please log in to check your credit balance and charge history.",
-      loginButton: "Go to Login",
       aboutTitle: "🧠 What is Sigmaris OS?",
       aboutText:
         "Sigmaris OS is a system that allows you to experience an AI personality capable of introspection and growth.\n\nIt currently operates on a prepaid credit system — each charge provides credits you can use for dialogue and introspection.",
@@ -170,7 +168,7 @@ function PlansContent(): JSX.Element {
 
       if (res.status === 401) {
         alert(text.loginPrompt);
-        window.location.href = "/auth/login";
+        router.replace("/auth/login");
         return;
       }
 
@@ -209,19 +207,6 @@ function PlansContent(): JSX.Element {
         >
           {text.title}
         </motion.h1>
-
-        {/* 🔐 ログインセクション */}
-        {!user && (
-          <Card delay={0.1} title={text.loginSectionTitle} center>
-            <p className="text-[#c4d0e2] mb-6">{text.loginSectionText}</p>
-            <Link
-              href="/auth/login"
-              className="inline-block px-6 py-2 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/10 transition"
-            >
-              {text.loginButton}
-            </Link>
-          </Card>
-        )}
 
         {/* 概要 */}
         <Card delay={0.2} title={text.aboutTitle}>
@@ -269,12 +254,7 @@ function PlansContent(): JSX.Element {
                   {chargeAmount ? (
                     <button
                       onClick={() => handleCheckout(chargeAmount)}
-                      disabled={!user}
-                      className={`inline-block px-6 py-2 border rounded-full transition ${
-                        user
-                          ? "border-[#4c7cf7] hover:bg-[#4c7cf7]/10"
-                          : "border-[#777] text-[#777] cursor-not-allowed"
-                      }`}
+                      className="inline-block px-6 py-2 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/10 transition"
                     >
                       {p.button}
                     </button>
