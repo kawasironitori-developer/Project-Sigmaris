@@ -78,98 +78,91 @@ export async function POST(req: Request) {
     const supabase = getSupabaseServer();
     const now = new Date().toISOString();
 
-    // === 💰 クレジット現在値 ===
+    // === 💰 プロファイル取得（課金属性も同時に） ===
     step.phase = "credit-check";
-    const { data: profile, error: creditErr } = await supabase
+    const { data: profile, error: profileErr } = await supabase
       .from("user_profiles")
-      .select("credit_balance")
+      .select("credit_balance, plan, trial_end, is_billing_exempt")
       .eq("auth_user_id", userId)
       .single();
 
-    if (creditErr || !profile) {
-      await debugLog("reflect_no_user_profile", { userId, creditErr });
+    if (profileErr || !profile) {
+      await debugLog("reflect_no_user_profile", { userId, profileErr });
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
     const currentCredits = profile.credit_balance ?? 0;
+    const plan = profile.plan ?? "free";
+    const trial_end = profile.trial_end ?? null;
+    const is_billing_exempt = !!profile.is_billing_exempt;
+
     step.credit = currentCredits;
+    await debugLog("reflect_profile_loaded", {
+      userId,
+      currentCredits,
+      plan,
+      trial_end,
+      is_billing_exempt,
+    });
 
-    // === トライアル／使用量ガード ===
-    // 仕様：Trial expired でもクレジットが残っていれば継続（課金を優先）
+    // === 残高がない場合のみ：トライアル／使用量ガードを実行 ===
     step.phase = "trial-guard";
-    let guardBlocked = false;
-    let guardReason: string | undefined;
-
-    try {
-      await guardUsageOrTrial(
-        {
-          id: userId,
-          email: (user as any)?.email ?? undefined,
-          plan: (user as any)?.plan ?? undefined,
-          trial_end: (user as any)?.trial_end ?? null,
-          is_billing_exempt: (user as any)?.is_billing_exempt ?? false,
-        },
-        "reflect"
-      );
-    } catch (err: any) {
-      const msg = err?.message || String(err);
-      guardReason = msg;
-
-      // 「Trial expired」かつクレジットがあるなら通す
-      if (/Trial expired/i.test(msg) && currentCredits > 0) {
-        await debugLog("reflect_guard_soft_bypass", {
-          userId,
-          reason: msg,
-          currentCredits,
-        });
-        guardBlocked = false;
-      } else {
-        guardBlocked = true;
-      }
-    }
-
-    if (guardBlocked) {
-      const message =
-        guardReason && /limit/i.test(guardReason)
+    if (currentCredits <= 0) {
+      try {
+        await guardUsageOrTrial(
+          {
+            id: userId,
+            email: (user as any)?.email ?? undefined,
+            plan,
+            trial_end,
+            is_billing_exempt,
+          },
+          "reflect"
+        );
+      } catch (err: any) {
+        const guardReason = err?.message || String(err);
+        const message = /limit/i.test(guardReason)
           ? "💬 無料上限に達しました。プランをアップグレードしてください。"
           : "💬 トライアル期間が終了しました。プランをアップグレードして再開してください。";
 
-      await supabase.from("reflections").insert([
-        {
-          user_id: userId,
-          session_id: sessionId,
+        await supabase.from("reflections").insert([
+          {
+            user_id: userId,
+            session_id: sessionId,
+            reflection: message,
+            introspection: "",
+            meta_summary: "",
+            summary_text: "",
+            safety_status: /limit/i.test(guardReason)
+              ? "上限到達"
+              : "トライアル終了",
+            created_at: now,
+          },
+        ]);
+
+        await debugLog("reflect_guard_block", {
+          userId,
+          reason: guardReason,
+          currentCredits,
+          plan,
+          trial_end,
+          is_billing_exempt,
+        });
+
+        return NextResponse.json({
+          success: false,
           reflection: message,
           introspection: "",
-          meta_summary: "",
-          summary_text: "",
-          safety_status: /limit/i.test(guardReason ?? "")
-            ? "上限到達"
-            : "トライアル終了",
-          created_at: now,
-        },
-      ]);
-
-      await debugLog("reflect_guard_block", {
-        userId,
-        reason: guardReason,
-        currentCredits,
-      });
-
-      return NextResponse.json({
-        success: false,
-        reflection: message,
-        introspection: "",
-        metaSummary: "",
-        safety: /limit/i.test(guardReason ?? "")
-          ? "上限到達"
-          : "トライアル終了",
-        traits: null,
-        flagged: false,
-        sessionId,
-      });
+          metaSummary: "",
+          safety: /limit/i.test(guardReason) ? "上限到達" : "トライアル終了",
+          traits: null,
+          flagged: false,
+          sessionId,
+        });
+      }
     }
 
-    // === 残高不足（guardは通ってもブロック） ===
+    // === 残高不足（guardで通っても課金残高が無ければブロック） ===
     if (currentCredits <= 0) {
       const message =
         "💬 クレジットが不足しています。チャージまたはプラン変更を行ってください。";
@@ -210,9 +203,7 @@ export async function POST(req: Request) {
           try {
             return await summarize(messages.slice(0, -10));
           } catch (err) {
-            await debugLog("reflect_summary_failed", {
-              err: String(err),
-            });
+            await debugLog("reflect_summary_failed", { err: String(err) });
             return "";
           }
         },
@@ -286,9 +277,7 @@ export async function POST(req: Request) {
           userId
         );
       } catch (e) {
-        await debugLog("reflect_persona_update_failed", {
-          err: String(e),
-        });
+        await debugLog("reflect_persona_update_failed", { err: String(e) });
       }
 
       const growthWeight =
@@ -381,14 +370,19 @@ export async function POST(req: Request) {
       step,
     });
   } catch (err: any) {
-    step.error = err?.message || String(err);
-    await debugLog("reflect_catch", { step, message: step.error });
+    const stepSafe = JSON.parse(
+      JSON.stringify({ ...(step ?? {}), error: err?.message || String(err) })
+    );
+    await debugLog("reflect_catch", {
+      step: stepSafe,
+      message: stepSafe.error,
+    });
     return NextResponse.json(
       {
         reflection: "……うまく振り返れなかったみたい。",
-        error: step.error,
+        error: stepSafe.error,
         success: false,
-        step,
+        step: stepSafe,
       },
       { status: 500 }
     );

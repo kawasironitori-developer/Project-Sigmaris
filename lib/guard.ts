@@ -5,10 +5,10 @@ import { isBillingExempt, getPlanLimit } from "@/lib/plan";
 import { getUsage, incrementUsage, checkTrialExpired } from "@/lib/usage";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 
-/** 🪶 デバッグログをSupabaseに保存 */
+/** 🪶 デバッグログをSupabaseに保存（undefined除去＋flush保証） */
 async function debugLog(phase: string, payload: any) {
   try {
-    const safePayload = JSON.parse(JSON.stringify(payload ?? {})); // undefined除去
+    const safePayload = JSON.parse(JSON.stringify(payload ?? {}));
     const supabase = getSupabaseServer();
     await supabase.from("debug_logs").insert([
       {
@@ -17,6 +17,7 @@ async function debugLog(phase: string, payload: any) {
         created_at: new Date().toISOString(),
       },
     ]);
+    await new Promise((res) => setTimeout(res, 100)); // serverless書き込み保証
   } catch (err) {
     console.error("⚠️ guard debugLog insert failed:", err);
   }
@@ -24,9 +25,10 @@ async function debugLog(phase: string, payload: any) {
 
 /**
  * 🛡️ APIガード — 無料試用・上限・課金制御
+ * ※ Reflect 側の挙動に合わせ、Trial expired は「課金残高がある場合は例外をスローせず通過」仕様
  *
  * 呼び出し例：
- * await guardUsageOrTrial(user, "aei");
+ * await guardUsageOrTrial(user, "reflect");
  */
 export async function guardUsageOrTrial(
   user: {
@@ -35,6 +37,7 @@ export async function guardUsageOrTrial(
     plan?: string;
     trial_end?: string | null;
     is_billing_exempt?: boolean;
+    credit_balance?: number; // reflectから渡せるよう追加
   } | null,
   type: "aei" | "reflect"
 ): Promise<void> {
@@ -48,24 +51,25 @@ export async function guardUsageOrTrial(
       type,
       plan: user.plan,
       trial_end: user.trial_end,
+      credit_balance: user.credit_balance,
+      is_billing_exempt: user.is_billing_exempt,
     });
 
-    // 🔓 開発者・免除ユーザー判定
+    // 🔓 課金免除ユーザー判定
     if (isBillingExempt(user)) {
       await debugLog("guard_bypass", {
         userId: user.id,
-        email: user.email,
         reason: "billing_exempt",
       });
-      // return前に確実にflush
-      await new Promise((res) => setTimeout(res, 100));
       return;
     }
 
-    // 📦 現在プラン情報取得
+    // 📦 プランと上限
     const plan = user.plan || "free";
     const limit = getPlanLimit(plan, type);
+    const credit = user.credit_balance ?? 0;
 
+    // ⏳ 試用期間の有効判定
     let expired = false;
     try {
       expired = checkTrialExpired(user.trial_end);
@@ -74,22 +78,30 @@ export async function guardUsageOrTrial(
         userId: user.id,
         message: e?.message || String(e),
       });
-      expired = false; // 失敗時は安全側に通す
+      expired = false; // 判定失敗時は安全側（通す）
     }
 
-    // ⏳ 試用期間終了チェック
+    // Trial expired の扱い（課金残高があれば通す）
     if (plan === "free" && expired) {
-      await debugLog("guard_trial_expired", {
-        userId: user.id,
-        email: user.email,
-        plan,
-        trial_end: user.trial_end,
-      });
-      await new Promise((res) => setTimeout(res, 100));
-      throw new Error("Trial expired — please upgrade your plan.");
+      if (credit > 0) {
+        await debugLog("guard_trial_soft_bypass", {
+          userId: user.id,
+          plan,
+          credit,
+          trial_end: user.trial_end,
+          reason: "Trial expired but has credit",
+        });
+      } else {
+        await debugLog("guard_trial_expired", {
+          userId: user.id,
+          plan,
+          trial_end: user.trial_end,
+        });
+        throw new Error("Trial expired — please upgrade your plan.");
+      }
     }
 
-    // 📊 現在の使用量取得
+    // 📊 使用回数取得
     const usage = await getUsage(user.id, type);
     await debugLog("guard_usage_check", {
       userId: user.id,
@@ -98,14 +110,13 @@ export async function guardUsageOrTrial(
       limit,
     });
 
-    // 🚧 上限超過チェック
+    // 🚧 上限超過
     if (usage >= limit) {
       await debugLog("guard_limit_reached", {
         userId: user.id,
         usage,
         limit,
       });
-      await new Promise((res) => setTimeout(res, 100));
       throw new Error("Usage limit reached — please upgrade your plan.");
     }
 
@@ -119,11 +130,9 @@ export async function guardUsageOrTrial(
     });
 
     await debugLog("guard_exit", { userId: user.id, status: "success" });
-    await new Promise((res) => setTimeout(res, 100)); // flush保証
   } catch (err: any) {
     phase.error = err?.message;
     await debugLog("guard_error", { phase, message: err?.message });
-    await new Promise((res) => setTimeout(res, 100)); // 確実flush
     throw err;
   }
 }
