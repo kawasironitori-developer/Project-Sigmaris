@@ -1,4 +1,3 @@
-// /app/api/billing/webhook/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -9,16 +8,17 @@ try {
     apiVersion: "2024-06-20",
   });
 } catch (e) {
-  console.warn("⚠️ Stripe SDK unavailable:", e);
+  console.error("⚠️ Stripe SDK unavailable:", e);
 }
 
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
   if (!sig)
     return NextResponse.json({ error: "No signature" }, { status: 400 });
-  const rawBody = await req.text();
 
+  const rawBody = await req.text();
   let event: any;
+
   try {
     event = stripe.webhooks.constructEvent(
       rawBody,
@@ -30,6 +30,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
+  // Service Role で Supabase 接続（RLS 無視）
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -43,57 +44,54 @@ export async function POST(req: Request) {
       const chargeType = session.metadata?.charge_type ?? "";
 
       if (!userId) {
-        console.warn("⚠️ No userId in metadata");
+        console.warn("⚠️ userId missing in metadata");
         return NextResponse.json({ ok: false });
       }
 
+      // クレジット数決定
       let creditsToAdd = 0;
       if (chargeType.includes("3000")) creditsToAdd = 400;
       else if (chargeType.includes("1000")) creditsToAdd = 100;
 
-      // 既存ユーザー確認
+      // 現在のユーザー情報取得
       const { data: existing, error: fetchErr } = await supabase
         .from("user_profiles")
-        .select("id, credit_balance")
+        .select("credit_balance")
         .eq("id", userId)
         .maybeSingle();
 
-      if (fetchErr) console.error("fetchErr:", fetchErr);
+      if (fetchErr) console.error("⚠️ Fetch error:", fetchErr);
 
       const currentCredits = Number(existing?.credit_balance ?? 0);
       const newCredits = currentCredits + creditsToAdd;
       const plus30d = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-      if (existing) {
-        // 更新
-        const { error: updateErr } = await supabase
-          .from("user_profiles")
-          .update({
-            plan: "pro",
-            credit_balance: newCredits,
-            trial_end: plus30d.toISOString(),
-            email,
-          })
-          .eq("id", userId);
-        if (updateErr) console.error("updateErr:", updateErr);
-        else console.log("✅ Updated:", { userId, newCredits });
+      // 存在すれば更新、なければ新規挿入
+      const { error: upsertErr } = await supabase.from("user_profiles").upsert(
+        {
+          id: userId,
+          email,
+          plan: "pro",
+          credit_balance: newCredits,
+          trial_end: plus30d.toISOString(),
+          updated_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        },
+        { onConflict: "id" } // ← idが一致したら更新
+      );
+
+      if (upsertErr) {
+        console.error("❌ Upsert failed:", upsertErr);
       } else {
-        // 新規作成
-        const { error: insertErr } = await supabase
-          .from("user_profiles")
-          .insert([
-            {
-              id: userId,
-              email,
-              plan: "pro",
-              credit_balance: creditsToAdd,
-              trial_end: plus30d.toISOString(),
-              created_at: new Date().toISOString(),
-            },
-          ]);
-        if (insertErr) console.error("insertErr:", insertErr);
-        else console.log("✅ Inserted new:", { userId, creditsToAdd });
+        console.log("✅ Credit successfully updated or inserted:", {
+          userId,
+          email,
+          added: creditsToAdd,
+          total: newCredits,
+        });
       }
+    } else {
+      console.log(`ℹ️ Unhandled event: ${event.type}`);
     }
 
     return NextResponse.json({ ok: true });
