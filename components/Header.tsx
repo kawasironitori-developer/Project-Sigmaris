@@ -53,124 +53,150 @@ export default function Header() {
     signup: lang === "ja" ? "新規登録" : "Sign Up",
     logout: lang === "ja" ? "ログアウト" : "Logout",
     balance: lang === "ja" ? "残高" : "Balance",
+    chat: lang === "ja" ? "チャットへ" : "Chat",
+    account: lang === "ja" ? "アカウント" : "Account",
   };
 
   return (
     <motion.header
-      className="fixed top-0 left-0 w-full z-50 bg-[#0e141b]/70 backdrop-blur-lg border-b border-[#1f2835] px-6 py-3 flex items-center justify-between"
+      className="fixed top-0 left-0 w-full z-50 bg-[#0e141b]/80 backdrop-blur-lg border-b border-[#1f2835]"
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.8 }}
+      transition={{ duration: 0.6 }}
     >
-      {/* === ロゴ === */}
-      <Link
-        href="/"
-        className="flex items-center gap-2 hover:opacity-90 transition"
-      >
-        <Image
-          src="/logo.png"
-          alt="Sigmaris Logo"
-          width={36}
-          height={36}
-          priority
-          className="w-9 h-9 object-contain"
-        />
-        <span className="text-[#e6eef4] font-semibold text-sm tracking-wide select-none">
-          Sigmaris OS
-        </span>
-      </Link>
-
-      {/* === PC用ナビ === */}
-      <nav className="hidden md:flex items-center gap-6 text-sm">
-        <Link href="/about" className="text-[#c9d2df] hover:text-[#4c7cf7]">
-          {text.about}
-        </Link>
+      {/* === 上段：ロゴ＋メニュー === */}
+      <div className="px-6 py-3 flex items-center justify-between">
+        {/* === ロゴ === */}
         <Link
-          href="/about/sigmaris"
-          className="text-[#c9d2df] hover:text-[#4c7cf7]"
+          href="/"
+          className="flex items-center gap-2 hover:opacity-90 transition"
         >
-          {text.sigmaris}
-        </Link>
-        <Link href="/vision" className="text-[#c9d2df] hover:text-[#4c7cf7]">
-          {text.vision}
-        </Link>
-        <Link href="/docs" className="text-[#c9d2df] hover:text-[#4c7cf7]">
-          {text.docs}
-        </Link>
-        <Link href="/plans" className="text-[#c9d2df] hover:text-[#4c7cf7]">
-          {text.plans}
-        </Link>
-        <Link href="/funding" className="text-[#c9d2df] hover:text-[#4c7cf7]">
-          {text.funding}
-        </Link>
-        <Link href="/tokushoho" className="text-[#c9d2df] hover:text-[#4c7cf7]">
-          {text.tokushoho}
+          <Image
+            src="/logo.png"
+            alt="Sigmaris Logo"
+            width={36}
+            height={36}
+            priority
+            className="w-9 h-9 object-contain"
+          />
+          <span className="text-[#e6eef4] font-semibold text-sm tracking-wide select-none">
+            Sigmaris OS
+          </span>
         </Link>
 
-        {/* === 言語切替 === */}
+        {/* === PC用ナビ === */}
+        <nav className="hidden md:flex items-center gap-6 text-sm">
+          <Link href="/about" className="text-[#c9d2df] hover:text-[#4c7cf7]">
+            {text.about}
+          </Link>
+          <Link
+            href="/about/sigmaris"
+            className="text-[#c9d2df] hover:text-[#4c7cf7]"
+          >
+            {text.sigmaris}
+          </Link>
+          <Link href="/vision" className="text-[#c9d2df] hover:text-[#4c7cf7]">
+            {text.vision}
+          </Link>
+          <Link href="/docs" className="text-[#c9d2df] hover:text-[#4c7cf7]">
+            {text.docs}
+          </Link>
+          <Link href="/plans" className="text-[#c9d2df] hover:text-[#4c7cf7]">
+            {text.plans}
+          </Link>
+          <Link href="/funding" className="text-[#c9d2df] hover:text-[#4c7cf7]">
+            {text.funding}
+          </Link>
+          <Link
+            href="/tokushoho"
+            className="text-[#c9d2df] hover:text-[#4c7cf7]"
+          >
+            {text.tokushoho}
+          </Link>
+
+          {/* 言語切替 */}
+          <button
+            onClick={() => setLang(lang === "ja" ? "en" : "ja")}
+            className="ml-2 px-3 py-1 border border-[#4c7cf7] rounded-full text-[#e6eef4] hover:bg-[#4c7cf7]/20 transition"
+          >
+            {text.switch}
+          </button>
+        </nav>
+
+        {/* === モバイルメニュー === */}
         <button
-          onClick={() => setLang(lang === "ja" ? "en" : "ja")}
-          className="ml-2 px-3 py-1 border border-[#4c7cf7] rounded-full text-[#e6eef4] hover:bg-[#4c7cf7]/20 transition"
+          className="md:hidden flex flex-col justify-center items-center w-8 h-8 focus:outline-none"
+          onClick={() => setMenuOpen(!menuOpen)}
         >
-          {text.switch}
+          <span
+            className={`block w-6 h-0.5 bg-[#e6eef4] transition-all duration-300 ${
+              menuOpen ? "rotate-45 translate-y-1.5" : ""
+            }`}
+          />
+          <span
+            className={`block w-6 h-0.5 bg-[#e6eef4] my-1 transition-all duration-300 ${
+              menuOpen ? "opacity-0" : ""
+            }`}
+          />
+          <span
+            className={`block w-6 h-0.5 bg-[#e6eef4] transition-all duration-300 ${
+              menuOpen ? "-rotate-45 -translate-y-1.5" : ""
+            }`}
+          />
         </button>
+      </div>
 
-        {/* === ログイン状態 === */}
+      {/* === 下段：アカウント情報 === */}
+      <div className="px-6 py-2 border-t border-[#1f2835] bg-[#0c1219]/90 flex flex-wrap justify-between items-center text-xs text-[#c9d2df]">
         {user ? (
-          <div className="flex items-center gap-3 ml-4 text-[#c4d0e2]">
-            <span className="text-xs">👤 {user.email?.split("@")[0]}</span>
-            <span className="text-xs">
-              💳 {text.balance}：
-              {credits !== null ? `${credits} credits` : "読込中…"}
-            </span>
-            <button
-              onClick={handleLogout}
-              className="px-3 py-1 border border-[#4c7cf7] rounded-full text-[#e6eef4] hover:bg-[#4c7cf7]/20 transition"
-            >
-              {text.logout}
-            </button>
-          </div>
+          <>
+            <div className="flex items-center gap-4 flex-wrap">
+              <span>👤 {user.email?.split("@")[0]}</span>
+              <span>
+                💳 {text.balance}：{credits !== null ? `${credits}` : "…"}{" "}
+                credits
+              </span>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <Link
+                href="/"
+                className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 transition text-white"
+              >
+                {text.chat}
+              </Link>
+              <Link
+                href="/account"
+                className="px-3 py-1 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/20 transition"
+              >
+                {text.account}
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="px-3 py-1 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/20 transition"
+              >
+                {text.logout}
+              </button>
+            </div>
+          </>
         ) : (
-          <div className="flex items-center gap-2 ml-4">
+          <div className="flex items-center gap-3">
             <Link
               href="/auth/login"
-              className="px-3 py-1 border border-[#4c7cf7] rounded-full text-[#e6eef4] hover:bg-[#4c7cf7]/20 transition"
+              className="px-3 py-1 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/20 transition"
             >
               {text.login}
             </Link>
             <Link
               href="/auth/signup"
-              className="px-3 py-1 border border-[#4c7cf7] rounded-full text-[#e6eef4] hover:bg-[#4c7cf7]/20 transition"
+              className="px-3 py-1 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/20 transition"
             >
               {text.signup}
             </Link>
           </div>
         )}
-      </nav>
+      </div>
 
-      {/* === モバイル用メニューアイコン === */}
-      <button
-        className="md:hidden flex flex-col justify-center items-center w-8 h-8 focus:outline-none"
-        onClick={() => setMenuOpen(!menuOpen)}
-      >
-        <span
-          className={`block w-6 h-0.5 bg-[#e6eef4] transition-all duration-300 ${
-            menuOpen ? "rotate-45 translate-y-1.5" : ""
-          }`}
-        />
-        <span
-          className={`block w-6 h-0.5 bg-[#e6eef4] my-1 transition-all duration-300 ${
-            menuOpen ? "opacity-0" : ""
-          }`}
-        />
-        <span
-          className={`block w-6 h-0.5 bg-[#e6eef4] transition-all duration-300 ${
-            menuOpen ? "-rotate-45 -translate-y-1.5" : ""
-          }`}
-        />
-      </button>
-
-      {/* === モバイル用ナビ展開 === */}
+      {/* === モバイル展開メニュー === */}
       <AnimatePresence>
         {menuOpen && (
           <motion.nav
@@ -200,48 +226,27 @@ export default function Header() {
               </Link>
             ))}
 
-            {/* 言語切替 */}
-            <button
-              onClick={() => {
-                setLang(lang === "ja" ? "en" : "ja");
-                setMenuOpen(false);
-              }}
-              className="mt-2 px-4 py-1 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/20 transition"
-            >
-              {text.switch}
-            </button>
-
-            {/* ログイン状態 */}
-            {user ? (
-              <div className="mt-3 flex flex-col items-center gap-2 text-[#c4d0e2]">
-                <span className="text-xs">👤 {user.email?.split("@")[0]}</span>
-                <span className="text-xs">
-                  💳 {text.balance}：
-                  {credits !== null ? `${credits} credits` : "読込中…"}
+            {/* 下段：モバイル用アカウント */}
+            {user && (
+              <div className="mt-4 text-xs text-[#c9d2df] flex flex-col items-center gap-2">
+                <span>👤 {user.email?.split("@")[0]}</span>
+                <span>
+                  💳 {text.balance}：{credits !== null ? `${credits}` : "…"}{" "}
+                  credits
                 </span>
+                <Link
+                  href="/"
+                  onClick={() => setMenuOpen(false)}
+                  className="px-4 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition"
+                >
+                  {text.chat}
+                </Link>
                 <button
                   onClick={handleLogout}
-                  className="mt-1 px-4 py-1 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/20 transition"
+                  className="px-4 py-1 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/20 transition"
                 >
                   {text.logout}
                 </button>
-              </div>
-            ) : (
-              <div className="mt-3 flex flex-col items-center gap-2">
-                <Link
-                  href="/auth/login"
-                  onClick={() => setMenuOpen(false)}
-                  className="px-4 py-1 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/20 transition"
-                >
-                  {text.login}
-                </Link>
-                <Link
-                  href="/auth/signup"
-                  onClick={() => setMenuOpen(false)}
-                  className="px-4 py-1 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/20 transition"
-                >
-                  {text.signup}
-                </Link>
               </div>
             )}
           </motion.nav>
