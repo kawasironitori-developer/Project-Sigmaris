@@ -32,6 +32,21 @@ function guardianFilter(text: string) {
     : { safeText: text, flagged: false };
 }
 
+/** 🪶 Supabase Debug Logger */
+async function debugLog(phase: string, payload: any) {
+  try {
+    const supabase = getSupabaseServer();
+    await supabase.from("debug_logs").insert([
+      {
+        phase,
+        payload,
+      },
+    ]);
+  } catch (err) {
+    console.error("⚠️ debugLog insert failed", err);
+  }
+}
+
 /** GET: メッセージ履歴取得 */
 export async function GET(req: Request) {
   const step: any = { phase: "GET-start" };
@@ -135,7 +150,6 @@ export async function POST(req: Request) {
       );
 
     const newCredits = currentCredits - 1;
-    // ✅ updated_at削除済
     const { error: updateErr } = await supabase
       .from("user_profiles")
       .update({ credit_balance: newCredits })
@@ -241,10 +255,12 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
       { role: "user", content: userText },
     ];
 
-    console.log("🧠 OpenAI Request", {
+    await debugLog("openai_request", {
       model: "gpt-5",
       messagesCount: prompt.length,
-      promptPreview: prompt.map((p) => p.content?.slice(0, 40)),
+      promptPreview: prompt.map((p) => p.content?.slice(0, 100)),
+      user_id: user.id,
+      session_id: sessionId,
     });
 
     const aiRes = await client.chat.completions.create({
@@ -252,7 +268,11 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
       messages: prompt,
     });
 
-    console.log("🧠 OpenAI Raw Response", JSON.stringify(aiRes, null, 2));
+    await debugLog("openai_response", {
+      user_id: user.id,
+      session_id: sessionId,
+      response: aiRes,
+    });
 
     const raw =
       aiRes?.choices?.[0]?.message?.content?.trim() ||
@@ -309,6 +329,13 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
     });
     step.flush = flush ?? null;
 
+    await debugLog("final_result", {
+      user_id: user.id,
+      session_id: sessionId,
+      output: safeText,
+      traits: stableTraits,
+    });
+
     console.log("💬 AEI updated", {
       user: user.id,
       sessionId,
@@ -330,6 +357,7 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
     step.error = e?.message;
     if (e instanceof Error) step.stack = e.stack;
     console.error("💥 [/api/aei] failed:", step);
+    await debugLog("error", { step, message: e?.message, stack: e?.stack });
     return NextResponse.json(
       { error: e?.message || String(e), step },
       { status: 500 }
