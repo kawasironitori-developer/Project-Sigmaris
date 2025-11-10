@@ -16,6 +16,12 @@ try {
   console.warn("⚠️ Stripe SDK unavailable (webhook):", e);
 }
 
+/**
+ * 📦 Stripe Webhook ハンドラー
+ * - checkout.session.completed → 支払い完了イベント
+ * - metadata.userId をキーに user_profiles を更新
+ * - credit_balance 加算・plan 更新・trial_end 延長
+ */
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
   if (!sig)
@@ -40,6 +46,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
+  // ✅ Supabase（Service Role Keyで接続）
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -50,14 +57,25 @@ export async function POST(req: Request) {
       case "checkout.session.completed": {
         const session = event.data.object;
         const userId = session.metadata?.userId ?? null;
-        const chargeType = session.metadata?.charge_type ?? "";
-        const creditsToAdd =
-          chargeType === "3000yen" ? 400 : chargeType === "1000yen" ? 100 : 0;
+        let chargeType = (session.metadata?.charge_type ?? "")
+          .toLowerCase()
+          .trim();
+
+        // ✅ より安全な比較ロジック（部分一致対応）
+        let creditsToAdd = 0;
+        if (chargeType.includes("3000")) creditsToAdd = 400;
+        else if (chargeType.includes("1000")) creditsToAdd = 100;
 
         if (!userId) {
           console.warn("⚠️ Missing userId in session metadata");
           break;
         }
+
+        console.log("📦 Webhook Event Received", {
+          userId,
+          chargeType,
+          creditsToAdd,
+        });
 
         // 🔍 現在のクレジットを取得
         const { data: profile, error: fetchErr } = await supabase
