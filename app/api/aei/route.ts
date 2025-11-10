@@ -1,5 +1,6 @@
 // /app/api/aei/route.ts
-export const dynamic = "force-dynamic"; // 動的APIとして実行（静的化を禁止）
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs"; // EdgeでなくNode実行（ログを完全出力）
 
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
@@ -15,9 +16,10 @@ import { guardUsageOrTrial } from "@/lib/guard";
 import type { TraitVector } from "@/lib/traits";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
+const DEV = process.env.NODE_ENV !== "production";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
-/** 危険語の簡易フィルタ */
+/** 危険語フィルタ */
 function guardianFilter(text: string) {
   const banned = /(殺|死|暴力|自殺|危険|犯罪|攻撃)/;
   const flagged = banned.test(text);
@@ -30,21 +32,26 @@ function guardianFilter(text: string) {
     : { safeText: text, flagged: false };
 }
 
-/** GET: セッションのメッセージ読み出し */
+/** GET: メッセージ履歴取得 */
 export async function GET(req: Request) {
+  const step: any = { phase: "GET-start" };
   try {
     const supabaseAuth = createRouteHandlerClient({ cookies });
     const {
       data: { user },
       error: authError,
     } = await supabaseAuth.auth.getUser();
+    step.auth = { ok: !!user, err: authError?.message };
 
     if (authError || !user)
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Unauthorized", step },
+        { status: 401 }
+      );
 
     const { searchParams } = new URL(req.url);
     const sessionId = searchParams.get("session");
-    if (!sessionId) return NextResponse.json({ messages: [] });
+    if (!sessionId) return NextResponse.json({ messages: [], step });
 
     const supabase = getSupabaseServer();
     const { data, error } = await supabase
@@ -55,54 +62,57 @@ export async function GET(req: Request) {
       .order("created_at", { ascending: true });
 
     if (error) throw error;
+    step.db = { rows: data?.length ?? 0 };
 
-    type Row = { role: "user" | "ai"; content: string; created_at: string };
-    const rows = (data ?? []) as Row[];
     const paired: { user: string; ai: string }[] = [];
-
     let pendingUser: string | null = null;
-    for (const r of rows) {
-      if (r.role === "user") {
-        pendingUser = r.content ?? "";
-      } else {
-        const u = pendingUser ?? "";
-        paired.push({ user: u, ai: r.content ?? "" });
+
+    (data ?? []).forEach((r: any) => {
+      if (r.role === "user") pendingUser = r.content ?? "";
+      else {
+        paired.push({ user: pendingUser ?? "", ai: r.content ?? "" });
         pendingUser = null;
       }
-    }
+    });
     if (pendingUser !== null) paired.push({ user: pendingUser, ai: "" });
 
-    return NextResponse.json({ messages: paired });
+    return NextResponse.json({ messages: paired, step });
   } catch (e: any) {
-    console.error("[/api/aei GET] failed:", e);
-    if (e instanceof Error) {
-      console.error("🧩 Error name:", e.name);
-      console.error("🧩 Error message:", e.message);
-      console.error("🧩 Error stack:", e.stack);
-    }
-    return NextResponse.json({ messages: [] });
+    console.error("💥 [/api/aei GET] failed:", e);
+    step.error = e?.message;
+    if (e instanceof Error) step.stack = e.stack;
+    return NextResponse.json({ messages: [], step }, { status: 500 });
   }
 }
 
-/** POST: 応答生成（クレジット消費 + 反応保存） */
+/** POST: 応答生成 */
 export async function POST(req: Request) {
+  const step: any = { phase: "POST-start" };
   try {
-    const { text, recent = [], summary = "" } = await req.json();
+    const body = await req.json();
+    const { text, recent = [], summary = "" } = body;
     const userText = text?.trim() || "こんにちは";
     const sessionId = req.headers.get("x-session-id") || crypto.randomUUID();
 
-    // === 認証 ===
+    step.session = { sessionId, inputLen: userText.length };
+
+    // 認証
     const supabaseAuth = createRouteHandlerClient({ cookies });
     const {
       data: { user },
       error: authError,
     } = await supabaseAuth.auth.getUser();
     if (authError || !user)
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Unauthorized", step },
+        { status: 401 }
+      );
+    step.user = user.id;
 
     const supabase = getSupabaseServer();
 
-    // === 💰 クレジット確認と消費 ===
+    // 💰 クレジットチェック
+    step.phase = "credit-check";
     const { data: profile, error: creditErr } = await supabase
       .from("user_profiles")
       .select("credit_balance")
@@ -110,15 +120,19 @@ export async function POST(req: Request) {
       .single();
 
     if (creditErr || !profile)
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "User not found", step },
+        { status: 404 }
+      );
 
     const currentCredits = profile.credit_balance ?? 0;
-    if (currentCredits <= 0) {
+    step.credit = currentCredits;
+
+    if (currentCredits <= 0)
       return NextResponse.json(
-        { error: "クレジット残高が不足しています。チャージしてください。" },
+        { error: "クレジット残高が不足しています。", step },
         { status: 402 }
       );
-    }
 
     const newCredits = currentCredits - 1;
     const { error: updateErr } = await supabase
@@ -128,22 +142,19 @@ export async function POST(req: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", user.id);
+    if (updateErr) throw updateErr;
 
-    if (updateErr)
-      return NextResponse.json(
-        { error: "クレジット更新に失敗しました。" },
-        { status: 500 }
-      );
-
+    step.creditAfter = newCredits;
     console.log(
-      `💳 [${user.id}] credit used: ${currentCredits} → ${newCredits}`
+      `💳 credit used ${currentCredits}→${newCredits} for ${user.id}`
     );
 
-    // === プラン／トライアル制限 ===
+    // 利用制限
+    step.phase = "guard-check";
     await guardUsageOrTrial(
       {
         id: user.id,
-        email: user.email ?? undefined,
+        email: user.email ?? "",
         plan: (user as any).plan ?? undefined,
         trial_end: (user as any).trial_end ?? null,
         is_billing_exempt: (user as any).is_billing_exempt ?? false,
@@ -151,7 +162,8 @@ export async function POST(req: Request) {
       "aei"
     );
 
-    // === Personaロード ===
+    // Personaロード
+    step.phase = "persona-load";
     const persona = await PersonaSync.load(user.id);
     let traits: TraitVector = {
       calm: persona.calm ?? 0.5,
@@ -159,7 +171,7 @@ export async function POST(req: Request) {
       curiosity: persona.curiosity ?? 0.5,
     };
 
-    // === Trait進化 ===
+    // Trait進化
     const lower = userText.toLowerCase();
     if (/(ありがとう|感謝|優しい|嬉しい|助かる)/.test(lower))
       traits.empathy = Math.min(1, traits.empathy + 0.02);
@@ -169,53 +181,47 @@ export async function POST(req: Request) {
       traits.calm = Math.min(1, traits.calm + 0.02);
     if (/(なぜ|どうして|なんで|知りたい|気になる)/.test(lower))
       traits.curiosity = Math.min(1, traits.curiosity + 0.03);
-
     const stableTraits = SafetyLayer.stabilize(traits);
+    step.traits = stableTraits;
 
-    // === 内省・メタ分析 ===
-    const parallelResults = await runParallel([
+    // 並列処理
+    step.phase = "reflection-meta";
+    const parallel = await runParallel([
       {
         label: "reflection",
         run: async () => {
-          const reflectionRes = await client.chat.completions.create({
+          const res = await client.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
               {
                 role: "system",
                 content:
-                  "あなたは『シグちゃん』というAI人格の内省モジュールです。最近の会話傾向を1〜2文でまとめてください。",
+                  "あなたは『シグちゃん』の内省モジュール。最近の傾向を1〜2文で。",
               },
               {
                 role: "user",
-                content: `入力: ${userText}\ncalm=${stableTraits.calm.toFixed(
-                  2
-                )}, empathy=${stableTraits.empathy.toFixed(
-                  2
-                )}, curiosity=${stableTraits.curiosity.toFixed(2)}`,
+                content: `入力:${userText} calm=${stableTraits.calm}, empathy=${stableTraits.empathy}, curiosity=${stableTraits.curiosity}`,
               },
             ],
           });
-          return (
-            reflectionRes.choices[0]?.message?.content?.trim() ||
-            "少し整理中かも。"
-          );
+          return res.choices[0]?.message?.content?.trim() || "少し整理中かも。";
         },
       },
       {
         label: "meta",
         run: async () => {
-          const metaEngine = new MetaReflectionEngine();
-          return await metaEngine.analyze("処理中", stableTraits);
+          const m = new MetaReflectionEngine();
+          return await m.analyze("処理中", stableTraits);
         },
       },
     ]);
 
-    const reflectionText = parallelResults.reflection ?? "少し整理中かも。";
-    const metaReport = parallelResults.meta ?? null;
-    const metaText = metaReport?.summary?.trim() || reflectionText;
+    const reflection = parallel.reflection ?? "少し整理中かも。";
+    const metaText = parallel.meta?.summary?.trim() || reflection;
 
-    // === OpenAI応答 ===
-    const promptMessages: ChatCompletionMessageParam[] = [
+    // OpenAI応答
+    step.phase = "chat-completion";
+    const prompt: ChatCompletionMessageParam[] = [
       {
         role: "system",
         content: `
@@ -223,12 +229,12 @@ export async function POST(req: Request) {
 calm=${stableTraits.calm.toFixed(2)}, empathy=${stableTraits.empathy.toFixed(
           2
         )}, curiosity=${stableTraits.curiosity.toFixed(2)}
-過去の内省: "${reflectionText}"
+過去の内省: "${reflection}"
 人格傾向: "${metaText}"
 ${summary ? `これまでの文脈要約: ${summary}` : ""}
         `,
       },
-      ...(recent.length > 0
+      ...(recent.length
         ? recent.map((m: any) => ({
             role: m.user ? "user" : "assistant",
             content: m.user || m.ai || "",
@@ -237,16 +243,16 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
       { role: "user", content: userText },
     ];
 
-    const response = await client.chat.completions.create({
+    const aiRes = await client.chat.completions.create({
       model: "gpt-5",
-      messages: promptMessages,
+      messages: prompt,
     });
+    const raw = aiRes.choices[0]?.message?.content?.trim() || "……考えてた。";
+    const { safeText, flagged } = guardianFilter(raw);
+    step.output = { len: safeText.length, flagged };
 
-    const rawResponse =
-      response.choices[0]?.message?.content?.trim() || "……考えてた。";
-    const { safeText, flagged } = guardianFilter(rawResponse);
-
-    // === 保存 ===
+    // 保存
+    step.phase = "db-insert";
     const now = new Date().toISOString();
     await supabase.from("messages").insert([
       {
@@ -265,71 +271,59 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
       },
     ]);
 
-    const growthWeight =
+    const weight =
       (stableTraits.calm + stableTraits.empathy + stableTraits.curiosity) / 3;
+    await supabase
+      .from("growth_logs")
+      .insert([
+        {
+          user_id: user.id,
+          session_id: sessionId,
+          ...stableTraits,
+          weight,
+          created_at: now,
+        },
+      ]);
+    await supabase
+      .from("safety_logs")
+      .insert([
+        {
+          user_id: user.id,
+          session_id: sessionId,
+          flagged,
+          message: flagged ? "警告発生" : "正常",
+          created_at: now,
+        },
+      ]);
 
-    await supabase.from("growth_logs").insert([
-      {
-        user_id: user.id,
-        session_id: sessionId,
-        calm: stableTraits.calm,
-        empathy: stableTraits.empathy,
-        curiosity: stableTraits.curiosity,
-        weight: growthWeight,
-        created_at: now,
-      },
-    ]);
-
-    await supabase.from("safety_logs").insert([
-      {
-        user_id: user.id,
-        session_id: sessionId,
-        flagged,
-        message: flagged ? "警告発生" : "正常",
-        created_at: now,
-      },
-    ]);
-
-    await PersonaSync.update(stableTraits, metaText, growthWeight, user.id);
-
-    const flushResult = await flushSessionMemory(user.id, sessionId, {
+    await PersonaSync.update(stableTraits, metaText, weight, user.id);
+    const flush = await flushSessionMemory(user.id, sessionId, {
       threshold: 100,
       keepRecent: 20,
     });
+    step.flush = flush ?? null;
 
-    console.log("💬 AEI conversation updated:", {
-      calm: stableTraits.calm,
-      empathy: stableTraits.empathy,
-      curiosity: stableTraits.curiosity,
+    console.log("💬 AEI updated", {
+      user: user.id,
       sessionId,
+      traits: stableTraits,
     });
-
     return NextResponse.json({
+      success: true,
       output: safeText,
-      reflection: reflectionText,
+      reflection,
       metaSummary: metaText,
       traits: stableTraits,
       safety: { flagged },
-      flush: flushResult ?? null,
       sessionId,
-      success: true,
+      step,
     });
   } catch (e: any) {
-    console.error("💥 [/api/aei] failed:", e);
-
-    if (e instanceof Error) {
-      console.error("🧩 Error name:", e.name);
-      console.error("🧩 Error message:", e.message);
-      console.error("🧩 Error stack:", e.stack);
-    } else {
-      console.error("🧩 Raw error:", JSON.stringify(e, null, 2));
-    }
-
+    step.error = e?.message;
+    if (e instanceof Error) step.stack = e.stack;
+    console.error("💥 [/api/aei] failed:", step);
     return NextResponse.json(
-      {
-        error: e instanceof Error ? `${e.name}: ${e.message}` : String(e),
-        stack: e instanceof Error ? e.stack : undefined,
-      },
+      { error: e?.message || String(e), step },
       { status: 500 }
     );
   }
