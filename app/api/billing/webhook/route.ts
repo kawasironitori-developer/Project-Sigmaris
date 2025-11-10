@@ -17,9 +17,10 @@ try {
 }
 
 /**
- * 📦 Stripe Webhook ハンドラー
- * - checkout.session.completed → 支払い完了イベント
- * - metadata.userId をキーに user_profiles を更新
+ * 📦 Stripe Webhook ハンドラー（UUID対応版）
+ * - checkout.session.completed → 支払い完了
+ * - metadata.userId = Supabase Auth の UUID
+ * - user_profiles.auth_user_id をキーに更新
  * - credit_balance 加算・plan 更新・trial_end 延長
  */
 export async function POST(req: Request) {
@@ -27,6 +28,7 @@ export async function POST(req: Request) {
   if (!sig)
     return NextResponse.json({ error: "No signature" }, { status: 400 });
 
+  // Stripe が送る生データを取得（必須）
   const rawBody = await req.text();
 
   if (!stripe) {
@@ -56,12 +58,12 @@ export async function POST(req: Request) {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;
-        const userId = session.metadata?.userId ?? null;
-        let chargeType = (session.metadata?.charge_type ?? "")
+        const userId = session.metadata?.userId ?? null; // ← Supabase Auth UUID
+        const chargeType = (session.metadata?.charge_type ?? "")
           .toLowerCase()
           .trim();
 
-        // ✅ より安全な比較ロジック（部分一致対応）
+        // ✅ 金額に応じて加算クレジットを算出
         let creditsToAdd = 0;
         if (chargeType.includes("3000")) creditsToAdd = 400;
         else if (chargeType.includes("1000")) creditsToAdd = 100;
@@ -77,15 +79,15 @@ export async function POST(req: Request) {
           creditsToAdd,
         });
 
-        // 🔍 現在のクレジットを取得
+        // 🔍 現在のクレジットを取得（auth_user_idで検索）
         const { data: profile, error: fetchErr } = await supabase
           .from("user_profiles")
-          .select("credit_balance")
-          .eq("id", userId)
-          .single();
+          .select("auth_user_id, credit_balance")
+          .eq("auth_user_id", userId)
+          .maybeSingle();
 
         if (fetchErr) {
-          console.error("⚠️ Failed to fetch user:", fetchErr);
+          console.error("⚠️ Failed to fetch user profile:", fetchErr);
           break;
         }
 
@@ -93,7 +95,7 @@ export async function POST(req: Request) {
         const newCredits = currentCredits + Number(creditsToAdd ?? 0);
 
         // 🧠 デバッグ出力
-        console.log("⚙️ Credit update logic", {
+        console.log("⚙️ Credit update calculation", {
           userId,
           chargeType,
           creditsToAdd,
@@ -101,10 +103,10 @@ export async function POST(req: Request) {
           newCredits,
         });
 
-        // 📅 有効期限 +30日
+        // 📅 有効期限を +30日延長
         const plus30d = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-        // 💰 クレジット加算・プラン更新
+        // 💰 クレジット・プラン情報更新
         const { error: updateErr } = await supabase
           .from("user_profiles")
           .update({
@@ -113,7 +115,7 @@ export async function POST(req: Request) {
             trial_end: plus30d.toISOString(),
             updated_at: new Date().toISOString(),
           })
-          .eq("id", userId);
+          .eq("auth_user_id", userId);
 
         if (updateErr) {
           console.error("⚠️ Failed to update user profile:", updateErr);
