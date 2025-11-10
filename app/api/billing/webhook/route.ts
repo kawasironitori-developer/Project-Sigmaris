@@ -17,9 +17,9 @@ try {
 }
 
 /**
- * 💰 チャージ完了 Webhook
- * - checkout.session.completed イベントを受信して
- *   Supabase の users テーブルにクレジット残高を加算
+ * 📦 Stripe Webhook ハンドラー
+ * - checkout.session.completed → 支払い完了
+ * - customer.subscription.* → サブスク系（今後の拡張用）
  */
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
@@ -28,7 +28,6 @@ export async function POST(req: Request) {
 
   const raw = await req.text();
 
-  // Stripeキー未設定ならモック応答
   if (!stripe) {
     console.log("💤 Mock Stripe Webhook triggered (審査中モード)");
     return NextResponse.json({
@@ -53,41 +52,61 @@ export async function POST(req: Request) {
 
   try {
     switch (event.type) {
-      // ✅ 支払い完了
+      // 🧾 支払い完了（プリペイド）
       case "checkout.session.completed": {
         const session = event.data.object;
         const stripeCustomerId = session.customer as string | null;
-        const metadata = session.metadata || {};
-        const chargeType = metadata.charge_type || "unknown";
+        const chargeType = session.metadata?.charge_type ?? "";
+        const creditsToAdd =
+          chargeType === "3000yen" ? 400 : chargeType === "1000yen" ? 100 : 0;
 
-        // チャージ額を抽出
-        let chargeAmount = 0;
-        if (chargeType.includes("1000")) chargeAmount = 100;
-        if (chargeType.includes("3000")) chargeAmount = 400;
-
-        if (stripeCustomerId && chargeAmount > 0) {
-          // 現在残高を取得
-          const { data: userRow } = await supabase
-            .from("users")
-            .select("credits")
-            .eq("stripe_customer_id", stripeCustomerId)
-            .single();
-
-          const currentCredits = userRow?.credits ?? 0;
-          const newCredits = currentCredits + chargeAmount;
-
-          await supabase
-            .from("users")
-            .update({
-              credits: newCredits,
-              plan: "active",
-            })
-            .eq("stripe_customer_id", stripeCustomerId);
-
-          console.log(
-            `💰 ${chargeAmount} クレジット加算 (${stripeCustomerId})`
-          );
+        if (!stripeCustomerId) {
+          console.warn("⚠️ Missing stripeCustomerId in session");
+          break;
         }
+
+        // 既存の残高取得
+        const { data: userData, error: fetchErr } = await supabase
+          .from("users")
+          .select("credit_balance")
+          .eq("stripe_customer_id", stripeCustomerId)
+          .single();
+
+        if (fetchErr) {
+          console.error("⚠️ Could not fetch user credit:", fetchErr);
+        }
+
+        const currentCredits = userData?.credit_balance ?? 0;
+        const newCredits = currentCredits + creditsToAdd;
+
+        // 💰 クレジット反映 + 有効期間更新
+        const plus30d = new Date(
+          Date.now() + 30 * 24 * 60 * 60 * 1000
+        ).toISOString();
+
+        await supabase
+          .from("users")
+          .update({
+            plan: "pro",
+            trial_end: plus30d,
+            credit_balance: newCredits,
+          })
+          .eq("stripe_customer_id", stripeCustomerId);
+
+        console.log(`💰 Payment success for ${stripeCustomerId}`, {
+          chargeType,
+          added: creditsToAdd,
+          total: newCredits,
+          trial_end: plus30d,
+        });
+        break;
+      }
+
+      // 🆕 サブスク作成・更新（将来用）
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+      case "customer.subscription.deleted": {
+        console.log(`ℹ️ Subscription event: ${event.type}`);
         break;
       }
 
