@@ -39,6 +39,7 @@ async function debugLog(phase: string, payload: any) {
 /** POST /api/reflect */
 export async function POST(req: Request) {
   const step: any = { phase: "init" };
+
   try {
     // === 入力受け取り ===
     const body = (await req.json()) as {
@@ -51,8 +52,8 @@ export async function POST(req: Request) {
     const history = body.history ?? [];
     const sessionId = req.headers.get("x-session-id") || crypto.randomUUID();
 
-    step.phase = "auth";
     // === 認証 ===
+    step.phase = "auth";
     const supabaseAuth = createRouteHandlerClient({ cookies });
     const {
       data: { user },
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
     const { data: profile, error: creditErr } = await supabase
       .from("user_profiles")
       .select("credit_balance")
-      .eq("id", userId)
+      .eq("auth_user_id", userId)
       .single();
 
     if (creditErr || !profile)
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
     const currentCredits = profile.credit_balance ?? 0;
     step.credit = currentCredits;
 
-    // ⚠️ 残高不足
+    // ⚠️ 残高不足ブロック
     if (currentCredits <= 0) {
       const message =
         "💬 クレジットが不足しています。チャージまたはプラン変更を行ってください。";
@@ -108,30 +109,26 @@ export async function POST(req: Request) {
       });
     }
 
-    // === トライアルガード（残高0の時のみ実行） ===
+    // === トライアルガード（有効残高がある場合でも適用） ===
     step.phase = "trial-guard";
     let trialExpired = false;
-
-    if (currentCredits <= 0) {
-      try {
-        await guardUsageOrTrial(
-          {
-            id: userId,
-            email: (user as any)?.email ?? undefined,
-            plan: (user as any)?.plan ?? undefined,
-            trial_end: (user as any)?.trial_end ?? null,
-            is_billing_exempt: (user as any)?.is_billing_exempt ?? false,
-          },
-          "reflect"
-        );
-      } catch (err: any) {
-        trialExpired = true;
-        console.warn("⚠️ Trial expired — reflect blocked");
-        await debugLog("reflect_trial_expired", { userId, err: err?.message });
-      }
+    try {
+      await guardUsageOrTrial(
+        {
+          id: userId,
+          email: (user as any)?.email ?? undefined,
+          plan: (user as any)?.plan ?? undefined,
+          trial_end: (user as any)?.trial_end ?? null,
+          is_billing_exempt: (user as any)?.is_billing_exempt ?? false,
+        },
+        "reflect"
+      );
+    } catch (err: any) {
+      trialExpired = true;
+      console.warn("⚠️ Trial expired — reflect blocked");
+      await debugLog("reflect_trial_expired", { userId, err: err?.message });
     }
 
-    // ⚠️ トライアル終了時のブロック
     if (trialExpired) {
       const message =
         "💬 トライアル期間が終了しました。プランをアップグレードして再開してください。";
@@ -165,7 +162,8 @@ export async function POST(req: Request) {
     const { error: updateErr } = await supabase
       .from("user_profiles")
       .update({ credit_balance: newCredits })
-      .eq("id", userId);
+      .eq("auth_user_id", userId);
+
     if (updateErr)
       console.warn("credit_balance update failed:", updateErr.message);
 
