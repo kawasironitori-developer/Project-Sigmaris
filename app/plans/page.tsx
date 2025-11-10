@@ -1,3 +1,4 @@
+// /app/plans/page.tsx
 "use client";
 
 import React from "react";
@@ -86,6 +87,7 @@ function PlansContent(): JSX.Element {
         "試用期間中も高負荷利用・自動リクエストは禁止されています。",
       ],
       back: "← Homeへ戻る",
+      loginPrompt: "まずはログインしてください。",
     },
     en: {
       title: "Sigmaris OS — Usage Credits & Charge Plans",
@@ -143,12 +145,13 @@ function PlansContent(): JSX.Element {
         "High-frequency or automated requests are prohibited, even during trial.",
       ],
       back: "← Back to Home",
+      loginPrompt: "Please log in first.",
     },
   } as const;
 
   const text = t[lang];
 
-  // ✅ Stripe Checkout 呼び出し関数
+  // ✅ Stripe Checkout 呼び出し関数（ログイン確認付き）
   const handleCheckout = async (amount: string) => {
     try {
       const res = await fetch("/api/billing/checkout", {
@@ -156,6 +159,14 @@ function PlansContent(): JSX.Element {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount }),
       });
+
+      // ログインしていない場合
+      if (res.status === 401) {
+        alert(text.loginPrompt);
+        window.location.href = "/auth/login";
+        return;
+      }
+
       const data = await res.json();
       if (data.url) {
         window.location.href = data.url;
@@ -171,13 +182,16 @@ function PlansContent(): JSX.Element {
     <main className="relative min-h-screen bg-gradient-to-b from-[#0e141b] to-[#1a2230] text-[#e6eef4] px-6 md:px-16 py-24 overflow-hidden">
       <Header />
 
+      {/* 背景アニメーション */}
       <motion.div
         className="absolute inset-0 bg-[radial-gradient(circle_at_70%_20%,rgba(68,116,255,0.08),transparent_70%)]"
         animate={{ opacity: [0.5, 0.8, 0.5] }}
         transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
       />
 
+      {/* コンテンツ */}
       <section className="relative z-10 max-w-5xl mx-auto mt-20">
+        {/* タイトル */}
         <motion.h1
           className="text-4xl md:text-5xl font-bold mb-12 text-center"
           initial={{ opacity: 0, y: 20 }}
