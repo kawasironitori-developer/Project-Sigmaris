@@ -1,6 +1,6 @@
 // /app/api/aei/route.ts
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs"; // EdgeでなくNode実行（ログを完全出力）
+export const runtime = "nodejs"; // EdgeでなくNode実行（ログ完全出力）
 
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
@@ -19,7 +19,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 const DEV = process.env.NODE_ENV !== "production";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
-/** 危険語フィルタ */
+/** 🧩 危険語フィルタ */
 function guardianFilter(text: string) {
   const banned = /(殺|死|暴力|自殺|危険|犯罪|攻撃)/;
   const flagged = banned.test(text);
@@ -96,7 +96,7 @@ export async function POST(req: Request) {
 
     step.session = { sessionId, inputLen: userText.length };
 
-    // 認証
+    // === 認証 ===
     const supabaseAuth = createRouteHandlerClient({ cookies });
     const {
       data: { user },
@@ -111,7 +111,7 @@ export async function POST(req: Request) {
 
     const supabase = getSupabaseServer();
 
-    // 💰 クレジットチェック
+    // === 💰 クレジットチェック ===
     step.phase = "credit-check";
     const { data: profile, error: creditErr } = await supabase
       .from("user_profiles")
@@ -135,11 +135,11 @@ export async function POST(req: Request) {
       );
 
     const newCredits = currentCredits - 1;
+    // ✅ updated_at 削除（存在しないため）
     const { error: updateErr } = await supabase
       .from("user_profiles")
       .update({
         credit_balance: newCredits,
-        updated_at: new Date().toISOString(),
       })
       .eq("id", user.id);
     if (updateErr) throw updateErr;
@@ -149,7 +149,7 @@ export async function POST(req: Request) {
       `💳 credit used ${currentCredits}→${newCredits} for ${user.id}`
     );
 
-    // 利用制限
+    // === 利用制限 ===
     step.phase = "guard-check";
     await guardUsageOrTrial(
       {
@@ -162,7 +162,7 @@ export async function POST(req: Request) {
       "aei"
     );
 
-    // Personaロード
+    // === Personaロード ===
     step.phase = "persona-load";
     const persona = await PersonaSync.load(user.id);
     let traits: TraitVector = {
@@ -171,7 +171,7 @@ export async function POST(req: Request) {
       curiosity: persona.curiosity ?? 0.5,
     };
 
-    // Trait進化
+    // === Trait進化 ===
     const lower = userText.toLowerCase();
     if (/(ありがとう|感謝|優しい|嬉しい|助かる)/.test(lower))
       traits.empathy = Math.min(1, traits.empathy + 0.02);
@@ -184,7 +184,7 @@ export async function POST(req: Request) {
     const stableTraits = SafetyLayer.stabilize(traits);
     step.traits = stableTraits;
 
-    // 並列処理
+    // === 並列処理 ===
     step.phase = "reflection-meta";
     const parallel = await runParallel([
       {
@@ -219,7 +219,7 @@ export async function POST(req: Request) {
     const reflection = parallel.reflection ?? "少し整理中かも。";
     const metaText = parallel.meta?.summary?.trim() || reflection;
 
-    // OpenAI応答
+    // === OpenAI応答 ===
     step.phase = "chat-completion";
     const prompt: ChatCompletionMessageParam[] = [
       {
@@ -251,7 +251,7 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
     const { safeText, flagged } = guardianFilter(raw);
     step.output = { len: safeText.length, flagged };
 
-    // 保存
+    // === 保存 ===
     step.phase = "db-insert";
     const now = new Date().toISOString();
     await supabase.from("messages").insert([
@@ -273,28 +273,24 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
 
     const weight =
       (stableTraits.calm + stableTraits.empathy + stableTraits.curiosity) / 3;
-    await supabase
-      .from("growth_logs")
-      .insert([
-        {
-          user_id: user.id,
-          session_id: sessionId,
-          ...stableTraits,
-          weight,
-          created_at: now,
-        },
-      ]);
-    await supabase
-      .from("safety_logs")
-      .insert([
-        {
-          user_id: user.id,
-          session_id: sessionId,
-          flagged,
-          message: flagged ? "警告発生" : "正常",
-          created_at: now,
-        },
-      ]);
+    await supabase.from("growth_logs").insert([
+      {
+        user_id: user.id,
+        session_id: sessionId,
+        ...stableTraits,
+        weight,
+        created_at: now,
+      },
+    ]);
+    await supabase.from("safety_logs").insert([
+      {
+        user_id: user.id,
+        session_id: sessionId,
+        flagged,
+        message: flagged ? "警告発生" : "正常",
+        created_at: now,
+      },
+    ]);
 
     await PersonaSync.update(stableTraits, metaText, weight, user.id);
     const flush = await flushSessionMemory(user.id, sessionId, {
@@ -308,6 +304,7 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
       sessionId,
       traits: stableTraits,
     });
+
     return NextResponse.json({
       success: true,
       output: safeText,
