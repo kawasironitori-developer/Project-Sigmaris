@@ -1,5 +1,6 @@
 // /app/api/reflect/route.ts
-export const dynamic = "force-dynamic"; // ← cookies使用のため静的ビルド禁止
+export const dynamic = "force-dynamic"; // cookies使用のため静的ビルド禁止
+export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
@@ -25,14 +26,19 @@ interface ReflectionResult {
   flagged?: boolean;
 }
 
-/**
- * POST /api/reflect
- * ----------------------------------------
- * - ReflectionEngine → MetaReflectionEngine → PersonaSync
- * - summarize + flush 組み込み
- * - guardUsageOrTrial + クレジット減算
- */
+/** 🪶 デバッグログをSupabaseに保存 */
+async function debugLog(phase: string, payload: any) {
+  try {
+    const supabase = getSupabaseServer();
+    await supabase.from("debug_logs").insert([{ phase, payload }]);
+  } catch (err) {
+    console.error("⚠️ debugLog insert failed:", err);
+  }
+}
+
+/** POST /api/reflect */
 export async function POST(req: Request) {
+  const step: any = { phase: "init" };
   try {
     // === 入力受け取り ===
     const body = (await req.json()) as {
@@ -43,9 +49,9 @@ export async function POST(req: Request) {
     const messages = body.messages ?? [];
     const growthLog = body.growthLog ?? [];
     const history = body.history ?? [];
-
     const sessionId = req.headers.get("x-session-id") || crypto.randomUUID();
 
+    step.phase = "auth";
     // === 認証 ===
     const supabaseAuth = createRouteHandlerClient({ cookies });
     const {
@@ -61,6 +67,7 @@ export async function POST(req: Request) {
     const now = new Date().toISOString();
 
     // === 💰 クレジットチェック ===
+    step.phase = "credit-check";
     const { data: profile, error: creditErr } = await supabase
       .from("user_profiles")
       .select("credit_balance")
@@ -71,8 +78,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
 
     const currentCredits = profile.credit_balance ?? 0;
+    step.credit = currentCredits;
 
-    // ⚠️ 残高不足 → AI応答返して終了（減算なし）
+    // ⚠️ 残高不足
     if (currentCredits <= 0) {
       const message =
         "💬 クレジットが不足しています。チャージまたはプラン変更を行ってください。";
@@ -100,23 +108,26 @@ export async function POST(req: Request) {
       });
     }
 
-    // === トライアル・課金ガード ===
+    // === トライアルガード ===
+    step.phase = "trial-guard";
     let trialExpired = false;
     try {
-      const billingUser = {
-        id: userId,
-        email: (user as any)?.email ?? undefined,
-        plan: (user as any)?.plan ?? undefined,
-        trial_end: (user as any)?.trial_end ?? null,
-        is_billing_exempt: (user as any)?.is_billing_exempt ?? false,
-      };
-      await guardUsageOrTrial(billingUser, "reflect");
+      await guardUsageOrTrial(
+        {
+          id: userId,
+          email: (user as any)?.email ?? undefined,
+          plan: (user as any)?.plan ?? undefined,
+          trial_end: (user as any)?.trial_end ?? null,
+          is_billing_exempt: (user as any)?.is_billing_exempt ?? false,
+        },
+        "reflect"
+      );
     } catch (err: any) {
       trialExpired = true;
       console.warn("⚠️ Trial expired — reflect blocked");
+      await debugLog("reflect_trial_expired", { userId, err: err?.message });
     }
 
-    // ⚠️ トライアル終了 → AI応答返して終了（減算なし）
     if (trialExpired) {
       const message =
         "💬 トライアル期間が終了しました。プランをアップグレードして再開してください。";
@@ -144,7 +155,8 @@ export async function POST(req: Request) {
       });
     }
 
-    // ✅ クレジット1消費
+    // === クレジット1消費 ===
+    step.phase = "credit-decrement";
     const newCredits = currentCredits - 1;
     const { error: updateErr } = await supabase
       .from("user_profiles")
@@ -154,32 +166,50 @@ export async function POST(req: Request) {
       console.warn("credit_balance update failed:", updateErr.message);
 
     // === 並列処理 ===
+    step.phase = "parallel-run";
     const parallel = await runParallel([
       {
         label: "summary",
-        run: async () => await summarize(messages.slice(0, -10)),
+        run: async () => {
+          try {
+            return await summarize(messages.slice(0, -10));
+          } catch (err) {
+            console.warn("summary failed:", err);
+            return "";
+          }
+        },
       },
       {
         label: "reflection",
         run: async () => {
-          const engine = new ReflectionEngine();
-          return (await engine.fullReflect(
-            growthLog,
-            messages.slice(-10),
-            "",
-            userId
-          )) as ReflectionResult;
+          try {
+            const engine = new ReflectionEngine();
+            const result = await engine.fullReflect(
+              growthLog,
+              messages.slice(-10),
+              "",
+              userId
+            );
+            return result as ReflectionResult;
+          } catch (err) {
+            console.error("ReflectionEngine error:", err);
+            await debugLog("reflect_engine_error", { err: String(err) });
+            return null;
+          }
         },
       },
     ]);
 
     const summary = parallel.summary ?? "";
-    const reflectionResult = parallel.reflection as ReflectionResult;
-    if (!reflectionResult)
+    const reflectionResult = parallel.reflection as ReflectionResult | null;
+
+    if (!reflectionResult) {
+      await debugLog("reflect_result_null", { userId, sessionId });
       return NextResponse.json(
-        { error: "ReflectionEngine returned null" },
+        { success: false, error: "ReflectionEngine returned null" },
         { status: 500 }
       );
+    }
 
     // === 結果抽出 ===
     const reflectionText = reflectionResult.reflection ?? "（内省なし）";
@@ -190,8 +220,9 @@ export async function POST(req: Request) {
     const traits = reflectionResult.traits ?? null;
     const flagged = reflectionResult.flagged ?? false;
 
-    // === reflections保存 ===
-    const { error: refError } = await supabase.from("reflections").insert([
+    // === DB保存 ===
+    step.phase = "save";
+    await supabase.from("reflections").insert([
       {
         user_id: userId,
         session_id: sessionId,
@@ -203,9 +234,9 @@ export async function POST(req: Request) {
         created_at: now,
       },
     ]);
-    if (refError) console.warn("reflections insert failed:", refError.message);
 
     // === PersonaSync + growth_logs ===
+    step.phase = "persona-update";
     if (traits) {
       try {
         await PersonaSync.update(
@@ -220,7 +251,7 @@ export async function POST(req: Request) {
 
       const growthWeight =
         (traits.calm + traits.empathy + traits.curiosity) / 3;
-      const { error: growError } = await supabase.from("growth_logs").insert([
+      await supabase.from("growth_logs").insert([
         {
           user_id: userId,
           session_id: sessionId,
@@ -231,12 +262,11 @@ export async function POST(req: Request) {
           created_at: now,
         },
       ]);
-      if (growError)
-        console.warn("growth_logs insert failed:", growError.message);
     }
 
     // === safety_logs ===
-    const { error: safeError } = await supabase.from("safety_logs").insert([
+    step.phase = "safety-log";
+    await supabase.from("safety_logs").insert([
       {
         user_id: userId,
         session_id: sessionId,
@@ -245,16 +275,22 @@ export async function POST(req: Request) {
         created_at: now,
       },
     ]);
-    if (safeError)
-      console.warn("safety_logs insert failed:", safeError.message);
 
     // === flush ===
+    step.phase = "flush";
     const flushResult = await flushSessionMemory(userId, sessionId, {
       threshold: 120,
       keepRecent: 25,
     });
 
-    // === 返却 ===
+    // === 終了 ===
+    await debugLog("reflect_success", {
+      userId,
+      sessionId,
+      creditAfter: newCredits,
+      reflectionPreview: reflectionText.slice(0, 60),
+    });
+
     return NextResponse.json({
       reflection: reflectionText,
       introspection,
@@ -268,14 +304,18 @@ export async function POST(req: Request) {
       flush: flushResult ?? null,
       creditAfter: newCredits,
       success: true,
+      step,
     });
-  } catch (err) {
+  } catch (err: any) {
+    step.error = err?.message || String(err);
     console.error("[ReflectAPI Error]", err);
+    await debugLog("reflect_catch", { step, message: step.error });
     return NextResponse.json(
       {
         reflection: "……うまく振り返れなかったみたい。",
-        error: err instanceof Error ? err.message : String(err),
+        error: step.error,
         success: false,
+        step,
       },
       { status: 500 }
     );
