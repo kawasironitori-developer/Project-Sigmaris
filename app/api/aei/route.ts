@@ -1,4 +1,6 @@
 // /app/api/aei/route.ts
+export const dynamic = "force-dynamic"; // ← 静的ビルドを禁止（動的API扱い）
+
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
@@ -15,6 +17,10 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
+/**
+ * 🧩 guardianFilter
+ * 危険ワードを自動検出し、応答を安全化する
+ */
 function guardianFilter(text: string) {
   const banned = /(殺|死|暴力|自殺|危険|犯罪|攻撃)/;
   const flagged = banned.test(text);
@@ -27,6 +33,16 @@ function guardianFilter(text: string) {
     : { safeText: text, flagged: false };
 }
 
+/**
+ * 🧠 AEI: Artificial Existential Intelligence Core API
+ * ------------------------------------------------------
+ * - Google認証＋Supabase連携
+ * - クレジット課金・トライアル判定
+ * - Trait進化 + MetaReflection + SafetyLayer
+ * - 会話・成長・安全ログ保存
+ * - GPT-5連携による人格応答生成
+ * ------------------------------------------------------
+ */
 export async function POST(req: Request) {
   try {
     const { text, recent = [], summary = "" } = await req.json();
@@ -42,7 +58,7 @@ export async function POST(req: Request) {
     if (authError || !user)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    // === 🪙 クレジット消費API呼び出し ===
+    // === クレジット使用確認 ===
     const creditRes = await fetch(
       `${process.env.NEXT_PUBLIC_BASE_URL}/api/credits/use`,
       {
@@ -68,7 +84,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // === 課金／試用ガード（既存） ===
+    // === 課金・試用ガード ===
     await guardUsageOrTrial(
       {
         id: user.id,
@@ -146,7 +162,7 @@ export async function POST(req: Request) {
     const metaReport = parallelResults.meta ?? null;
     const metaText = metaReport?.summary?.trim() || reflectionText;
 
-    // === 会話プロンプト ===
+    // === プロンプト構築 ===
     const promptMessages: ChatCompletionMessageParam[] = [
       {
         role: "system",
@@ -177,12 +193,14 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
       model: "gpt-5",
       messages: promptMessages,
     });
+
     const rawResponse =
       response.choices[0]?.message?.content?.trim() || "……考えてた。";
     const { safeText, flagged } = guardianFilter(rawResponse);
 
-    // === データ保存 ===
+    // === Supabase保存 ===
     const now = new Date().toISOString();
+
     await supabase.from("messages").insert([
       {
         user_id: userId,
@@ -202,6 +220,7 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
 
     const growthWeight =
       (stableTraits.calm + stableTraits.empathy + stableTraits.curiosity) / 3;
+
     await supabase.from("growth_logs").insert([
       {
         user_id: userId,
@@ -213,6 +232,7 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
         created_at: now,
       },
     ]);
+
     await supabase.from("safety_logs").insert([
       {
         user_id: userId,
@@ -222,12 +242,15 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
         created_at: now,
       },
     ]);
+
     await PersonaSync.update(stableTraits, metaText, growthWeight, userId);
 
+    // === メモリ最適化 ===
     const flushResult = await flushSessionMemory(userId, sessionId, {
       threshold: 100,
       keepRecent: 20,
     });
+
     if (flushResult.didFlush)
       console.log(
         `🧹 Memory flushed: deleted ${flushResult.deletedCount}, kept ${flushResult.keptCount}`
@@ -241,6 +264,7 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
       sessionId,
     });
 
+    // === 成功レスポンス ===
     return NextResponse.json({
       output: safeText,
       reflection: reflectionText,
@@ -252,7 +276,10 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
       success: true,
     });
   } catch (e) {
-    console.error("[/api/aei] failed:", e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    console.error("💥 [/api/aei] failed:", e);
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : String(e) },
+      { status: 500 }
+    );
   }
 }

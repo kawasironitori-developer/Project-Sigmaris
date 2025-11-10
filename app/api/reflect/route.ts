@@ -1,4 +1,6 @@
 // /app/api/reflect/route.ts
+export const dynamic = "force-dynamic"; // ← 静的ビルド禁止（cookies使用のため）
+
 import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
@@ -7,13 +9,11 @@ import { getSupabaseServer } from "@/lib/supabaseServer";
 import { ReflectionEngine } from "@/engine/ReflectionEngine";
 import { PersonaSync } from "@/engine/sync/PersonaSync";
 import { summarize } from "@/lib/summary";
-import { runParallel } from "@/lib/parallelTasks"; // 並列実行
-import { flushSessionMemory } from "@/lib/memoryFlush"; // 履歴圧縮
-import { guardUsageOrTrial } from "@/lib/guard"; // 🆕 課金・上限ガード
+import { runParallel } from "@/lib/parallelTasks";
+import { flushSessionMemory } from "@/lib/memoryFlush";
+import { guardUsageOrTrial } from "@/lib/guard";
 import type { TraitVector } from "@/lib/traits";
 import type { MetaReport } from "@/engine/meta/MetaReflectionEngine";
-
-console.log("🌐 /api/reflect endpoint loaded");
 
 interface ReflectionResult {
   reflection: string;
@@ -26,10 +26,11 @@ interface ReflectionResult {
 }
 
 /**
- * === POST: Reflection 実行エンドポイント ===
- * - ReflectionEngine → MetaReflectionEngine → PersonaSync（Supabase同期）
- * - summarize + flush を組み込み、高速化・安定化
- * - 課金／試用ガード（reflect カウント）
+ * POST /api/reflect
+ * ----------------------------------------
+ * - ReflectionEngine → MetaReflectionEngine → PersonaSync
+ * - summarize + flush 組み込み（軽量化）
+ * - guardUsageOrTrial（reflectカウント）
  */
 export async function POST(req: Request) {
   try {
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
     const growthLog = body.growthLog ?? [];
     const history = body.history ?? [];
 
-    // === セッションID（ヘッダー or 新規UUID）===
+    // === セッションID ===
     const sessionId = req.headers.get("x-session-id") || crypto.randomUUID();
 
     // === 認証 ===
@@ -54,12 +55,10 @@ export async function POST(req: Request) {
       error: authError,
     } = await supabaseAuth.auth.getUser();
 
-    if (authError || !user) {
-      console.warn("⚠️ Unauthorized access attempt to /api/reflect");
+    if (authError || !user)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
-    // 🛡️ 課金／試用ガード（reflect 用）— 型ずれ回避のため軽く正規化
+    // === トライアル・課金ガード ===
     const billingUser = {
       id: user.id,
       email: (user as any)?.email ?? undefined,
@@ -71,16 +70,12 @@ export async function POST(req: Request) {
 
     const userId = user.id;
     const now = new Date().toISOString();
-    console.log("🚀 [ReflectAPI] Start reflection for:", { userId, sessionId });
 
-    // === 並列で summarize + ReflectionEngine を実行 ===
+    // === 並列処理 ===
     const parallel = await runParallel([
       {
         label: "summary",
-        run: async () => {
-          // 直近は ReflectionEngine に渡すので、前段を要約
-          return await summarize(messages.slice(0, -10));
-        },
+        run: async () => await summarize(messages.slice(0, -10)),
       },
       {
         label: "reflection",
@@ -88,25 +83,21 @@ export async function POST(req: Request) {
           const engine = new ReflectionEngine();
           return (await engine.fullReflect(
             growthLog,
-            messages.slice(-10), // 直近のみ詳細を渡す
-            "", // summaryは後で使う（LLM負荷分離）
+            messages.slice(-10),
+            "",
             userId
           )) as ReflectionResult;
         },
       },
     ]);
 
-    // === 要約と内省結果を統合 ===
     const summary = parallel.summary ?? "";
     const reflectionResult = parallel.reflection as ReflectionResult;
-
-    if (!reflectionResult) {
-      console.warn("⚠️ ReflectionEngine returned null");
+    if (!reflectionResult)
       return NextResponse.json(
-        { error: "ReflectionEngine returned null", success: false },
+        { error: "ReflectionEngine returned null" },
         { status: 500 }
       );
-    }
 
     // === 結果抽出 ===
     const reflectionText = reflectionResult.reflection ?? "（内省なし）";
@@ -117,17 +108,9 @@ export async function POST(req: Request) {
     const traits = reflectionResult.traits ?? null;
     const flagged = reflectionResult.flagged ?? false;
 
-    console.log("🪞 Reflection result:", {
-      reflectionText,
-      metaSummary,
-      traits,
-      safety,
-      flagged,
-    });
-
     const supabase = getSupabaseServer();
 
-    // 🧠 1. reflections 履歴を保存（summary付き）
+    // === reflections保存 ===
     const { error: refError } = await supabase.from("reflections").insert([
       {
         user_id: userId,
@@ -140,12 +123,10 @@ export async function POST(req: Request) {
         created_at: now,
       },
     ]);
-    if (refError)
-      console.warn("⚠️ reflections insert failed:", refError.message);
+    if (refError) console.warn("reflections insert failed:", refError.message);
 
-    // 💾 2. PersonaSync + growth_logs 更新
+    // === PersonaSync + growth_logs ===
     if (traits) {
-      console.log("🧩 Updating PersonaSync & growth logs...");
       try {
         await PersonaSync.update(
           traits,
@@ -153,9 +134,8 @@ export async function POST(req: Request) {
           metaReport?.growthAdjustment ?? 0,
           userId
         );
-        console.log("✅ PersonaSync.update success:", traits);
       } catch (e) {
-        console.error("⚠️ PersonaSync.update failed:", e);
+        console.error("PersonaSync.update failed:", e);
       }
 
       const growthWeight =
@@ -172,13 +152,10 @@ export async function POST(req: Request) {
         },
       ]);
       if (growError)
-        console.warn("⚠️ growth_logs insert failed:", growError.message);
-      else console.log("📈 Growth log updated:", growthWeight.toFixed(3));
-    } else {
-      console.warn("⚠️ No traits found in reflection result — Persona skipped");
+        console.warn("growth_logs insert failed:", growError.message);
     }
 
-    // 🧩 3. safety_logs 保存
+    // === safety_logs ===
     const { error: safeError } = await supabase.from("safety_logs").insert([
       {
         user_id: userId,
@@ -189,22 +166,15 @@ export async function POST(req: Request) {
       },
     ]);
     if (safeError)
-      console.warn("⚠️ safety_logs insert failed:", safeError.message);
+      console.warn("safety_logs insert failed:", safeError.message);
 
-    // 🧹 4. flushSessionMemory：履歴圧縮
+    // === flush ===
     const flushResult = await flushSessionMemory(userId, sessionId, {
       threshold: 120,
       keepRecent: 25,
     });
-    if (flushResult?.didFlush) {
-      console.log(
-        `🧹 Memory flushed: deleted ${flushResult.deletedCount}, kept ${flushResult.keptCount}`
-      );
-    }
 
-    console.log("✅ Reflection process complete for:", { userId, sessionId });
-
-    // === レスポンス ===
+    // === 返却 ===
     return NextResponse.json({
       reflection: reflectionText,
       introspection,
@@ -219,12 +189,12 @@ export async function POST(req: Request) {
       updatedHistory: [...history, introspection],
       success: true,
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error("[ReflectAPI Error]", err);
     return NextResponse.json(
       {
         reflection: "……うまく振り返れなかったみたい。",
-        error: err?.message ?? String(err),
+        error: err instanceof Error ? err.message : String(err),
         success: false,
       },
       { status: 500 }
