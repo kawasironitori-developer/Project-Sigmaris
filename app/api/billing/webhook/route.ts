@@ -19,14 +19,14 @@ try {
 /**
  * 📦 Stripe Webhook ハンドラー
  * - checkout.session.completed → 支払い完了
- * - customer.subscription.* → サブスク系（今後の拡張用）
+ * - customer.subscription.* → サブスク系（将来拡張用）
  */
 export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
   if (!sig)
     return NextResponse.json({ error: "No signature" }, { status: 400 });
 
-  const raw = await req.text();
+  const rawBody = await req.text();
 
   if (!stripe) {
     console.log("💤 Mock Stripe Webhook triggered (審査中モード)");
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
   let event: any;
   try {
     event = stripe.webhooks.constructEvent(
-      raw,
+      rawBody,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
     );
@@ -52,7 +52,10 @@ export async function POST(req: Request) {
 
   try {
     switch (event.type) {
-      // 🧾 支払い完了（プリペイド）
+      /**
+       * 🧾 支払い完了（プリペイド式チャージ）
+       * Stripe Checkout の単発決済に対応
+       */
       case "checkout.session.completed": {
         const session = event.data.object;
         const stripeCustomerId = session.customer as string | null;
@@ -65,9 +68,9 @@ export async function POST(req: Request) {
           break;
         }
 
-        // 既存の残高取得
-        const { data: userData, error: fetchErr } = await supabase
-          .from("users")
+        // 💾 既存のクレジット残高を取得
+        const { data: profile, error: fetchErr } = await supabase
+          .from("user_profiles") // ← 修正箇所
           .select("credit_balance")
           .eq("stripe_customer_id", stripeCustomerId)
           .single();
@@ -76,16 +79,17 @@ export async function POST(req: Request) {
           console.error("⚠️ Could not fetch user credit:", fetchErr);
         }
 
-        const currentCredits = userData?.credit_balance ?? 0;
+        const currentCredits = profile?.credit_balance ?? 0;
         const newCredits = currentCredits + creditsToAdd;
 
-        // 💰 クレジット反映 + 有効期間更新
+        // 📅 有効期間 +30日
         const plus30d = new Date(
           Date.now() + 30 * 24 * 60 * 60 * 1000
         ).toISOString();
 
-        await supabase
-          .from("users")
+        // 💰 クレジット反映＋プラン更新
+        const { error: updateErr } = await supabase
+          .from("user_profiles") // ← 修正箇所
           .update({
             plan: "pro",
             trial_end: plus30d,
@@ -93,25 +97,33 @@ export async function POST(req: Request) {
           })
           .eq("stripe_customer_id", stripeCustomerId);
 
-        console.log(`💰 Payment success for ${stripeCustomerId}`, {
-          chargeType,
-          added: creditsToAdd,
-          total: newCredits,
-          trial_end: plus30d,
-        });
+        if (updateErr) {
+          console.error("⚠️ Failed to update user profile:", updateErr);
+        } else {
+          console.log(`💰 Payment success for ${stripeCustomerId}`, {
+            chargeType,
+            added: creditsToAdd,
+            total: newCredits,
+            trial_end: plus30d,
+          });
+        }
+
         break;
       }
 
-      // 🆕 サブスク作成・更新（将来用）
+      /**
+       * 🆕 サブスク系イベント（将来対応予定）
+       */
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
-        console.log(`ℹ️ Subscription event: ${event.type}`);
+        console.log(`ℹ️ Subscription event received: ${event.type}`);
         break;
       }
 
-      default:
-        console.log(`ℹ️ Unhandled event: ${event.type}`);
+      default: {
+        console.log(`ℹ️ Unhandled event type: ${event.type}`);
+      }
     }
 
     return NextResponse.json({ received: true });
