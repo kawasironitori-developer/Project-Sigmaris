@@ -47,7 +47,7 @@ async function debugLog(phase: string, payload: any) {
 
 /** POST /api/reflect */
 export async function POST(req: Request) {
-  const step: any = { phase: "init" };
+  const step: any = { phase: "POST-start" };
 
   try {
     // === 入力受け取り ===
@@ -78,7 +78,7 @@ export async function POST(req: Request) {
     const supabase = getSupabaseServer();
     const now = new Date().toISOString();
 
-    // === 💰 クレジットチェック ===
+    // === 💰 クレジット現在値 ===
     step.phase = "credit-check";
     const { data: profile, error: creditErr } = await supabase
       .from("user_profiles")
@@ -94,7 +94,82 @@ export async function POST(req: Request) {
     const currentCredits = profile.credit_balance ?? 0;
     step.credit = currentCredits;
 
-    // ⚠️ 残高不足ブロック
+    // === トライアル／使用量ガード ===
+    // 仕様：Trial expired でもクレジットが残っていれば継続（課金を優先）
+    step.phase = "trial-guard";
+    let guardBlocked = false;
+    let guardReason: string | undefined;
+
+    try {
+      await guardUsageOrTrial(
+        {
+          id: userId,
+          email: (user as any)?.email ?? undefined,
+          plan: (user as any)?.plan ?? undefined,
+          trial_end: (user as any)?.trial_end ?? null,
+          is_billing_exempt: (user as any)?.is_billing_exempt ?? false,
+        },
+        "reflect"
+      );
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      guardReason = msg;
+
+      // 「Trial expired」かつクレジットがあるなら通す
+      if (/Trial expired/i.test(msg) && currentCredits > 0) {
+        await debugLog("reflect_guard_soft_bypass", {
+          userId,
+          reason: msg,
+          currentCredits,
+        });
+        guardBlocked = false;
+      } else {
+        guardBlocked = true;
+      }
+    }
+
+    if (guardBlocked) {
+      const message =
+        guardReason && /limit/i.test(guardReason)
+          ? "💬 無料上限に達しました。プランをアップグレードしてください。"
+          : "💬 トライアル期間が終了しました。プランをアップグレードして再開してください。";
+
+      await supabase.from("reflections").insert([
+        {
+          user_id: userId,
+          session_id: sessionId,
+          reflection: message,
+          introspection: "",
+          meta_summary: "",
+          summary_text: "",
+          safety_status: /limit/i.test(guardReason ?? "")
+            ? "上限到達"
+            : "トライアル終了",
+          created_at: now,
+        },
+      ]);
+
+      await debugLog("reflect_guard_block", {
+        userId,
+        reason: guardReason,
+        currentCredits,
+      });
+
+      return NextResponse.json({
+        success: false,
+        reflection: message,
+        introspection: "",
+        metaSummary: "",
+        safety: /limit/i.test(guardReason ?? "")
+          ? "上限到達"
+          : "トライアル終了",
+        traits: null,
+        flagged: false,
+        sessionId,
+      });
+    }
+
+    // === 残高不足（guardは通ってもブロック） ===
     if (currentCredits <= 0) {
       const message =
         "💬 クレジットが不足しています。チャージまたはプラン変更を行ってください。";
@@ -110,7 +185,10 @@ export async function POST(req: Request) {
           created_at: now,
         },
       ]);
-      await debugLog("reflect_credit_insufficient", { userId, currentCredits });
+      await debugLog("reflect_credit_insufficient", {
+        userId,
+        currentCredits,
+      });
       return NextResponse.json({
         success: false,
         reflection: message,
@@ -123,68 +201,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // === トライアルガード（有効残高がある場合でも適用） ===
-    step.phase = "trial-guard";
-    let trialExpired = false;
-    try {
-      await guardUsageOrTrial(
-        {
-          id: userId,
-          email: (user as any)?.email ?? undefined,
-          plan: (user as any)?.plan ?? undefined,
-          trial_end: (user as any)?.trial_end ?? null,
-          is_billing_exempt: (user as any)?.is_billing_exempt ?? false,
-        },
-        "reflect"
-      );
-    } catch (err: any) {
-      trialExpired = true;
-      await debugLog("reflect_trial_expired", {
-        userId,
-        err: err?.message || String(err),
-      });
-    }
-
-    if (trialExpired) {
-      const message =
-        "💬 トライアル期間が終了しました。プランをアップグレードして再開してください。";
-      await supabase.from("reflections").insert([
-        {
-          user_id: userId,
-          session_id: sessionId,
-          reflection: message,
-          introspection: "",
-          meta_summary: "",
-          summary_text: "",
-          safety_status: "トライアル終了",
-          created_at: now,
-        },
-      ]);
-      await new Promise((res) => setTimeout(res, 100));
-      return NextResponse.json({
-        success: false,
-        reflection: message,
-        introspection: "",
-        metaSummary: "",
-        safety: "トライアル終了",
-        traits: null,
-        flagged: false,
-        sessionId,
-      });
-    }
-
-    // === クレジット1消費 ===
-    step.phase = "credit-decrement";
-    const newCredits = currentCredits - 1;
-    const { error: updateErr } = await supabase
-      .from("user_profiles")
-      .update({ credit_balance: newCredits })
-      .eq("auth_user_id", userId);
-
-    if (updateErr)
-      console.warn("credit_balance update failed:", updateErr.message);
-
-    // === 並列処理 ===
+    // === 並列処理（LLM等） ===
     step.phase = "parallel-run";
     const parallel = await runParallel([
       {
@@ -193,7 +210,9 @@ export async function POST(req: Request) {
           try {
             return await summarize(messages.slice(0, -10));
           } catch (err) {
-            console.warn("summary failed:", err);
+            await debugLog("reflect_summary_failed", {
+              err: String(err),
+            });
             return "";
           }
         },
@@ -211,7 +230,6 @@ export async function POST(req: Request) {
             );
             return result as ReflectionResult;
           } catch (err) {
-            console.error("ReflectionEngine error:", err);
             await debugLog("reflect_engine_error", { err: String(err) });
             return null;
           }
@@ -224,7 +242,6 @@ export async function POST(req: Request) {
 
     if (!reflectionResult) {
       await debugLog("reflect_result_null", { userId, sessionId });
-      await new Promise((res) => setTimeout(res, 100));
       return NextResponse.json(
         { success: false, error: "ReflectionEngine returned null" },
         { status: 500 }
@@ -240,9 +257,9 @@ export async function POST(req: Request) {
     const traits = reflectionResult.traits ?? null;
     const flagged = reflectionResult.flagged ?? false;
 
-    // === DB保存 ===
-    step.phase = "save";
-    await supabase.from("reflections").insert([
+    // === DB保存（結果） ===
+    step.phase = "save-reflection";
+    const { error: refError } = await supabase.from("reflections").insert([
       {
         user_id: userId,
         session_id: sessionId,
@@ -254,6 +271,9 @@ export async function POST(req: Request) {
         created_at: now,
       },
     ]);
+    if (refError) {
+      await debugLog("reflect_insert_failed", { err: refError.message });
+    }
 
     // === PersonaSync + growth_logs ===
     step.phase = "persona-update";
@@ -266,12 +286,14 @@ export async function POST(req: Request) {
           userId
         );
       } catch (e) {
-        console.error("PersonaSync.update failed:", e);
+        await debugLog("reflect_persona_update_failed", {
+          err: String(e),
+        });
       }
 
       const growthWeight =
         (traits.calm + traits.empathy + traits.curiosity) / 3;
-      await supabase.from("growth_logs").insert([
+      const { error: growError } = await supabase.from("growth_logs").insert([
         {
           user_id: userId,
           session_id: sessionId,
@@ -282,11 +304,16 @@ export async function POST(req: Request) {
           created_at: now,
         },
       ]);
+      if (growError) {
+        await debugLog("reflect_growth_insert_failed", {
+          err: growError.message,
+        });
+      }
     }
 
     // === safety_logs ===
     step.phase = "safety-log";
-    await supabase.from("safety_logs").insert([
+    const { error: safeError } = await supabase.from("safety_logs").insert([
       {
         user_id: userId,
         session_id: sessionId,
@@ -295,6 +322,11 @@ export async function POST(req: Request) {
         created_at: now,
       },
     ]);
+    if (safeError) {
+      await debugLog("reflect_safety_insert_failed", {
+        err: safeError.message,
+      });
+    }
 
     // === flush ===
     step.phase = "flush";
@@ -303,14 +335,35 @@ export async function POST(req: Request) {
       keepRecent: 25,
     });
 
+    // === クレジット1消費（成功時のみ） ===
+    step.phase = "credit-decrement";
+    const { data: updated, error: updateErr } = await supabase
+      .from("user_profiles")
+      .update({ credit_balance: (currentCredits ?? 0) - 1 })
+      .eq("auth_user_id", userId)
+      .select("credit_balance")
+      .single();
+
+    let creditAfter = (currentCredits ?? 0) - 1;
+    if (updateErr) {
+      await debugLog("reflect_credit_update_failed", {
+        userId,
+        err: updateErr.message,
+      });
+    } else if (!updated) {
+      await debugLog("reflect_credit_update_zero_row", { userId });
+    } else {
+      creditAfter = updated.credit_balance ?? creditAfter;
+    }
+
     // === 終了 ===
     await debugLog("reflect_success", {
       userId,
       sessionId,
-      creditAfter: newCredits,
+      creditBefore: currentCredits,
+      creditAfter,
       reflectionPreview: reflectionText.slice(0, 60),
     });
-    await new Promise((res) => setTimeout(res, 100));
 
     return NextResponse.json({
       reflection: reflectionText,
@@ -323,15 +376,13 @@ export async function POST(req: Request) {
       sessionId,
       summaryUsed: !!summary,
       flush: flushResult ?? null,
-      creditAfter: newCredits,
+      creditAfter,
       success: true,
       step,
     });
   } catch (err: any) {
     step.error = err?.message || String(err);
-    console.error("[ReflectAPI Error]", err);
     await debugLog("reflect_catch", { step, message: step.error });
-    await new Promise((res) => setTimeout(res, 100));
     return NextResponse.json(
       {
         reflection: "……うまく振り返れなかったみたい。",
