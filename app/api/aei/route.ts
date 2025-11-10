@@ -103,7 +103,9 @@ export async function POST(req: Request) {
     // クレジット消費チェック（サーバー→サーバーでも Cookie を明示転送）
     const origin =
       process.env.NEXT_PUBLIC_BASE_URL ||
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+      (process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "http://localhost:3000");
 
     const creditRes = await fetch(`${origin}/api/credits/use`, {
       method: "POST",
