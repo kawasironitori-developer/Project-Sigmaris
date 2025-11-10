@@ -19,7 +19,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 const DEV = process.env.NODE_ENV !== "production";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
-/** 危険語フィルタ */
+/** 🧩 危険語フィルタ */
 function guardianFilter(text: string) {
   const banned = /(殺|死|暴力|自殺|危険|犯罪|攻撃)/;
   const flagged = banned.test(text);
@@ -32,7 +32,7 @@ function guardianFilter(text: string) {
     : { safeText: text, flagged: false };
 }
 
-/** Supabase Debug Logger */
+/** 🪶 Supabase Debug Logger */
 async function debugLog(phase: string, payload: any) {
   try {
     const supabase = getSupabaseServer();
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
     const currentCredits = profile.credit_balance ?? 0;
     step.credit = currentCredits;
 
-    // ⚠️ 残高不足 → AIメッセージで促す
+    // ⚠️ 残高不足 → AIメッセージで促す（クレジット減算なし）
     if (currentCredits <= 0) {
       const message =
         "💬 クレジットが不足しています。チャージまたはプラン変更を行ってください。";
@@ -158,15 +158,8 @@ export async function POST(req: Request) {
       });
     }
 
-    // 残高OK → 減算
-    const newCredits = currentCredits - 1;
-    await supabase
-      .from("user_profiles")
-      .update({ credit_balance: newCredits })
-      .eq("id", user.id);
-    step.creditAfter = newCredits;
-
-    // 利用制限
+    // === 利用制限（トライアルチェック）===
+    let trialExpired = false;
     try {
       await guardUsageOrTrial(
         {
@@ -179,17 +172,56 @@ export async function POST(req: Request) {
         "aei"
       );
     } catch (err: any) {
-      if (DEV) {
-        console.warn("⚠️ Trial expired — skipping in DEV mode");
-        await debugLog("guard-warning", {
+      trialExpired = true;
+      console.warn("⚠️ Trial expired — blocking AI response");
+      await debugLog("guard-warning", {
+        user_id: user.id,
+        session_id: sessionId,
+        message: err?.message,
+      });
+    }
+
+    // ⚠️ トライアル終了 → AIメッセージで促す（クレジット減算なし）
+    if (trialExpired) {
+      const message =
+        "💬 トライアル期間が終了しました。プランをアップグレードして再開してください。";
+      const now = new Date().toISOString();
+      await supabase.from("messages").insert([
+        {
           user_id: user.id,
           session_id: sessionId,
-          message: err?.message,
-        });
-      } else {
-        throw err;
-      }
+          role: "user",
+          content: userText,
+          created_at: now,
+        },
+        {
+          user_id: user.id,
+          session_id: sessionId,
+          role: "ai",
+          content: message,
+          created_at: now,
+        },
+      ]);
+      console.log("⚠️ トライアル終了応答を送信");
+      return NextResponse.json({
+        success: false,
+        output: message,
+        reflection: "",
+        metaSummary: "",
+        traits: null,
+        safety: { flagged: false },
+        sessionId,
+        step,
+      });
     }
+
+    // 残高・トライアルOK → クレジット減算
+    const newCredits = currentCredits - 1;
+    await supabase
+      .from("user_profiles")
+      .update({ credit_balance: newCredits })
+      .eq("id", user.id);
+    step.creditAfter = newCredits;
 
     // Personaロード
     const persona = await PersonaSync.load(user.id);
@@ -256,8 +288,7 @@ calm=${stableTraits.calm.toFixed(2)}, empathy=${stableTraits.empathy.toFixed(
         )}, curiosity=${stableTraits.curiosity.toFixed(2)}
 過去の内省: "${reflection}"
 人格傾向: "${metaText}"
-${summary ? `これまでの文脈要約: ${summary}` : ""}
-        `,
+${summary ? `これまでの文脈要約: ${summary}` : ""}`,
       },
       ...(recent.length
         ? recent.map((m: any) => ({
