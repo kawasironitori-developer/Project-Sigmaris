@@ -2,10 +2,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { applyEunoiaTone } from "@/lib/eunoia";
-import { summarize } from "@/lib/summary"; // 要約生成
+import { summarize } from "@/lib/summary";
 import type { SafetyReport } from "@/engine/safety/SafetyLayer";
 
-// ===== 型定義 =====
 interface Message {
   user: string;
   ai: string;
@@ -26,13 +25,13 @@ interface ChatSession {
   messageCount?: number;
 }
 
-// ===== 翻訳関数 =====
 async function translateToEnglish(text: string): Promise<string> {
   if (!text?.trim()) return "";
   try {
     const res = await fetch("/api/translate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ text, targetLang: "en" }),
     });
     const data = await res.json();
@@ -44,7 +43,6 @@ async function translateToEnglish(text: string): Promise<string> {
 }
 
 export function useSigmarisChat() {
-  // ====== 状態 ======
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [traits, setTraits] = useState<Trait>({
@@ -66,10 +64,10 @@ export function useSigmarisChat() {
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [lang, setLang] = useState<"ja" | "en">("ja");
 
-  // ====== セッション一覧 ======
+  /** 🔹 セッション一覧を取得 */
   const loadSessions = useCallback(async () => {
     try {
-      const res = await fetch("/api/sessions");
+      const res = await fetch("/api/sessions", { credentials: "include" });
       if (!res.ok) return;
       const data = await res.json();
       const supabaseChats: ChatSession[] = (data.sessions ?? []).map(
@@ -98,10 +96,12 @@ export function useSigmarisChat() {
     }
   }, [currentChatId]);
 
-  // ====== メッセージ取得 ======
+  /** 🔹 メッセージ一覧を取得 */
   const loadMessages = useCallback(async (sessionId: string) => {
     try {
-      const res = await fetch(`/api/aei?session=${sessionId}`);
+      const res = await fetch(`/api/aei?session=${sessionId}`, {
+        credentials: "include",
+      });
       if (!res.ok) return;
       const data = await res.json();
       setMessages(data.messages ?? []);
@@ -110,7 +110,6 @@ export function useSigmarisChat() {
     }
   }, []);
 
-  // ====== 初期ロード ======
   useEffect(() => {
     loadSessions();
   }, [loadSessions]);
@@ -123,11 +122,11 @@ export function useSigmarisChat() {
     }
   }, [currentChatId, loadMessages]);
 
-  // ====== ペルソナロード ======
+  /** 🔹 ペルソナ情報をロード */
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/persona");
+        const res = await fetch("/api/persona", { credentials: "include" });
         if (!res.ok) return;
         const data = await res.json();
         if (!data || data.error) return;
@@ -154,7 +153,7 @@ export function useSigmarisChat() {
     })();
   }, []);
 
-  // ====== メッセージ送信（日英翻訳対応 + 軽量化） ======
+  /** 🔹 メッセージ送信 */
   const handleSend = async () => {
     if (!input.trim() || !currentChatId) return;
 
@@ -165,7 +164,6 @@ export function useSigmarisChat() {
     setLoading(true);
 
     try {
-      // 🧩 会話圧縮：長文時のみ要約 + 直近10件
       let recentMessages = messages;
       let summary = "";
       if (messages.length > 30) {
@@ -179,6 +177,7 @@ export function useSigmarisChat() {
           "Content-Type": "application/json",
           "x-session-id": currentChatId,
         },
+        credentials: "include",
         body: JSON.stringify({
           text: userMessage,
           recent: recentMessages,
@@ -199,13 +198,11 @@ export function useSigmarisChat() {
         empathyLevel: traits.empathy,
       });
 
-      // 双方向を英訳（UI切替用キャッシュ）
       const [userEn, aiEn] = await Promise.all([
         translateToEnglish(userMessage),
         translateToEnglish(aiText),
       ]);
 
-      // 最新30件のみ保持（メモリ軽量化）
       const updatedMessages = [
         ...tempMessages.slice(-30, -1),
         { user: userMessage, ai: aiText, user_en: userEn, ai_en: aiEn },
@@ -224,7 +221,7 @@ export function useSigmarisChat() {
     }
   };
 
-  // ====== Reflect（英訳キャッシュ生成 & 出し分け） ======
+  /** 🔹 Reflect */
   const handleReflect = async () => {
     if (!currentChatId) return;
     setReflecting(true);
@@ -235,6 +232,7 @@ export function useSigmarisChat() {
           "Content-Type": "application/json",
           "x-session-id": currentChatId,
         },
+        credentials: "include",
         body: JSON.stringify({ messages, growthLog }),
       });
       const data = await res.json();
@@ -250,10 +248,8 @@ export function useSigmarisChat() {
 
       setReflectionTextEn(reflectionEn);
       setMetaSummaryEn(metaEn);
-
       setReflectionText(lang === "en" ? reflectionEn : reflectionJa);
       setMetaSummary(lang === "en" ? metaEn : metaJa);
-
       setSafetyReport(data.safety || undefined);
       if (data.traits) setTraits(data.traits);
     } catch (err) {
@@ -263,17 +259,13 @@ export function useSigmarisChat() {
     }
   };
 
-  // ====== 言語切替時に表示を即時反映 ======
   useEffect(() => {
     if (lang === "en") {
       if (reflectionTextEn) setReflectionText(reflectionTextEn);
       if (metaSummaryEn) setMetaSummary(metaSummaryEn);
     }
-    // 日本語時は既存値（DB由来）をそのまま使う
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang, reflectionTextEn, metaSummaryEn]);
 
-  // ====== 新規チャット ======
   const handleNewChat = () => {
     const newId = uuidv4();
     const newChat: ChatSession = {
@@ -290,7 +282,10 @@ export function useSigmarisChat() {
 
   const handleDeleteChat = async (id: string) => {
     try {
-      await fetch(`/api/sessions?id=${id}`, { method: "DELETE" });
+      await fetch(`/api/sessions?id=${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
       setChats((prev) => prev.filter((c) => c.id !== id));
       if (currentChatId === id) {
         setCurrentChatId(null);
@@ -307,6 +302,7 @@ export function useSigmarisChat() {
       const res = await fetch("/api/sessions", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ sessionId: id, newTitle }),
       });
       if (!res.ok) throw new Error("Rename failed");
@@ -322,7 +318,10 @@ export function useSigmarisChat() {
   const handleDeleteMessage = async (index: number) => {
     setMessages((prev) => prev.filter((_, i) => i !== index));
     if (!currentChatId) return;
-    await fetch(`/api/messages?session=${currentChatId}`, { method: "DELETE" });
+    await fetch(`/api/messages?session=${currentChatId}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
   };
 
   return {
