@@ -1,87 +1,116 @@
-// /app/api/billing/webhook/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-export async function POST(req: Request) {
-  console.log("🚀 Webhook triggered");
+let stripe: any = null;
+try {
+  const Stripe = require("stripe");
+  if (process.env.STRIPE_SECRET_KEY) {
+    stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: "2024-06-20",
+    });
+  }
+} catch (e) {
+  console.warn("⚠️ Stripe SDK unavailable (webhook):", e);
+}
 
+export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
   if (!sig)
     return NextResponse.json({ error: "No signature" }, { status: 400 });
 
   const rawBody = await req.text();
 
-  const Stripe = require("stripe");
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-    apiVersion: "2024-06-20",
-  });
-
-  let event;
+  let event: any;
   try {
     event = stripe.webhooks.constructEvent(
       rawBody,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
     );
-    console.log("✅ Stripe event received:", event.type);
   } catch (err: any) {
-    console.error("❌ Stripe signature verification failed:", err.message);
+    console.error("❌ Invalid Stripe signature:", err?.message);
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      global: { headers: { "Content-Type": "application/json" } },
+    }
   );
 
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
-    const userId = session.metadata?.userId;
-    const chargeType = session.metadata?.charge_type;
+  try {
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+      const userId = session.metadata?.userId;
+      const chargeType = session.metadata?.charge_type ?? "";
+      const creditsToAdd =
+        chargeType === "3000yen" ? 400 : chargeType === "1000yen" ? 100 : 0;
 
-    console.log("🧩 Metadata parsed", { userId, chargeType });
+      if (!userId) throw new Error("No userId in metadata");
 
-    if (!userId) {
-      console.warn("⚠️ No userId in metadata");
-      return NextResponse.json({ ok: false });
+      console.log("📦 Webhook received", { userId, chargeType, creditsToAdd });
+
+      // 現在のクレジット確認
+      const { data: profile, error: fetchErr } = await supabase
+        .from("user_profiles")
+        .select("id, credit_balance")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (fetchErr) console.error("⚠️ Fetch error:", fetchErr);
+
+      const currentCredits = profile?.credit_balance ?? 0;
+      const newCredits = currentCredits + creditsToAdd;
+      const plus30d = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+      // 既存データがない場合は insert に切り替え
+      if (!profile) {
+        const { error: insertErr } = await supabase
+          .from("user_profiles")
+          .insert([
+            {
+              id: userId,
+              credit_balance: newCredits,
+              plan: "pro",
+              trial_end: plus30d.toISOString(),
+              created_at: new Date().toISOString(),
+            },
+          ]);
+
+        if (insertErr) {
+          console.error("❌ Insert failed:", insertErr);
+          throw insertErr;
+        }
+
+        console.log("✅ New profile created:", userId);
+      } else {
+        const { error: updateErr } = await supabase
+          .from("user_profiles")
+          .update({
+            credit_balance: newCredits,
+            plan: "pro",
+            trial_end: plus30d.toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", userId);
+
+        if (updateErr) {
+          console.error("❌ Update failed:", updateErr);
+          throw updateErr;
+        }
+
+        console.log("✅ Credit updated:", { userId, newCredits });
+      }
     }
 
-    const { data: profile, error: fetchErr } = await supabase
-      .from("user_profiles")
-      .select("credit_balance")
-      .eq("id", userId)
-      .single();
-
-    console.log("📄 Fetched profile", { profile, fetchErr });
-
-    if (fetchErr) {
-      console.error("❌ Failed to fetch profile:", fetchErr);
-      return NextResponse.json({ error: "Fetch error" }, { status: 500 });
-    }
-
-    const creditsToAdd = chargeType === "3000yen" ? 400 : 100;
-    const newBalance = (profile?.credit_balance || 0) + creditsToAdd;
-
-    console.log("💰 Updating balance", {
-      old: profile?.credit_balance,
-      new: newBalance,
-    });
-
-    const { error: updateErr } = await supabase
-      .from("user_profiles")
-      .update({
-        credit_balance: newBalance,
-        plan: "pro",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", userId);
-
-    if (updateErr) {
-      console.error("❌ Failed to update profile:", updateErr);
-    } else {
-      console.log("✅ Credit balance updated successfully!");
-    }
+    return NextResponse.json({ ok: true });
+  } catch (err: any) {
+    console.error("💥 Webhook error:", err);
+    return NextResponse.json(
+      { error: err?.message ?? "Internal error" },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({ ok: true });
 }
