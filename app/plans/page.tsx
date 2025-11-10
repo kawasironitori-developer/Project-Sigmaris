@@ -60,7 +60,7 @@ function PlansContent(): JSX.Element {
             "・応答速度：通常（3〜8秒）",
           ],
           button: "チャージする",
-          link: "basic", // ← ダミー
+          link: "basic",
         },
         {
           name: "Advanced",
@@ -148,18 +148,22 @@ function PlansContent(): JSX.Element {
 
   const text = t[lang];
 
-  // 🔹 Stripe Checkout へ遷移する関数
-  const handleCheckout = async (plan: string) => {
-    const res = await fetch("/api/billing/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plan }),
-    });
-    const data = await res.json();
-    if (data.url) {
-      window.location.href = data.url;
-    } else {
-      alert(data.error || data.message || "Checkout failed");
+  // ✅ Stripe Checkout 呼び出し関数
+  const handleCheckout = async (amount: string) => {
+    try {
+      const res = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert(data.error || data.message || "Checkout failed");
+      }
+    } catch (e) {
+      alert("Network error. Please try again later.");
     }
   };
 
@@ -183,18 +187,21 @@ function PlansContent(): JSX.Element {
           {text.title}
         </motion.h1>
 
+        {/* 概要 */}
         <Card delay={0.2} title={text.aboutTitle}>
           <p className="text-[#c4d0e2] leading-relaxed whitespace-pre-line">
             {text.aboutText}
           </p>
         </Card>
 
+        {/* プラン一覧 */}
         <Card delay={0.4} title={text.planTitle} center>
           <div className="grid md:grid-cols-3 gap-8">
             {text.plansList.map((p, i) => {
               const isFeatured = i === 1;
               const isExternal = p.link.startsWith("http");
               const isBasic = p.name === "Basic";
+              const isAdvanced = p.name === "Advanced";
 
               return (
                 <div
@@ -222,7 +229,14 @@ function PlansContent(): JSX.Element {
 
                   {isBasic ? (
                     <button
-                      onClick={() => handleCheckout("pro")}
+                      onClick={() => handleCheckout("1000")}
+                      className="inline-block px-6 py-2 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/10 transition"
+                    >
+                      {p.button}
+                    </button>
+                  ) : isAdvanced ? (
+                    <button
+                      onClick={() => handleCheckout("3000")}
                       className="inline-block px-6 py-2 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/10 transition"
                     >
                       {p.button}
@@ -250,6 +264,7 @@ function PlansContent(): JSX.Element {
           </div>
         </Card>
 
+        {/* 注意事項 */}
         <Card delay={0.6} title={text.noticeTitle}>
           <ul className="list-disc ml-6 space-y-2 text-[#c4d0e2]">
             {text.notices.map((n, i) => (
@@ -258,6 +273,7 @@ function PlansContent(): JSX.Element {
           </ul>
         </Card>
 
+        {/* 戻る */}
         <motion.div
           className="mt-16 text-center"
           initial={{ opacity: 0 }}
