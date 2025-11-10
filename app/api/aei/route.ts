@@ -38,6 +38,7 @@ export async function GET(req: Request) {
       data: { user },
       error: authError,
     } = await supabaseAuth.auth.getUser();
+
     if (authError || !user)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -58,10 +59,12 @@ export async function GET(req: Request) {
     type Row = { role: "user" | "ai"; content: string; created_at: string };
     const rows = (data ?? []) as Row[];
     const paired: { user: string; ai: string }[] = [];
+
     let pendingUser: string | null = null;
     for (const r of rows) {
-      if (r.role === "user") pendingUser = r.content ?? "";
-      else {
+      if (r.role === "user") {
+        pendingUser = r.content ?? "";
+      } else {
         const u = pendingUser ?? "";
         paired.push({ user: u, ai: r.content ?? "" });
         pendingUser = null;
@@ -70,8 +73,13 @@ export async function GET(req: Request) {
     if (pendingUser !== null) paired.push({ user: pendingUser, ai: "" });
 
     return NextResponse.json({ messages: paired });
-  } catch (e) {
+  } catch (e: any) {
     console.error("[/api/aei GET] failed:", e);
+    if (e instanceof Error) {
+      console.error("🧩 Error name:", e.name);
+      console.error("🧩 Error message:", e.message);
+      console.error("🧩 Error stack:", e.stack);
+    }
     return NextResponse.json({ messages: [] });
   }
 }
@@ -94,7 +102,7 @@ export async function POST(req: Request) {
 
     const supabase = getSupabaseServer();
 
-    // === 💰 クレジット確認と消費（ローカル処理） ===
+    // === 💰 クレジット確認と消費 ===
     const { data: profile, error: creditErr } = await supabase
       .from("user_profiles")
       .select("credit_balance")
@@ -161,9 +169,10 @@ export async function POST(req: Request) {
       traits.calm = Math.min(1, traits.calm + 0.02);
     if (/(なぜ|どうして|なんで|知りたい|気になる)/.test(lower))
       traits.curiosity = Math.min(1, traits.curiosity + 0.03);
+
     const stableTraits = SafetyLayer.stabilize(traits);
 
-    // === 内省とメタ分析（並列） ===
+    // === 内省・メタ分析 ===
     const parallelResults = await runParallel([
       {
         label: "reflection",
@@ -237,7 +246,7 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
       response.choices[0]?.message?.content?.trim() || "……考えてた。";
     const { safeText, flagged } = guardianFilter(rawResponse);
 
-    // === Supabase保存 ===
+    // === 保存 ===
     const now = new Date().toISOString();
     await supabase.from("messages").insert([
       {
@@ -258,6 +267,7 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
 
     const growthWeight =
       (stableTraits.calm + stableTraits.empathy + stableTraits.curiosity) / 3;
+
     await supabase.from("growth_logs").insert([
       {
         user_id: user.id,
@@ -269,6 +279,7 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
         created_at: now,
       },
     ]);
+
     await supabase.from("safety_logs").insert([
       {
         user_id: user.id,
@@ -303,10 +314,22 @@ ${summary ? `これまでの文脈要約: ${summary}` : ""}
       sessionId,
       success: true,
     });
-  } catch (e) {
+  } catch (e: any) {
     console.error("💥 [/api/aei] failed:", e);
+
+    if (e instanceof Error) {
+      console.error("🧩 Error name:", e.name);
+      console.error("🧩 Error message:", e.message);
+      console.error("🧩 Error stack:", e.stack);
+    } else {
+      console.error("🧩 Raw error:", JSON.stringify(e, null, 2));
+    }
+
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
+      {
+        error: e instanceof Error ? `${e.name}: ${e.message}` : String(e),
+        stack: e instanceof Error ? e.stack : undefined,
+      },
       { status: 500 }
     );
   }
