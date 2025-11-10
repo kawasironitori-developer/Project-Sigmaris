@@ -6,7 +6,6 @@ import { getSupabaseServer } from "@/lib/supabaseServer";
 
 let stripe: any = null;
 try {
-  // ⚙️ Stripe SDK の動的ロード（ビルド時に undefined を避ける）
   const Stripe = require("stripe");
   if (process.env.STRIPE_SECRET_KEY) {
     stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -20,15 +19,15 @@ try {
 }
 
 /**
- * 💳 Stripe Checkout セッション生成API
- * - Stripeキー未発行時はモックレスポンスでビルドを通す
- * - Supabaseユーザー情報を参照して顧客IDを維持
+ * 💳 プリペイド式チャージ Checkout API
+ * - Stripe Payment モードで単発課金
+ * - Webhookで支払い成功後にクレジット残高を加算
  */
 export async function POST(req: Request) {
   try {
-    const { plan } = await req.json();
+    const { amount } = await req.json();
 
-    // ✅ Supabase認証確認
+    // ✅ Supabase認証
     const supabaseAuth = createRouteHandlerClient({ cookies });
     const {
       data: { user },
@@ -38,12 +37,12 @@ export async function POST(req: Request) {
     if (authError || !user)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    // ✅ Stripeが未設定の場合は安全にスキップ（審査待ちモード）
+    // ✅ Stripe未設定時のモックモード
     if (!stripe) {
       console.log("💤 Mock Stripe Checkout triggered (審査中)");
       return NextResponse.json({
         message:
-          "Stripe審査中のため、現在チェックアウトは利用できません。審査通過後に自動有効化されます。",
+          "Stripe審査中のため、現在チャージは利用できません。審査通過後に自動有効化されます。",
       });
     }
 
@@ -66,27 +65,34 @@ export async function POST(req: Request) {
       stripeCustomerId = customer.id;
     }
 
-    // ✅ プラン別のStripe Price IDマッピング
+    // ✅ チャージ金額に応じた Price ID をマッピング
     const priceMap: Record<string, string> = {
-      pro: process.env.STRIPE_PRICE_PRO_ID ?? "",
-      enterprise: process.env.STRIPE_PRICE_ENTERPRISE_ID ?? "",
+      "1000": process.env.STRIPE_PRICE_1000_ID ?? "",
+      "3000": process.env.STRIPE_PRICE_3000_ID ?? "",
     };
 
-    const selectedPrice = priceMap[plan] || priceMap["pro"];
+    const selectedPrice = priceMap[amount];
     if (!selectedPrice) {
-      throw new Error("Price ID not configured for selected plan.");
+      throw new Error(`Invalid charge amount or missing Stripe Price ID.`);
     }
 
-    // ✅ Stripe Checkoutセッション生成
+    // ✅ Checkout セッション生成（プリペイドモード）
     const session = await stripe.checkout.sessions.create({
       customer: stripeCustomerId,
-      mode: "subscription",
+      mode: "payment", // 🔥 単発支払いモード
       line_items: [{ price: selectedPrice, quantity: 1 }],
       success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/billing/success`,
       cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/billing/cancel`,
+      metadata: {
+        userId: user.id,
+        charge_type: `${amount}yen`,
+      },
     });
 
-    console.log("💳 Checkout session created:", session.id);
+    console.log(
+      `💳 Checkout session created for ${amount}円チャージ`,
+      session.id
+    );
 
     return NextResponse.json({ url: session.url });
   } catch (err: any) {
