@@ -3,6 +3,17 @@
 
 import { isBillingExempt, getPlanLimit } from "@/lib/plan";
 import { getUsage, incrementUsage, checkTrialExpired } from "@/lib/usage";
+import { getSupabaseServer } from "@/lib/supabaseServer";
+
+/** 🪶 デバッグログをSupabaseに保存 */
+async function debugLog(phase: string, payload: any) {
+  try {
+    const supabase = getSupabaseServer();
+    await supabase.from("debug_logs").insert([{ phase, payload }]);
+  } catch (err) {
+    console.error("⚠️ guard debugLog insert failed:", err);
+  }
+}
 
 /**
  * 🛡️ APIガード — 無料試用・上限・課金制御
@@ -20,36 +31,82 @@ export async function guardUsageOrTrial(
   } | null,
   type: "aei" | "reflect"
 ): Promise<void> {
-  if (!user) throw new Error("Unauthorized — user not found");
+  const phase: any = { phase: "guard_start", type };
+  try {
+    if (!user) throw new Error("Unauthorized — user not found");
 
-  // 🔓 開発者・免除ユーザー判定
-  if (isBillingExempt(user)) {
-    console.log(`💳 Billing bypass for: ${user.email ?? "unknown user"}`);
-    return; // 制限スキップ
+    await debugLog("guard_enter", {
+      userId: user.id,
+      email: user.email,
+      type,
+      plan: user.plan,
+      trial_end: user.trial_end,
+    });
+
+    // 🔓 開発者・免除ユーザー判定
+    if (isBillingExempt(user)) {
+      await debugLog("guard_bypass", { userId: user.id, email: user.email });
+      return;
+    }
+
+    // 📦 現在プラン情報取得
+    const plan = user.plan || "free";
+    const limit = getPlanLimit(plan, type);
+
+    let expired = false;
+    try {
+      expired = checkTrialExpired(user.trial_end);
+    } catch (e: any) {
+      await debugLog("guard_trial_check_error", {
+        userId: user.id,
+        message: e?.message || String(e),
+      });
+      expired = false; // 失敗時は安全側に通す
+    }
+
+    // ⏳ 試用期間終了チェック
+    if (plan === "free" && expired) {
+      await debugLog("guard_trial_expired", {
+        userId: user.id,
+        email: user.email,
+        plan,
+        trial_end: user.trial_end,
+      });
+      throw new Error("Trial expired — please upgrade your plan.");
+    }
+
+    // 📊 現在の使用量取得
+    const usage = await getUsage(user.id, type);
+    await debugLog("guard_usage_check", {
+      userId: user.id,
+      type,
+      usage,
+      limit,
+    });
+
+    // 🚧 上限超過チェック
+    if (usage >= limit) {
+      await debugLog("guard_limit_reached", {
+        userId: user.id,
+        usage,
+        limit,
+      });
+      throw new Error("Usage limit reached — please upgrade your plan.");
+    }
+
+    // ➕ 使用回数加算
+    await incrementUsage(user.id, type);
+    await debugLog("guard_increment", {
+      userId: user.id,
+      type,
+      newUsage: usage + 1,
+      limit,
+    });
+
+    await debugLog("guard_exit", { userId: user.id, status: "success" });
+  } catch (err: any) {
+    phase.error = err?.message;
+    await debugLog("guard_error", { phase, message: err?.message });
+    throw err;
   }
-
-  // 📦 現在プラン情報取得
-  const plan = user.plan || "free";
-  const limit = getPlanLimit(plan, type);
-  const expired = checkTrialExpired(user.trial_end);
-
-  // ⏳ 試用期間終了チェック
-  if (plan === "free" && expired) {
-    console.warn(`⛔ Trial expired for user: ${user.email ?? user.id}`);
-    throw new Error("Trial expired — please upgrade your plan.");
-  }
-
-  // 📊 現在の使用量取得
-  const usage = await getUsage(user.id, type);
-  console.log(`📈 Usage check → ${type}: ${usage}/${limit}`);
-
-  // 🚧 上限超過チェック
-  if (usage >= limit) {
-    console.warn(`⚠️ Usage limit reached for ${user.email ?? user.id}`);
-    throw new Error("Usage limit reached — please upgrade your plan.");
-  }
-
-  // ➕ 使用回数加算
-  await incrementUsage(user.id, type);
-  console.log(`✅ Usage incremented → ${type} now ${usage + 1}/${limit}`);
 }
