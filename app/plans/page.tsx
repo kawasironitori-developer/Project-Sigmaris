@@ -1,4 +1,3 @@
-// /app/plans/page.tsx
 "use client";
 
 import React from "react";
@@ -61,7 +60,7 @@ function PlansContent(): JSX.Element {
             "・応答速度：通常（3〜8秒）",
           ],
           button: "チャージする",
-          link: "/charge",
+          link: "basic", // ← ダミー
         },
         {
           name: "Advanced",
@@ -118,7 +117,7 @@ function PlansContent(): JSX.Element {
             "• Response speed: 3–8 sec",
           ],
           button: "Charge Now",
-          link: "/charge",
+          link: "basic",
         },
         {
           name: "Advanced",
@@ -149,21 +148,32 @@ function PlansContent(): JSX.Element {
 
   const text = t[lang];
 
+  // 🔹 Stripe Checkout へ遷移する関数
+  const handleCheckout = async (plan: string) => {
+    const res = await fetch("/api/billing/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plan }),
+    });
+    const data = await res.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      alert(data.error || data.message || "Checkout failed");
+    }
+  };
+
   return (
     <main className="relative min-h-screen bg-gradient-to-b from-[#0e141b] to-[#1a2230] text-[#e6eef4] px-6 md:px-16 py-24 overflow-hidden">
-      {/* 共通ヘッダー */}
       <Header />
 
-      {/* 背景 */}
       <motion.div
         className="absolute inset-0 bg-[radial-gradient(circle_at_70%_20%,rgba(68,116,255,0.08),transparent_70%)]"
         animate={{ opacity: [0.5, 0.8, 0.5] }}
         transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
       />
 
-      {/* コンテンツ */}
       <section className="relative z-10 max-w-5xl mx-auto mt-20">
-        {/* タイトル */}
         <motion.h1
           className="text-4xl md:text-5xl font-bold mb-12 text-center"
           initial={{ opacity: 0, y: 20 }}
@@ -173,22 +183,28 @@ function PlansContent(): JSX.Element {
           {text.title}
         </motion.h1>
 
-        {/* 概要 */}
         <Card delay={0.2} title={text.aboutTitle}>
           <p className="text-[#c4d0e2] leading-relaxed whitespace-pre-line">
             {text.aboutText}
           </p>
         </Card>
 
-        {/* プラン一覧 */}
         <Card delay={0.4} title={text.planTitle} center>
           <div className="grid md:grid-cols-3 gap-8">
             {text.plansList.map((p, i) => {
               const isFeatured = i === 1;
               const isExternal = p.link.startsWith("http");
+              const isBasic = p.name === "Basic";
 
-              const PlanInner = (
-                <>
+              return (
+                <div
+                  key={i}
+                  className={`border border-[#4c7cf7]/40 rounded-xl p-6 text-center ${
+                    isFeatured
+                      ? "bg-[#212b3d]/80 shadow-lg shadow-[#4c7cf7]/10"
+                      : "bg-[#1b2331]/60"
+                  }`}
+                >
                   <h3
                     className={`text-xl font-semibold mb-3 ${
                       isFeatured ? "text-[#4c7cf7]" : ""
@@ -203,27 +219,30 @@ function PlansContent(): JSX.Element {
                       <li key={j}>{d}</li>
                     ))}
                   </ul>
-                  <span className="inline-block px-6 py-2 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/10 transition">
-                    {p.button}
-                  </span>
-                </>
-              );
 
-              return (
-                <div
-                  key={i}
-                  className={`border border-[#4c7cf7]/40 rounded-xl p-6 text-center ${
-                    isFeatured
-                      ? "bg-[#212b3d]/80 shadow-lg shadow-[#4c7cf7]/10"
-                      : "bg-[#1b2331]/60"
-                  }`}
-                >
-                  {isExternal ? (
-                    <a href={p.link} target="_blank" rel="noopener noreferrer">
-                      {PlanInner}
+                  {isBasic ? (
+                    <button
+                      onClick={() => handleCheckout("pro")}
+                      className="inline-block px-6 py-2 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/10 transition"
+                    >
+                      {p.button}
+                    </button>
+                  ) : isExternal ? (
+                    <a
+                      href={p.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block px-6 py-2 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/10 transition"
+                    >
+                      {p.button}
                     </a>
                   ) : (
-                    <Link href={p.link}>{PlanInner}</Link>
+                    <Link
+                      href={p.link}
+                      className="inline-block px-6 py-2 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/10 transition"
+                    >
+                      {p.button}
+                    </Link>
                   )}
                 </div>
               );
@@ -231,7 +250,6 @@ function PlansContent(): JSX.Element {
           </div>
         </Card>
 
-        {/* 注意事項 */}
         <Card delay={0.6} title={text.noticeTitle}>
           <ul className="list-disc ml-6 space-y-2 text-[#c4d0e2]">
             {text.notices.map((n, i) => (
@@ -240,7 +258,6 @@ function PlansContent(): JSX.Element {
           </ul>
         </Card>
 
-        {/* 戻る */}
         <motion.div
           className="mt-16 text-center"
           initial={{ opacity: 0 }}
