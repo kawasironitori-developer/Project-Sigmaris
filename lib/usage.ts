@@ -17,13 +17,36 @@ function periodKey(type: "day" | "month"): string {
 }
 
 /**
- * ⏳ 試用期間が切れているかチェック
+ * ⏳ 試用期間が切れているかチェック（true = 期限切れ）
+ * 修正版：未来日時は「期限内」と判定し、時差や不正値にも安全対応
  */
 export function checkTrialExpired(trial_end?: string | null): boolean {
-  if (!trial_end) return true;
-  const end = new Date(trial_end);
-  if (isNaN(end.getTime())) return true;
-  return new Date() > end;
+  try {
+    // trial_end 未設定 → トライアル制限なし（期限切れ扱いにしない）
+    if (!trial_end) return false;
+
+    // 正常な日付に変換
+    const end = new Date(trial_end);
+    const validEnd =
+      isNaN(end.getTime()) && typeof trial_end === "string"
+        ? new Date(trial_end + "Z")
+        : end;
+
+    if (isNaN(validEnd.getTime())) {
+      console.warn("⚠️ checkTrialExpired: invalid date →", trial_end);
+      // 不正値の場合、安全側で「期限切れ扱いにしない」
+      return false;
+    }
+
+    const now = new Date();
+    const expired = now.getTime() > validEnd.getTime();
+
+    return expired;
+  } catch (err) {
+    console.warn("⚠️ checkTrialExpired failed:", err);
+    // 失敗時は安全側で期限切れ扱いにしない
+    return false;
+  }
 }
 
 /**
