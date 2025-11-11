@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import ChatList from "@/components/chat/ChatList";
 import { useSigmarisChat } from "@/hooks/useSigmarisChat";
@@ -10,7 +11,7 @@ import { TraitVisualizer } from "@/ui/TraitVisualizer";
 import { SafetyIndicator } from "@/ui/SafetyIndicator";
 import { EmotionBadge } from "@/ui/EmotionBadge";
 
-export default function Home() {
+export default function SigmarisChatPage() {
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const [lang, setLang] = useState<"ja" | "en">("en");
@@ -60,7 +61,6 @@ export default function Home() {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return;
-
     setUserEmail(user.email ?? "Guest");
 
     const { data, error } = await supabase
@@ -69,13 +69,11 @@ export default function Home() {
       .eq("id", user.id)
       .single();
 
-    if (!error && data) {
-      setCredits(data.credit_balance);
-    }
+    if (!error && data) setCredits(data.credit_balance);
   }, [supabase]);
 
   useEffect(() => {
-    fetchCredits(); // 初回取得
+    fetchCredits();
   }, [fetchCredits]);
 
   useEffect(() => {
@@ -145,15 +143,28 @@ export default function Home() {
 
   // =================== UI ===================
   return (
-    <main className="h-screen w-full bg-[#111] text-white overflow-hidden flex flex-col">
+    <main className="h-screen w-full bg-[#0e141b] text-white overflow-hidden flex flex-col">
       {/* 上部ヘッダー */}
-      <header className="flex items-center justify-between px-4 lg:px-8 py-3 border-b border-gray-800 bg-[#111]">
+      <header className="flex items-center justify-between px-4 lg:px-8 py-3 border-b border-[#4c7cf7]/30 bg-[#0e141b]/95 backdrop-blur-md shadow-sm">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold">Sigmaris Studio</h1>
+          <h1 className="text-lg font-semibold text-[#4c7cf7]">
+            Sigmaris Studio
+          </h1>
+          <span className="text-xs text-gray-400">
+            {lang === "ja" ? "対話中AI人格OS" : "Interactive AI Personality OS"}
+          </span>
         </div>
 
         {/* 💬🧠 言語切替など右側UI群 */}
         <div className="flex items-center gap-3">
+          {/* 🏠 Homeリンク */}
+          <Link
+            href="/home"
+            className="hidden sm:block text-xs border border-[#4c7cf7]/40 rounded px-3 py-1 hover:bg-[#4c7cf7]/10 text-[#c4d0e2] transition"
+          >
+            {lang === "ja" ? "ホームへ戻る" : "Back to Home"}
+          </Link>
+
           <motion.button
             onClick={toggleLeft}
             whileHover={{ scale: 1.1 }}
@@ -199,6 +210,7 @@ export default function Home() {
 
       {/* メインエリア */}
       <div className="flex-1 w-full flex overflow-hidden">
+        {/* 左ドロワー */}
         <ChatList
           leftOpen={leftOpen}
           currentChatId={currentChatId}
