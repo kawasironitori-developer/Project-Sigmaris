@@ -35,7 +35,7 @@ function PlansContent(): JSX.Element {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ ログイン確認
+  // ✅ ログイン確認（チャージには必須）
   useEffect(() => {
     const checkUser = async () => {
       const { data } = await supabase.auth.getUser();
@@ -50,81 +50,131 @@ function PlansContent(): JSX.Element {
       title: "Sigmaris OS — 利用クレジット・チャージプラン",
       aboutTitle: "🧠 Sigmaris OSとは",
       aboutText:
-        "Sigmaris OSは、人間のように内省・成長するAI人格を体験できるシステムです。対話や内省を通じて“思考構造”を探求します。\n\nすべてのプランは同一機能で、付与されるクレジット数のみが異なります。利用にはログインが必須です。",
+        "Sigmaris OSは、人間のように内省・成長するAI人格を体験できるシステムです。\n\nすべてのプランは同じ機能を提供し、異なるのは付与されるクレジット数のみです。\nクレジットを消費して対話・内省・自己修正を行います。チャージにはログインが必要です。",
       planTitle: "💳 クレジット付与プラン",
       back: "← Homeへ戻る",
       loginPrompt: "ログインしてください。",
+      freeClaimed: "初回特典：10クレジット付与",
+      notices: [
+        "Sigmaris OSは生成AIによる人格シミュレーションです。",
+        "医療・法的判断への利用はできません。",
+        "クレジットが0になると新規リクエストは停止します。",
+        "チャージにはログインが必要です。",
+        "チャージ金額の返金はできません。",
+      ],
     },
     en: {
-      title: "Sigmaris OS — Credit Plans",
+      title: "Sigmaris OS — Credit & Charge Plans",
       aboutTitle: "🧠 About Sigmaris OS",
       aboutText:
-        "Sigmaris OS lets you experience an introspective AI personality. All plans provide identical features; only the number of included credits differs. Login is required to charge or use the system.",
+        "Sigmaris OS lets you experience an AI personality capable of introspection and growth.\n\nAll plans provide the same functionality — only the number of included credits differs.\nCredits are consumed for dialogue and introspection. Login is required for charging.",
       planTitle: "💳 Credit Plans",
       back: "← Back to Home",
       loginPrompt: "Please log in to continue.",
+      freeClaimed: "First-time Bonus: 10 Free Credits",
+      notices: [
+        "Sigmaris OS is an AI personality simulator.",
+        "Not for medical or legal use.",
+        "When credits reach zero, requests are paused.",
+        "Login is required to charge.",
+        "Charges are non-refundable.",
+      ],
     },
   } as const;
 
   const text = t[lang];
 
-  // ✅ 全プラン統一（違いはクレジット数のみ）
   const plansList: Plan[] = [
     {
-      name: "Free Plan",
-      price: "¥0",
+      name: lang === "ja" ? "フリープラン" : "Free Plan",
+      price: lang === "ja" ? "¥0" : "$0",
       credits: 10,
-      desc: "初回ログイン時に10クレジット付与",
-      details: [
-        "・全機能利用可能",
-        "・Reflect / AEI エンジン体験",
-        "・登録後、自動で10クレジット付与",
-      ],
-      button: "無料で開始",
+      desc:
+        lang === "ja"
+          ? "初回ログイン特典として10クレジット付与"
+          : "10 credits for first-time login",
+      details:
+        lang === "ja"
+          ? [
+              "・全機能利用可能",
+              "・Reflection / AEIエンジン体験",
+              "・初回ログインで自動付与",
+            ]
+          : [
+              "• All features available",
+              "• Reflection / AEI engine trial",
+              "• Automatically granted on first login",
+            ],
+      button: lang === "ja" ? "初回特典を受け取る" : "Claim Free Credits",
     },
     {
       name: "Basic Plan",
       price: "¥1,000",
       credits: 100,
-      desc: "開発・体験向け（100クレジット）",
-      details: [
-        "・全機能利用可能",
-        "・約100クレジット付与",
-        "・レスポンス通常（3〜8秒）",
-      ],
-      button: "チャージ（¥1,000）",
+      desc:
+        lang === "ja"
+          ? "軽めの開発・体験向け（100クレジット）"
+          : "Light use / Development (100 credits)",
+      details:
+        lang === "ja"
+          ? [
+              "・全機能利用可",
+              "・約100クレジット分利用可能",
+              "・通常応答速度（3〜8秒）",
+            ]
+          : [
+              "• All features available",
+              "• ~100 credits usable",
+              "• Normal speed (3–8s)",
+            ],
+      button: lang === "ja" ? "チャージする" : "Charge Now",
     },
     {
       name: "Advanced Plan",
       price: "¥3,000",
       credits: 400,
-      desc: "研究・開発者向け（400クレジット）",
-      details: [
-        "・全機能利用可能",
-        "・約400クレジット付与",
-        "・優先処理（2〜5秒）",
-      ],
-      button: "チャージ（¥3,000）",
+      desc:
+        lang === "ja"
+          ? "開発者・研究者向け（400クレジット）"
+          : "For developers & researchers (400 credits)",
+      details:
+        lang === "ja"
+          ? [
+              "・全機能利用可",
+              "・約400クレジット分利用可能",
+              "・優先処理（応答2〜5秒）",
+            ]
+          : [
+              "• All features available",
+              "• ~400 credits usable",
+              "• Priority response (2–5s)",
+            ],
+      button: lang === "ja" ? "チャージする" : "Charge Now",
     },
   ];
 
-  // ✅ チャージ（ログイン必須）
-  const handleCharge = async (amount: string, plan: string) => {
+  // ✅ チャージ（ログイン必須 + Freeは初回のみ）
+  const handleCharge = async (plan: Plan) => {
     if (!user) {
       alert(text.loginPrompt);
       router.push("/auth/login");
       return;
     }
 
-    // Freeはサーバー側の /api/claim-free 呼び出し
-    if (plan === "Free Plan") {
+    if (plan.name.includes("Free")) {
       const res = await fetch("/api/claim-free", { method: "POST" });
       const data = await res.json();
       alert(data.message);
       return;
     }
 
-    // 有料プランは checkout 経由
+    const amount =
+      plan.name === "Basic Plan"
+        ? "1000"
+        : plan.name === "Advanced Plan"
+        ? "3000"
+        : "0";
+
     try {
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
@@ -133,9 +183,9 @@ function PlansContent(): JSX.Element {
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
-      else alert(data.message || "チャージに失敗しました。");
+      else alert(data.message || "Checkout failed");
     } catch {
-      alert("通信エラーが発生しました。");
+      alert("Network error. Please try again later.");
     }
   };
 
@@ -149,6 +199,7 @@ function PlansContent(): JSX.Element {
   return (
     <main className="relative min-h-screen bg-gradient-to-b from-[#0e141b] to-[#1a2230] text-[#e6eef4] px-6 md:px-16 py-24 overflow-hidden">
       <Header />
+
       <motion.div
         className="absolute inset-0 bg-[radial-gradient(circle_at_70%_20%,rgba(68,116,255,0.08),transparent_70%)]"
         animate={{ opacity: [0.5, 0.8, 0.5] }}
@@ -172,7 +223,7 @@ function PlansContent(): JSX.Element {
           </p>
         </Card>
 
-        {/* プランカード */}
+        {/* プラン一覧 */}
         <Card title={text.planTitle} center>
           <div className="grid md:grid-cols-3 gap-8">
             {plansList.map((p, i) => (
@@ -184,9 +235,10 @@ function PlansContent(): JSX.Element {
                   {p.name}
                 </h3>
                 <p className="text-3xl font-bold mb-1">{p.price}</p>
-                <p className="text-sm text-[#a8b3c7] mb-3">{p.desc}</p>
+                <p className="text-sm text-[#a8b3c7] mb-2">{p.desc}</p>
                 <p className="text-sm text-[#c4d0e2] mb-4">
-                  付与クレジット数：{p.credits}
+                  {lang === "ja" ? "付与クレジット数：" : "Credits:"}{" "}
+                  {p.credits}
                 </p>
                 <ul className="text-sm text-left space-y-2 text-[#c4d0e2] mb-6">
                   {p.details.map((d, j) => (
@@ -195,16 +247,7 @@ function PlansContent(): JSX.Element {
                 </ul>
 
                 <button
-                  onClick={() =>
-                    handleCharge(
-                      p.name === "Basic Plan"
-                        ? "1000"
-                        : p.name === "Advanced Plan"
-                        ? "3000"
-                        : "0",
-                      p.name
-                    )
-                  }
+                  onClick={() => handleCharge(p)}
                   className="inline-block px-6 py-2 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/10 transition"
                 >
                   {p.button}
@@ -212,6 +255,17 @@ function PlansContent(): JSX.Element {
               </div>
             ))}
           </div>
+        </Card>
+
+        {/* 注意事項 */}
+        <Card
+          title={lang === "ja" ? "⚠️ ご利用にあたって" : "⚠️ Important Notes"}
+        >
+          <ul className="list-disc ml-6 space-y-2 text-[#c4d0e2]">
+            {text.notices.map((n, i) => (
+              <li key={i}>{n}</li>
+            ))}
+          </ul>
         </Card>
 
         {/* 戻る */}
