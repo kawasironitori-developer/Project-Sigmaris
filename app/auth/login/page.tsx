@@ -26,7 +26,7 @@ function LoginPage() {
   const router = useRouter();
   const { lang } = useSigmarisLang();
 
-  // 🧭 WebViewアクセス検出（Facebook/Instagram/LINEなど）
+  // 🧭 アプリ内ブラウザ検出（Googleポリシー違反回避）
   React.useEffect(() => {
     const ua = navigator.userAgent || "";
     const isWebView = /(FBAN|FBAV|Instagram|Line|Messenger|WebView|wv)/i.test(
@@ -34,21 +34,21 @@ function LoginPage() {
     );
     if (isWebView) {
       alert(
-        "このページはアプリ内ブラウザでは正しく動作しません。Chrome または Safari で開いてください。"
+        "このページはアプリ内ブラウザでは正しく動作しません。\nChrome または Safari で開いてください。"
       );
     }
   }, []);
 
-  // ✅ Googleログイン処理（Safe Browser対応版）
+  // ✅ Googleログイン処理（安全ブラウザ対応）
   async function handleLogin() {
     try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
           queryParams: {
-            prompt: "select_account", // 外部ブラウザ強制
-            access_type: "offline",
+            prompt: "select_account", // Google再認証促進
+            access_type: "offline", // 長期セッションを許可
             response_type: "code",
           },
         },
@@ -57,10 +57,8 @@ function LoginPage() {
       if (error) {
         console.error("Google login error:", error.message);
         alert(
-          "Googleログインに失敗しました。アプリ内ブラウザではなく、Chrome または Safari でお試しください。"
+          "Googleログインに失敗しました。\nアプリ内ブラウザではなく、Chrome または Safari でお試しください。"
         );
-      } else {
-        console.log("Login redirecting:", data);
       }
     } catch (e) {
       console.error("Unexpected login error:", e);
@@ -117,10 +115,8 @@ function LoginPage() {
           {text.button}
         </button>
 
-        {/* Divider */}
         <div className="my-6 border-t border-[#4c7cf7]/20" />
 
-        {/* Homeリンク */}
         <Link
           href="/home"
           className="text-[#a8b3c7] text-sm hover:text-[#4c7cf7] transition"
