@@ -6,14 +6,12 @@ import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 import { getUsage } from "@/lib/usage";
-import { checkTrialExpired } from "@/lib/usage";
 import { getPlanLimit } from "@/lib/plan";
 
 /**
- * 🧠 アカウント情報取得API
+ * 🧠 アカウント情報取得API（trial_end削除版）
  * - Supabase Authでログイン中のユーザー情報を取得
- * - plan / trial_end / 利用状況 / 残り回数を返却
- * - 静的化エラー回避のため dynamic API として強制設定
+ * - plan / 利用状況 / 残り回数を返却
  */
 export async function GET() {
   try {
@@ -33,7 +31,7 @@ export async function GET() {
 
     const { data: userRecord, error: userError } = await supabase
       .from("users")
-      .select("plan, trial_end")
+      .select("plan")
       .eq("id", user.id)
       .single();
 
@@ -43,14 +41,10 @@ export async function GET() {
     }
 
     const plan = userRecord?.plan ?? "free";
-    const trial_end = userRecord?.trial_end ?? null;
 
     // === 使用状況 ===
     const usage_aei = await getUsage(user.id, "aei");
     const usage_reflect = await getUsage(user.id, "reflect");
-
-    // === 試用期限チェック ===
-    const trialExpired = checkTrialExpired(trial_end);
 
     // === プランごとの上限 ===
     const limit_aei = getPlanLimit(plan, "aei");
@@ -64,8 +58,6 @@ export async function GET() {
     return NextResponse.json(
       {
         plan,
-        trial_end,
-        trial_expired: trialExpired,
         usage_aei,
         usage_reflect,
         remaining_aei,

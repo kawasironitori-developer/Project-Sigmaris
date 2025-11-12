@@ -55,7 +55,7 @@ export default function SigmarisChatPage() {
     handleRenameChat,
   } = useSigmarisChat();
 
-  /** 🪙 クレジット再取得関数 */
+  /** 🪙 クレジット取得 */
   const fetchCredits = useCallback(async () => {
     const {
       data: { user },
@@ -75,16 +75,14 @@ export default function SigmarisChatPage() {
   useEffect(() => {
     fetchCredits();
   }, [fetchCredits]);
-
   useEffect(() => {
     if (!currentChatId) handleNewChat();
   }, [currentChatId, handleNewChat]);
-
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  /** ✉️ 送信時処理（送信後クレジット更新） */
+  /** ✉️ 送信処理 */
   const handleSmartSend = useCallback(async () => {
     if (!input?.trim()) return;
     if (!currentChatId) {
@@ -95,7 +93,7 @@ export default function SigmarisChatPage() {
     handleSend().then(fetchCredits);
   }, [currentChatId, handleNewChat, handleSend, input, fetchCredits]);
 
-  /** 🧠 安定状態とトーン解析 */
+  /** 🧠 状態解析 */
   const safetyFlag: string | false =
     traits.calm < 0.3 && traits.curiosity > 0.7
       ? lang === "ja"
@@ -114,7 +112,7 @@ export default function SigmarisChatPage() {
   const toneColor =
     traits.empathy > 0.7 ? "#FFD2A0" : traits.calm > 0.7 ? "#A0E4FF" : "#AAA";
 
-  /** グラフデータ追跡 */
+  /** グラフ追跡 */
   const [graphData, setGraphData] = useState([
     {
       time: Date.now(),
@@ -123,7 +121,6 @@ export default function SigmarisChatPage() {
       curiosity: traits.curiosity,
     },
   ]);
-
   useEffect(() => {
     setGraphData((prev) => {
       const newPoint = {
@@ -143,44 +140,48 @@ export default function SigmarisChatPage() {
 
   // =================== UI ===================
   return (
-    <main className="h-screen w-full bg-[#0e141b] text-white overflow-hidden flex flex-col">
-      {/* 上部ヘッダー */}
-      <header className="flex items-center justify-between px-4 lg:px-8 py-3 border-b border-[#4c7cf7]/30 bg-[#0e141b]/95 backdrop-blur-md shadow-sm">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-[#4c7cf7]">
-            Sigmaris Studio
-          </h1>
-          <span className="text-xs text-gray-400">
-            {lang === "ja" ? "対話中AI人格OS" : "Interactive AI Personality OS"}
-          </span>
-        </div>
+    <main className="h-screen w-full bg-[#0e141b] text-white flex flex-col overflow-hidden">
+      {/* 🔹ヘッダー (Safe Area対応 & 二段構成) */}
+      <header className="sticky top-0 z-50 border-b border-[#4c7cf7]/30 bg-[#0e141b]/95 backdrop-blur-md shadow-sm pt-[env(safe-area-inset-top)]">
+        {/* 上段：タイトル */}
+        <div className="flex items-center justify-between px-4 lg:px-8 py-2">
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-semibold text-[#4c7cf7]">
+              Sigmaris Studio
+            </h1>
+            <span className="text-xs text-gray-400">
+              {lang === "ja"
+                ? "対話中AI人格OS"
+                : "Interactive AI Personality OS"}
+            </span>
+          </div>
 
-        {/* 💬🧠 言語切替など右側UI群 */}
-        <div className="flex items-center gap-3">
-          {/* 🏠 Homeリンク */}
           <Link
             href="/home"
-            className="hidden sm:block text-xs border border-[#4c7cf7]/40 rounded px-3 py-1 hover:bg-[#4c7cf7]/10 text-[#c4d0e2] transition"
+            className="text-xs border border-[#4c7cf7]/40 rounded px-3 py-1 hover:bg-[#4c7cf7]/10 text-[#c4d0e2] transition"
           >
             {lang === "ja" ? "ホームへ戻る" : "Back to Home"}
           </Link>
+        </div>
 
+        {/* 下段：操作群 (スマホで折り返し) */}
+        <div className="flex flex-wrap items-center justify-center gap-3 px-4 lg:px-8 pb-3">
           <motion.button
             onClick={toggleLeft}
-            whileHover={{ scale: 1.1 }}
+            whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.9 }}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-lg rounded-full w-9 h-9 flex items-center justify-center shadow"
-            title="Open Chat List"
+            className="bg-blue-600 hover:bg-blue-700 text-white rounded-full w-9 h-9 flex items-center justify-center shadow"
+            title="Chat List"
           >
             💬
           </motion.button>
 
           <motion.button
             onClick={toggleRight}
-            whileHover={{ scale: 1.1 }}
+            whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.9 }}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-lg rounded-full w-9 h-9 flex items-center justify-center shadow"
-            title="Open Sigmaris Mind"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full w-9 h-9 flex items-center justify-center shadow"
+            title="Sigmaris Mind"
           >
             🧠
           </motion.button>
@@ -192,17 +193,17 @@ export default function SigmarisChatPage() {
             {lang === "ja" ? "EN" : "JP"}
           </button>
 
-          {/* 👇 クレジット & ユーザー情報 */}
-          <span className="hidden sm:block text-xs text-yellow-400">
+          <span className="text-xs text-yellow-400">
             {credits !== null
               ? `残クレジット: ${credits}`
               : "クレジット取得中..."}
           </span>
-          <span className="hidden sm:block text-xs text-gray-400">
+
+          <span className="text-xs text-gray-400">
             {userEmail ? `User: ${userEmail}` : "Guest"}
           </span>
 
-          <span className="hidden sm:block text-xs text-gray-400">
+          <span className="text-xs text-gray-400">
             Model: <span className="text-blue-400">{modelUsed}</span>
           </span>
         </div>
