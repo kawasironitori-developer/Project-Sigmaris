@@ -10,29 +10,31 @@ export type SigmarisState =
   | "OverloadPrevent"
   | "SafetyMode";
 
+export interface EmotionState {
+  tension: number;
+  warmth: number;
+  hesitation: number;
+}
+
 export interface StateContext {
-  // 入出力
   input: string;
   output: string;
 
-  // 状態
   currentState: SigmarisState;
   previousState: SigmarisState | null;
 
-  // トレイト
   traits: Trait;
+  emotion: EmotionState;
 
-  // 連続評価
   reflectCount: number;
   tokenUsage: number;
 
-  // SafetyLayer の結果
   safety: SafetyReport | null;
 
-  // Timestamp
   timestamp: number;
 
-  // 汎用メタデータ
+  sessionId: string; // ← ← ★ 追加（重要）
+
   meta: Record<string, any>;
 }
 
@@ -40,13 +42,30 @@ export function createInitialContext(): StateContext {
   return {
     input: "",
     output: "",
+
     currentState: "Idle",
     previousState: null,
-    traits: { calm: 0.5, empathy: 0.5, curiosity: 0.5 },
+
+    traits: {
+      calm: 0.5,
+      empathy: 0.5,
+      curiosity: 0.5,
+    },
+
+    emotion: {
+      tension: 0.1,
+      warmth: 0.2,
+      hesitation: 0.1,
+    },
+
     reflectCount: 0,
     tokenUsage: 0,
+
     safety: null,
     timestamp: Date.now(),
+
+    sessionId: "", // ← 初期値を用意（あとで上書き）
+
     meta: {},
   };
 }

@@ -3,16 +3,7 @@
 
 /**
  * summarize()
- * ─────────────────────────────────────────────
- * 長文の履歴を圧縮し、過去の流れを維持した「文脈サマリー」を生成する。
- *
- * 呼び出し例：
- * const summary = await summarize(messages.slice(0, -10));
- *
- * 目的：
- * ・大量の履歴を毎回送らずに済む（応答速度向上）
- * ・成長構造（PersonaDBなど）には影響を与えない
- * ・人格的文脈を短い形で保持する
+ * 履歴を要約するサーバー関数
  */
 
 export async function summarize(messages: any[]): Promise<string> {
@@ -24,13 +15,24 @@ export async function summarize(messages: any[]): Promise<string> {
     .join("\n\n");
 
   try {
-    const res = await fetch("/api/summary", {
+    // 絶対URLを必ず作る（App Router での必須仕様）
+    const base =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      process.env.NEXT_PUBLIC_BASE_URL ||
+      "http://localhost:3000";
+
+    const url = `${base}/api/summary`;
+
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: joined,
-      }),
+      body: JSON.stringify({ text: joined }),
     });
+
+    if (!res.ok) {
+      console.error("Summary API returned:", res.status);
+      return "";
+    }
 
     const data = await res.json();
     return data.summary || "";

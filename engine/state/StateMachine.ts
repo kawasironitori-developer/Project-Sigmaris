@@ -1,9 +1,8 @@
 // /engine/state/StateMachine.ts
 import { StateContext, SigmarisState } from "./StateContext";
-import { checkOverload } from "./utils/checkOverload";
-import { checkSafety } from "./utils/checkSafety";
-import { transitionMap } from "./utils/transitionMap";
+import { SafetyLayer } from "@/engine/safety/SafetyLayer";
 
+// 各 State
 import { IdleState } from "./states/IdleState";
 import { DialogueState } from "./states/DialogueState";
 import { ReflectState } from "./states/ReflectState";
@@ -11,6 +10,13 @@ import { IntrospectState } from "./states/IntrospectState";
 import { OverloadPreventState } from "./states/OverloadPreventState";
 import { SafetyModeState } from "./states/SafetyModeState";
 
+/**
+ * Sigmaris OS — StateMachine v5
+ * ---------------------------------------
+ * ・内部 3〜6ステップの思考ループ
+ * ・安全性 / 過負荷チェックは SafetyLayer に一本化
+ * ・State による明示的遷移を尊重
+ */
 export class StateMachine {
   ctx: StateContext;
 
@@ -18,6 +24,7 @@ export class StateMachine {
     this.ctx = ctx;
   }
 
+  /** 利用可能な State クラスを返す */
   private getStateHandler(state: SigmarisState) {
     switch (state) {
       case "Idle":
@@ -37,25 +44,72 @@ export class StateMachine {
     }
   }
 
+  /** 許可遷移テーブル（v5） */
+  private transitionMap: Record<SigmarisState, SigmarisState[]> = {
+    Idle: ["Dialogue"],
+    Dialogue: ["Reflect"],
+    Reflect: ["Introspect"],
+    Introspect: ["Idle"],
+    OverloadPrevent: ["Dialogue", "OverloadPrevent"],
+    SafetyMode: ["Idle"],
+  };
+
+  /**
+   * === StateMachine: run() ===
+   * 内部ループ → 1 会話分の処理を統合
+   */
   async run(): Promise<StateContext> {
-    // Safety 優先
-    if (checkSafety(this.ctx)) {
-      this.ctx.currentState = "SafetyMode";
-    } else if (checkOverload(this.ctx)) {
+    console.log("🟦 [StateMachine] run() start");
+
+    // -------------------------------------------------
+    // 0) SafetyLayer による 過負荷チェック
+    // -------------------------------------------------
+    const overloadWarning = SafetyLayer.checkOverload(this.ctx.traits);
+
+    if (overloadWarning) {
+      console.log("⚠️ Overload detected → OverloadPrevent");
+      this.ctx.previousState = this.ctx.currentState;
       this.ctx.currentState = "OverloadPrevent";
     }
 
-    const handler = this.getStateHandler(this.ctx.currentState);
+    // -------------------------------------------------
+    // 1) 内部ステップループ（最大 6 回）
+    // -------------------------------------------------
+    for (let step = 0; step < 6; step++) {
+      console.log(`🔷 Step ${step} — Current: ${this.ctx.currentState}`);
 
-    const next = await handler.execute(this.ctx);
+      const handler = this.getStateHandler(this.ctx.currentState);
 
-    // 次状態が遷移可能か確認
-    const allowed = transitionMap[this.ctx.currentState];
-    if (next && allowed.includes(next)) {
+      let next: SigmarisState | null = null;
+      try {
+        next = await handler.execute(this.ctx);
+      } catch (err) {
+        console.error("❌ State execution error:", err);
+        break;
+      }
+
+      const allowed = this.transitionMap[this.ctx.currentState] ?? [];
+      console.log("➡️ Allowed:", allowed, "/ Next:", next);
+
+      // 不正遷移 → 強制停止
+      if (!next || !allowed.includes(next)) {
+        console.log("⏹️ Invalid transition — Ending internal cycle.");
+        break;
+      }
+
+      // 遷移
+      console.log(`🔄 ${this.ctx.currentState} → ${next}`);
       this.ctx.previousState = this.ctx.currentState;
       this.ctx.currentState = next;
+
+      // Idle に戻ったら終了
+      if (next === "Idle") {
+        console.log("🟩 Reached Idle — internal processing end.");
+        break;
+      }
     }
 
+    console.log("🟩 [StateMachine] run() end");
     return this.ctx;
   }
 }

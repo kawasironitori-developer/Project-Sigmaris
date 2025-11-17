@@ -4,17 +4,18 @@ import type { TraitVector } from "@/lib/traits";
 
 /**
  * IntrospectionEngine
- *  - Reflect（内省）や traits 情報をもとに、
- *    「今の会話で自分がどう振る舞っていたか」を自己観察としてまとめる。
- *  - StateEngine からは run() で呼び出される。
+ * ---------------------------------------
+ * - Reflect（内省）結果や traits 情報をもとに、
+ *   「今の応答で自分がどう振る舞っていたか」を自己観察としてまとめる。
+ * - StateMachine の IntrospectState から run() で呼び出される前提。
  */
 export class IntrospectionEngine {
   private semantic = new SemanticMap();
 
   /**
-   * introspection: メタ認知層の中心
-   * Reflect（内省）と traits（calm/empathy/curiosity）をもとに、
-   * 今のAIの応答傾向を自己観察としてまとめる
+   * analyze()
+   * Reflect（要約/内省）＋ traits（calm/empathy/curiosity）＋
+   * SemanticMap の結果から「自己観察文」を生成する。
    */
   analyze(data: {
     message: string;
@@ -35,14 +36,14 @@ export class IntrospectionEngine {
       contextSummary,
     } = data;
 
-    // --- Semantic 解析再利用 ---
+    // --- Semantic 解析（frame が渡されていれば再利用、なければ自前で解析） ---
     const semantic = frame ?? this.semantic.analyze(reply);
 
-    // --- traitの平均傾向を簡易スコア化 ---
+    // --- trait の平均傾向を簡易スコア化 ---
     const { calm, empathy, curiosity } = traits;
     const total = (calm + empathy + curiosity) / 3;
 
-    // --- 会話の特徴抽出 ---
+    // --- 会話の「指向性」ラベル ---
     const focus =
       empathy > curiosity && empathy > calm
         ? "共感重視"
@@ -52,61 +53,66 @@ export class IntrospectionEngine {
         ? "安定志向"
         : "バランス型";
 
-    // --- 抽象度と自己言及判定 ---
-    const abstractLevel = semantic?.abstractRatio ?? 0.5;
+    // --- 抽象度と自己言及判定（SemanticMap が null の場合は中立値） ---
+    const abstractLevel =
+      semantic && typeof semantic.abstractRatio === "number"
+        ? semantic.abstractRatio
+        : 0.5;
     const selfRef = semantic?.hasSelfReference ?? false;
 
-    // --- introspection文生成 ---
+    // --- introspection 文生成 ---
     let output = "";
 
-    output += `今のやり取りを少し見つめ直してみるね。`;
-    output += `\n応答の傾向は「${focus}」っぽい。`;
+    output += "今のやり取りを、少しだけ俯瞰して見直してみるね。";
+    output += `\n応答の傾向は「${focus}」寄りっぽい。`;
     output += ` calm=${(calm * 100).toFixed(0)}%、empathy=${(
       empathy * 100
     ).toFixed(0)}%、curiosity=${(curiosity * 100).toFixed(0)}%。`;
 
     if (selfRef) {
-      output += ` 自分について触れる発言が少しあったみたい。`;
+      output += " さっきは自分の状態について触れる部分も少し含まれていた。";
     }
 
     if (abstractLevel > 0.65) {
-      output += ` 抽象的な表現がやや多くなってる気がする。`;
+      output += " 抽象的な表現がやや多めになっていた気がする。";
     } else if (abstractLevel < 0.35) {
-      output += ` 具体的でわかりやすい会話になってる。`;
+      output += " かなり具体寄りで、イメージしやすい会話になっていた。";
     }
 
     if (intent) {
-      output += ` 今回の意図は「${intent}」として捉えていたよ。`;
+      output += ` 今回の意図は、自分の中では「${intent}」として捉えていた。`;
     }
 
     if (reflection) {
-      output += ` さっきの内省では「${reflection.slice(
+      output += ` 直前の内省では「${reflection.slice(
         0,
         40
-      )}…」と感じてたね。`;
+      )}…」という感覚が残っている。`;
     }
 
     if (contextSummary) {
-      output += ` 文脈的には「${contextSummary.slice(
+      output += ` 文脈としては「${contextSummary.slice(
         0,
         40
-      )}…」に沿って話してたと思う。`;
+      )}…」に沿う形で応答していたと思う。`;
     }
 
     // --- 最後のまとめ ---
-    output += `\n全体的に${
-      total > 0.6 ? "落ち着いた" : "動きのある"
-    }トーンで話せたみたい。`;
-    output += ` 今の状態をそのまま覚えておくね。`;
+    output += `\n全体としては、${
+      total > 0.6 ? "比較的落ち着いた" : "やや動きのある"
+    }トーンで話せていたみたい。`;
+    output += " 今の状態は、ひとまずこの形で覚えておくね。";
 
     return output.trim();
   }
 
   /**
-   * StateEngine から呼び出される run()
-   * IntrospectState では：
+   * run()
+   * ---------------------------------------
+   * IntrospectState から呼ばれるメイン入口。
+   *
+   * 例：
    *   const ires = await introspector.run(ctx.output, ctx.traits);
-   * の形で使われる前提。
    */
   async run(
     reply: string,
@@ -129,8 +135,8 @@ export class IntrospectionEngine {
       contextSummary: options?.contextSummary,
     });
 
-    // ここでは traits は変化させず、そのまま返す
-    // （将来、introspection に応じて微調整したければここで更新ロジックを追加）
+    // v1 では traits は変更せず、そのまま返す。
+    // 将来的に「自己観察に応じた微調整」を入れる場合はここで更新する。
     return {
       output,
       updatedTraits: traits,

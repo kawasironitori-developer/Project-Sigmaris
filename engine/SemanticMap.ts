@@ -1,19 +1,23 @@
-// engine/SemanticMap.ts
+// /engine/SemanticMap.ts
 export type Concept = {
-  lemma: string; // 見出し語
+  lemma: string;
   kind: "abstract" | "concrete" | "meta" | "action" | "feeling";
-  tags: string[]; // "art","title","self","existence"など
+  tags: string[];
   emotionHints: Array<"calm" | "empathy" | "curiosity">;
 };
 
 export type SemanticFrame = {
   concepts: Concept[];
-  sentiment: number; // -1..1（超ざっくり）
-  abstractRatio: number; // 抽象/全体
-  intents: string[]; // "ask","reflect","request","affirm"など
-  hasSelfReference: boolean; // 自己言及（私/自分/存在 等）
+  sentiment: number; // -1..1
+  abstractRatio: number; // 概念の抽象度比
+  intents: string[]; // ask / reflect / assert
+  hasSelfReference: boolean;
 };
 
+/* ============================================================
+   LEXICON — 抽象概念・感情・行動の最小辞書
+   ※ Sigmaris OS v1 では「簡易語彙」に留める
+============================================================ */
 const LEXICON: Record<string, Concept> = {
   音楽: {
     lemma: "音楽",
@@ -63,7 +67,12 @@ const LEXICON: Record<string, Concept> = {
     tags: ["teleology", "self"],
     emotionHints: ["curiosity"],
   },
-  私: { lemma: "私", kind: "meta", tags: ["self"], emotionHints: ["empathy"] },
+  私: {
+    lemma: "私",
+    kind: "meta",
+    tags: ["self"],
+    emotionHints: ["empathy"],
+  },
   自分: {
     lemma: "自分",
     kind: "meta",
@@ -78,31 +87,48 @@ const LEXICON: Record<string, Concept> = {
   },
 };
 
-const SELF_PAT = /(私|自分|僕|わたし|ボク)/;
-const INTENT_ASK = /[?？]$|(?:どう|なに|何|どこ|いつ|なぜ|why|how)/i;
-const INTENT_REFLECT = /(気づ|内省|考え|思っ|振り返|reflect)/;
-const POSITIVE = /(良い|好き|美しい|落ち着|嬉|楽)/;
-const NEGATIVE = /(不安|疲れ|迷|嫌|怖|悲)/;
+/* ============================================================
+   パターンマッチ
+============================================================ */
+const SELF_PAT = /(私|自分|わたし|ぼく|僕)/;
+const INTENT_ASK = /[?？]$|(?:どう|何|なに|どこ|いつ|なぜ|why|how|？|？)$/i;
+const INTENT_REFLECT = /(気づ|内省|考え|思っ|振り返|reflect|ふり返)/;
+const POSITIVE = /(良い|好き|美しい|落ち着|嬉|楽)/g;
+const NEGATIVE = /(不安|疲れ|迷|嫌|怖|悲)/g;
 
+/* ============================================================
+   SemanticMap 本体
+============================================================ */
 export class SemanticMap {
   analyze(text: string): SemanticFrame {
     const tokens = this.tokenize(text);
+
+    // === 1. lexical match ===
     const concepts = tokens.map((t) => LEXICON[t]).filter(Boolean) as Concept[];
 
+    // === 2. abstract ratio ===
     const abstractCount = concepts.filter(
       (c) => c.kind === "abstract" || c.kind === "meta"
     ).length;
-    const abstractRatio = concepts.length ? abstractCount / concepts.length : 0;
+    const abstractRatio =
+      concepts.length > 0 ? abstractCount / concepts.length : 0;
 
+    // === 3. sentiment（単語スコア）
     let sentiment = 0;
-    if (POSITIVE.test(text)) sentiment += 0.5;
-    if (NEGATIVE.test(text)) sentiment -= 0.5;
 
+    const posHits = text.match(POSITIVE)?.length ?? 0;
+    const negHits = text.match(NEGATIVE)?.length ?? 0;
+
+    if (posHits >= 2) sentiment += 0.5;
+    if (negHits >= 2) sentiment -= 0.5;
+
+    // === 4. intents ===
     const intents: string[] = [];
     if (INTENT_ASK.test(text)) intents.push("ask");
     if (INTENT_REFLECT.test(text)) intents.push("reflect");
     if (intents.length === 0) intents.push("assert");
 
+    // === 5. self reference ===
     const hasSelfReference =
       SELF_PAT.test(text) || concepts.some((c) => c.tags.includes("self"));
 
@@ -115,12 +141,12 @@ export class SemanticMap {
     };
   }
 
-  /** 同一“意味役割”の重複を除去（「音楽ってタイトルの音楽」対策） */
+  /* 重複概念のグループ化 */
   private filterConceptRepeats(concepts: Concept[]): Concept[] {
     const seen = new Set<string>();
     const out: Concept[] = [];
     for (const c of concepts) {
-      const key = `${c.kind}:${[...c.tags].sort().join(",")}`;
+      const key = `${c.kind}:${c.tags.sort().join(",")}`;
       if (!seen.has(key)) {
         seen.add(key);
         out.push(c);
@@ -129,11 +155,15 @@ export class SemanticMap {
     return out;
   }
 
+  /* ============================================================
+     tokenize — 最小破綻の “ゆるい日本語トークン化”
+     - 記号除去
+     - 日本語語句
+     - ASCII語（why/how等）
+  ============================================================ */
   private tokenize(text: string): string[] {
-    // 超簡易：全角カタカナ/漢字/ひらがな語を素朴分割＋空白分割の併用
-    const rough = text
-      .split(/[^\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}A-Za-z0-9]+/u)
-      .filter(Boolean);
-    return rough;
+    return text
+      .split(/[^\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}A-Za-z0-9ー]+/u)
+      .filter((t) => t.length > 0);
   }
 }

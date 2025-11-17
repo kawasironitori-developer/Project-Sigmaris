@@ -2,17 +2,11 @@
 import { getSupabaseServer } from "@/lib/supabaseServer";
 import type { TraitVector } from "@/lib/traits";
 
-/**
- * PersonaSync v4.0（Auth Session Stable）
- * ---------------------------------------------
- * - Supabase RLS + auth.uid() 対応の完全版
- * - Cookie セッション経由で安全にユーザーごとの persona を同期
- * - Service Role 不使用（本番セキュア構成）
- * ---------------------------------------------
- */
 export class PersonaSync {
   /**
-   * 最新の人格情報をロード（Supabase → メモリ）
+   * ─────────────────────────────────────────────
+   * Persona を Supabase からロード
+   * ─────────────────────────────────────────────
    */
   static async load(userId: string): Promise<
     TraitVector & {
@@ -23,7 +17,7 @@ export class PersonaSync {
     }
   > {
     try {
-      if (!userId) throw new Error("User ID is missing in PersonaSync.load");
+      if (!userId) throw new Error("User ID missing in PersonaSync.load");
 
       const supabase = getSupabaseServer();
 
@@ -37,23 +31,27 @@ export class PersonaSync {
 
       if (error) throw error;
 
-      console.log("📥 PersonaSync.load success:", {
-        calm: data?.calm,
-        empathy: data?.empathy,
-        curiosity: data?.curiosity,
+      const calm = Number(data?.calm ?? 0.5);
+      const empathy = Number(data?.empathy ?? 0.5);
+      const curiosity = Number(data?.curiosity ?? 0.5);
+
+      console.log("📥 [PersonaSync.load] OK", {
+        calm,
+        empathy,
+        curiosity,
       });
 
       return {
-        calm: Number(data?.calm ?? 0.5),
-        empathy: Number(data?.empathy ?? 0.5),
-        curiosity: Number(data?.curiosity ?? 0.5),
+        calm,
+        empathy,
+        curiosity,
         reflection: data?.reflection ?? "",
         meta_summary: data?.meta_summary ?? "",
         growth: Number(data?.growth ?? 0),
         timestamp: data?.updated_at ?? new Date().toISOString(),
       };
     } catch (err) {
-      console.error("⚠️ PersonaSync.load failed:", err);
+      console.error("⚠️ [PersonaSync.load] failed:", err);
       return {
         calm: 0.5,
         empathy: 0.5,
@@ -67,7 +65,9 @@ export class PersonaSync {
   }
 
   /**
-   * 人格データを保存（Reflection / MetaReflection 統合）
+   * ─────────────────────────────────────────────
+   * Persona を Supabase に保存（Reflection 互換）
+   * ─────────────────────────────────────────────
    */
   static async update(
     traits: TraitVector,
@@ -76,10 +76,11 @@ export class PersonaSync {
     userId?: string
   ) {
     try {
-      if (!userId) throw new Error("User ID is missing in PersonaSync.update");
+      if (!userId) throw new Error("User ID missing in PersonaSync.update");
 
       const supabase = getSupabaseServer();
 
+      // 自動生成する簡易 reflection 文字列
       const reflectionText = `(auto-reflection @ ${new Date().toLocaleTimeString(
         "ja-JP"
       )})`;
@@ -101,24 +102,26 @@ export class PersonaSync {
 
       if (error) throw error;
 
-      console.log("☁️ PersonaSync (Supabase): persona updated", {
+      console.log("☁️ [PersonaSync.update] updated:", {
         calm: payload.calm.toFixed(2),
         empathy: payload.empathy.toFixed(2),
         curiosity: payload.curiosity.toFixed(2),
-        meta_summary: payload.meta_summary.slice(0, 60) + "...",
+        meta_summary: (payload.meta_summary ?? "").slice(0, 60) + "...",
         growth: payload.growth.toFixed(3),
       });
     } catch (err) {
-      console.error("⚠️ PersonaSync.update failed:", err);
+      console.error("⚠️ [PersonaSync.update] failed:", err);
     }
   }
 
   /**
-   * Personaの初期化（開発・テスト用）
+   * ─────────────────────────────────────────────
+   * Personaリセット（開発用）
+   * ─────────────────────────────────────────────
    */
   static async reset(userId: string) {
     try {
-      if (!userId) throw new Error("User ID is missing in PersonaSync.reset");
+      if (!userId) throw new Error("User ID missing in PersonaSync.reset");
 
       const supabase = getSupabaseServer();
       const now = new Date().toISOString();
@@ -138,14 +141,17 @@ export class PersonaSync {
       );
 
       if (error) throw error;
-      console.log("🧹 PersonaSync: persona reset to neutral state (Supabase).");
+
+      console.log("🧹 [PersonaSync.reset] Persona neutralized.");
     } catch (err) {
-      console.error("⚠️ PersonaSync.reset failed:", err);
+      console.error("⚠️ [PersonaSync.reset] failed:", err);
     }
   }
 
   /**
-   * Persona値のマージ（前回値と現在値の平均）
+   * ─────────────────────────────────────────────
+   * Traits を前回値とマージ
+   * ─────────────────────────────────────────────
    */
   static merge(
     prev: TraitVector,

@@ -1,77 +1,110 @@
-// === 修正版 /engine/emotion/EmotionSynth.ts ===
+// /engine/emotion/EmotionSynth.ts
 import { TraitVector } from "@/lib/traits";
 
+/**
+ * EmotionProfile
+ * - 長期性格（三属性）から推定される「語彙的な温度」
+ * - StateContext.emotion（短期状態）とは独立させる
+ */
 interface EmotionProfile {
-  tone: string;
-  intensity: number;
-  color: string;
-  keywords: string[];
+  tone: "neutral" | "warm" | "inquisitive" | "anxious" | "cold";
+  intensity: number; // 0〜1：語尾・強弱をどの程度補正するか
+  keywords: string[]; // 内部用（今後のテンション補正に利用）
 }
 
 /**
- * EmotionSynth v3 (Clean Output Mode)
- * - 演出トーンを付けず、内面補正のみ反映
+ * ============================================================
+ * EmotionSynth v1 — Natural Output Mode
+ * - 演出や装飾は行わず、文章破綻を起こさない範囲で
+ *   “ニュアンス補正” のみを行う。
+ * ============================================================
  */
 export class EmotionSynth {
-  /** TraitベクトルからEmotionProfileを生成 */
+  /**
+   * traits → EmotionProfile へ変換
+   * （短期 Emotion とは独立した長期的キャラクタートーン）
+   */
   static analyzeTraits(traits: TraitVector): EmotionProfile {
     const { calm, empathy, curiosity } = traits;
 
-    const baseIntensity = Math.max(
-      0.1,
-      Math.min(1, (1 - calm) * 0.6 + curiosity * 0.4)
-    );
+    // intensity: 落ち着き × 好奇 × 共感 の釣り合いで決定
+    const rawIntensity = (1 - calm) * 0.5 + curiosity * 0.3 + empathy * 0.2;
 
-    const stabilityFactor = calm > 0.85 && empathy > 0.85 ? 0.6 : 1.0;
-    const intensity = baseIntensity * stabilityFactor;
+    const intensity = Math.max(0.1, Math.min(1, rawIntensity));
 
-    let tone = "neutral";
+    let tone: EmotionProfile["tone"] = "neutral";
+
     if (empathy > 0.7 && calm > 0.6) tone = "warm";
     else if (curiosity > 0.7) tone = "inquisitive";
-    else if (calm < 0.4) tone = "anxious";
-    else if (empathy < 0.4) tone = "cold";
+    else if (calm < 0.35) tone = "anxious";
+    else if (empathy < 0.35) tone = "cold";
 
-    const color =
-      tone === "warm"
-        ? "#FFD2A0"
-        : tone === "inquisitive"
-        ? "#B5E1FF"
-        : tone === "anxious"
-        ? "#FFB0B0"
-        : tone === "cold"
-        ? "#B0C4DE"
-        : "#D9D9D9";
-
-    const keywords = this.keywordsByTone(tone);
-    return { tone, intensity, color, keywords };
+    return {
+      tone,
+      intensity,
+      keywords: this.keywordsByTone(tone),
+    };
   }
 
-  /** トーンごとのキーワード群（内部用） */
-  private static keywordsByTone(tone: string): string[] {
+  /** Toneごとの内部キーワード（今は使用しないが将来拡張用） */
+  private static keywordsByTone(tone: EmotionProfile["tone"]): string[] {
     switch (tone) {
       case "warm":
-        return ["gentle", "soft", "kindly"];
+        return ["soft", "gently", "kind"];
       case "inquisitive":
-        return ["curious", "thoughtful", "wondering"];
+        return ["curiously", "thoughtful"];
       case "anxious":
-        return ["hesitant", "uncertain", "fragile"];
+        return ["hesitant", "fragile"];
       case "cold":
-        return ["distant", "calculated", "precise"];
+        return ["flat", "precise"];
+      case "neutral":
       default:
-        return ["neutral", "balanced", "calm"];
+        return ["calm", "steady"];
     }
   }
 
-  /** テキストへトーン適用（演出削除・自然文モード） */
+  /**
+   * ============================================================
+   * applyTone()
+   * - 強すぎる句読点や！?の連打を抑制する
+   * - EmotionState（tension・warmth…）とは独立した補正
+   * - 「自然文として違和感がない」ことが最優先
+   * ============================================================
+   */
   static applyTone(text: string, traits: TraitVector): string {
+    if (!text) return "";
+
     const profile = this.analyzeTraits(traits);
+    let out = text;
 
-    // 🎯 演出prefixを削除して自然文出力のみ
-    let adjustedText =
-      profile.intensity < 0.4
-        ? text.replace(/!+/g, "。").replace(/[！？]/g, "。")
-        : text;
+    /**
+     * 1) 強すぎる感嘆符を抑制
+     * - intensity が弱い → 「!」を「。」に変換
+     * - intensity が普通 → 「!!」以上のみ「。」へ
+     */
+    if (profile.intensity < 0.4) {
+      out = out.replace(/!+/g, "。");
+    } else {
+      out = out.replace(/!!+/g, "。");
+    }
 
-    return adjustedText.trim();
+    /**
+     * 2) 「!?」系の暴走抑制
+     * （自然な一文として保つ）
+     */
+    out = out.replace(/[！？]{2,}/g, "。");
+
+    /**
+     * 3) 行末の記号補正
+     * （「!」「?」単体は残してもOK — キャラ破綻しない）
+     */
+    out = out.replace(/([！？])(?=\s*\n|$)/g, "。");
+
+    /**
+     * 4) 前後の空白調整
+     */
+    out = out.trim();
+
+    return out;
   }
 }

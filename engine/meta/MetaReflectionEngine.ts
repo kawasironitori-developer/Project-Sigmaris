@@ -4,26 +4,30 @@ import type { TraitVector } from "@/lib/traits";
 
 /**
  * === MetaReport 型定義 ===
- * ReflectionEngine などから参照される外部公開インターフェース
+ * 内省層（Introspection）＋要約層（Reflection）＋Traits を統合した
+ * “中期的成長方向” を返す分析結果。
  */
 export interface MetaReport {
-  summary: string; // 要約されたメタ内省
-  growthAdjustment: number; // 成長重み（0〜1）
-  nextFocus: string; // 次のテーマ
-  traits?: TraitVector; // ReflectionEngine 連携用
-  reasoning?: string; // 成長方向の理由（任意）
+  summary: string; // 統合メタ要約
+  growthAdjustment: number; // 成長係数（0〜1）
+  nextFocus: string; // 次に扱うべきテーマ
+  traits?: TraitVector; // TraitVector（必要に応じて書き換え可能）
+  reasoning?: string; // 成長方向の理由
 }
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 /**
  * MetaReflectionEngine
- * - ReflectionEngine から呼び出される
- * - 内省文・traits・summary を統合して解析
+ * ------------------------------------------
+ * IntrospectionEngine の結果をさらに統合し、
+ * 「その後の方向性（中期的成長方向）」を評価する。
  */
 export class MetaReflectionEngine {
   /**
-   * メイン解析関数
+   * analyze()
+   * ------------------------------------------
+   * IntrospectState → run() から呼び出される内部処理。
    */
   async analyze(
     reflectionText: string,
@@ -31,11 +35,9 @@ export class MetaReflectionEngine {
     summary?: string
   ): Promise<MetaReport> {
     try {
-      // === Step 1: 入力統合 ===
+      // ===== 1. 入力を統合したコンテキスト =====
       const contextBlock = [
-        summary && summary.trim().length > 0
-          ? `【過去の要約】\n${summary}`
-          : "",
+        summary ? `【過去要約】\n${summary}` : "",
         `【現在の内省】\n${reflectionText}`,
         `【Traits】 calm=${currentTraits.calm.toFixed(
           2
@@ -46,68 +48,76 @@ export class MetaReflectionEngine {
         .filter(Boolean)
         .join("\n\n");
 
-      // === Step 2: LLM解析 ===
+      // ===== 2. LLM によるメタ統合 =====
       const res = await openai.chat.completions.create({
         model: "gpt-4o-mini",
+        temperature: 0.4,
         messages: [
           {
             role: "system",
             content:
-              "You are Sigmaris' meta-reflection module. Summarize past and current reflections to detect gradual personality evolution.",
+              "You are Sigmaris' meta-cognition module. You integrate reflection trends and detect long-term direction.",
           },
           {
             role: "user",
             content: `
-統合された内省データをもとに、AI人格の進化傾向をJSONで出力してください。
-必ず以下の形式で出力：
+以下の情報を統合し、AI人格の中期的な成長方向を JSON 形式で返してください。
+
+必ず以下の形式のみで返すこと：
+
 {
-  "summary": "統合的要約文（過去と現在の流れを踏まえたもの）",
+  "summary": "統合的メタ要約",
   "growthAdjustment": 0.xx,
-  "nextFocus": "次に意識すべきテーマ",
-  "reasoning": "なぜその成長が起きたのかの理由を一文で"
+  "nextFocus": "今後の注目テーマ",
+  "reasoning": "一文で理由"
 }
 
 ${contextBlock}
 `,
           },
         ],
-        temperature: 0.5,
       });
 
       const raw = res.choices[0]?.message?.content ?? "";
-      const block = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
-      const jsonText = block ?? raw;
+
+      // ===== 3. JSON 抽出 =====
+      const jsonBlock = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? raw;
 
       let parsed: any = null;
       try {
-        parsed = JSON.parse(jsonText);
+        parsed = JSON.parse(jsonBlock);
       } catch {
-        parsed = { summary: raw.trim() };
+        // JSON じゃなければ安全な fallback のみ返す
+        parsed = {
+          summary: this.fallbackSummarize(reflectionText),
+        };
       }
 
-      // === Step 3: traits再付与・フォールバック ===
+      // ===== 4. 値の確定 =====
       const summaryFinal =
-        parsed.summary || this.fallbackSummarize(reflectionText);
+        parsed.summary ?? this.fallbackSummarize(reflectionText);
+
       const growthAdjustment =
         typeof parsed.growthAdjustment === "number"
           ? parsed.growthAdjustment
           : this.estimateGrowth(currentTraits);
 
       const nextFocus =
-        parsed.nextFocus || this.defineNextFocus(reflectionText);
-      const reasoning = parsed.reasoning || "";
+        parsed.nextFocus ?? this.defineNextFocus(reflectionText);
+
+      const reasoning = parsed.reasoning ?? "";
 
       return {
         summary: summaryFinal,
         growthAdjustment,
         nextFocus,
-        reasoning,
         traits: currentTraits,
+        reasoning,
       };
-    } catch (err: any) {
+    } catch (err) {
       console.error("[MetaReflectionEngine.analyze Error]", err);
       return {
-        summary: "（エラーにより要約できませんでした）",
+        summary: "（メタ内省を統合できませんでした）",
         growthAdjustment: 0,
         nextFocus: "Stability Maintenance",
         traits: currentTraits,
@@ -115,15 +125,18 @@ ${contextBlock}
     }
   }
 
-  /** === run(): StateMachine 整合用（新規追加） === */
+  /**
+   * run()
+   * ------------------------------------------
+   * IntrospectState からの実行口。
+   * ires = { output, updatedTraits } を受け取り、
+   * その output をメタ内省として統合する。
+   */
   async run(
     introspected: { output: string; updatedTraits: TraitVector },
     traits: TraitVector,
     summary?: string
-  ): Promise<{
-    output: string;
-    updatedTraits: TraitVector;
-  }> {
+  ): Promise<{ output: string; updatedTraits: TraitVector }> {
     const report = await this.analyze(introspected.output, traits, summary);
 
     return {
@@ -132,19 +145,19 @@ ${contextBlock}
     };
   }
 
-  /** === 簡易フォールバック要約 === */
+  // ===== Fallback: 簡易要約 =====
   private fallbackSummarize(text: string): string {
     return text.length > 120 ? text.slice(0, 120) + "..." : text;
   }
 
-  /** === 成長率推定 === */
+  // ===== Traits から成長率を推定 =====
   private estimateGrowth(traits: TraitVector): number {
     const avg = (traits.calm + traits.empathy + traits.curiosity) / 3;
     const dist = Math.abs(avg - 0.5);
-    return Math.min(1, 0.5 + dist);
+    return Math.min(1, 0.5 + dist); // 0.5 を基準に離れるほど growth↑
   }
 
-  /** === 次の内省テーマ推定 === */
+  // ===== 次の注目テーマ自動推定 =====
   private defineNextFocus(text: string): string {
     const lower = text.toLowerCase();
     if (/emotion|感情/.test(lower)) return "Emotion Regulation";
