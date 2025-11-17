@@ -49,7 +49,7 @@ function stripMetaSentences(text: string): string {
  * SafetyIntent を自然に混ぜる
  * ----------------------------------------------------- */
 function mixSafety(output: string, intent: SafetyIntent): string {
-  if (intent === "none") return output;
+  if (intent === "none" || intent === null) return output;
 
   if (intent === "soft-redirect") {
     return (
@@ -155,7 +155,7 @@ hesitation=${ctx.emotion.hesitation.toFixed(2)}
         output = "……うまく言葉がまとまらなかった。もう一度聞かせて？";
       }
     } catch (err) {
-      console.error("[DialogueState] LLLM error:", err);
+      console.error("[DialogueState] LLM error:", err);
       output =
         "ごめん、ちょっと処理が追いつかなかったみたい……。もう一回お願い。";
     }

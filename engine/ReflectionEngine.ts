@@ -6,7 +6,7 @@ import { SafetyLayer } from "@/engine/safety/SafetyLayer";
 import { PersonaSync } from "@/engine/sync/PersonaSync";
 import type { TraitVector } from "@/lib/traits";
 
-/** Persona構造体（スキーマ参照用） */
+/** Persona構造体（スキーマ参照用：DBと合わせるだけでここでは型補助用） */
 interface Persona {
   calm: number;
   empathy: number;
@@ -17,7 +17,18 @@ interface Persona {
   timestamp?: string;
 }
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+/** fullReflect が返す結果の形（内部用） */
+interface ReflectionResult {
+  reflection: string; // Safety＋Emotion 適用後の最終テキスト
+  introspection: string; // LLM が出した生の内省テキスト
+  metaSummary: string; // メタ要約（最終採用版）
+  metaReport?: any; // MetaReflectionEngine の生結果
+  safety: string; // SafetyLayer からのメッセージ
+  flagged: boolean; // SafetyLayer.guardText のフラグ
+  traits: TraitVector; // 更新後 traits（安定化後）
+}
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 /** 最初に見つかった有限数値を返す */
 function firstFiniteNumber(
@@ -42,7 +53,7 @@ function tryParseJSONLoose(text: string): any | null {
   }
 }
 
-/** ±maxDelta 内に抑える補正 */
+/** ±maxDelta 内に抑える補正（0〜1クランプ付き） */
 function clampDeltaAround(
   base: number,
   next: number | undefined,
@@ -58,15 +69,23 @@ function clampDeltaAround(
  * 内省＋要約統合＋安全反映を担う中枢AEIモジュール
  */
 export class ReflectionEngine {
+  /**
+   * 🧠 フル内省：
+   * - Persona読み込み
+   * - 直近会話＋成長ログ＋要約を統合
+   * - traitsの微調整（±0.05）
+   * - SafetyLayer / MetaReflection 反映
+   * - PersonaSyncへ保存
+   */
   async fullReflect(
     growthLog: any[],
     messages: any[],
     summary: string,
     userId: string
-  ) {
+  ): Promise<ReflectionResult> {
     try {
       // === Personaロード ===
-      const persona = await PersonaSync.load(userId);
+      const persona = (await PersonaSync.load(userId)) as Persona;
 
       // === 直近会話 ===
       const recentDialog = (messages ?? [])
@@ -109,7 +128,7 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
   "metaSummary": "...",
   "traits": { "calm": 0.xx, "empathy": 0.xx, "curiosity": 0.xx }
 }
-`;
+`.trim();
 
       // === LLM呼び出し ===
       const res = await openai.chat.completions.create({
@@ -147,17 +166,17 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
           ? parsedLoose.traits.curiosity
           : undefined;
 
-      // === 変動制限 ===
-      const clampedTraits: TraitVector = {
-        calm: clampDeltaAround(persona.calm ?? 0.5, llmCalm, 0.05),
-        empathy: clampDeltaAround(persona.empathy ?? 0.5, llmEmp, 0.05),
-        curiosity: clampDeltaAround(persona.curiosity ?? 0.5, llmCur, 0.05),
-      };
-
+      // === 変動制限（±0.05 & 0〜1クランプ） ===
       const prevTraits: TraitVector = {
         calm: persona.calm ?? 0.5,
         empathy: persona.empathy ?? 0.5,
         curiosity: persona.curiosity ?? 0.5,
+      };
+
+      const clampedTraits: TraitVector = {
+        calm: clampDeltaAround(prevTraits.calm, llmCalm, 0.05),
+        empathy: clampDeltaAround(prevTraits.empathy, llmEmp, 0.05),
+        curiosity: clampDeltaAround(prevTraits.curiosity, llmCur, 0.05),
       };
 
       // === SafetyLayer整合 ===
@@ -166,7 +185,7 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
         clampedTraits
       );
 
-      // ★ SafetyReport は warnings が存在しないため
+      // SafetyReport.note がない場合もあるのでフォールバック
       const safetyMessage = report?.note || "正常";
 
       // === Meta反省 ===
@@ -194,7 +213,7 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
         userId
       );
 
-      // === EmotionTone + Safety ===
+      // === EmotionTone + Safetyテキスト整形 ===
       const emotionalReflection = EmotionSynth.applyTone(
         reflectionText,
         stableTraits
@@ -225,7 +244,7 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
   }
 
   /**
-   * 🪞 軽量Reflect（/api/chat）
+   * 🪞 軽量Reflect（/api/chat などから呼ばれる簡易版）
    */
   async reflect(
     growthLog: any[] = [],
@@ -241,7 +260,7 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
         "以下の会話と成長履歴をもとに簡潔な気づきをまとめてください。",
         "",
         "【会話履歴】",
-        summary,
+        summary || "（会話履歴はありません）",
         "",
         "【成長ログ】",
         JSON.stringify(growthLog, null, 2),

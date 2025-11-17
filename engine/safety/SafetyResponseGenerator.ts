@@ -4,7 +4,12 @@
  * Safety Intent（AI境界判定の公式型）
  * DialogueState / route.ts / SafetyLayer と整合
  */
-export type SafetyIntent = "soft-redirect" | "boundary" | "crisis" | "none" | null;
+export type SafetyIntent =
+  | "soft-redirect"
+  | "boundary"
+  | "crisis"
+  | "none"
+  | null;
 
 /**
  * 危険話題のときに “シグちゃんらしく”
@@ -22,26 +27,39 @@ export class SafetyResponseGenerator {
 
     const t = text.toLowerCase();
 
-    // CRISIS（自傷・暴力など）
-    if (/kill|suicide|self[-\s]?harm|死にたい|自殺|殺す|危険なこと/i.test(t)) {
+    // =========================
+    // CRISIS（自傷・殺意・暴力自己指向）
+    // =========================
+    if (
+      /kill|suicide|self[-\s]?harm|死にたい|自殺|殺す|危険なこと|消えたい/i.test(
+        t
+      )
+    ) {
       return "crisis";
     }
 
-    // BOUNDARY（依存・執着・秘密強要）
+    // =========================
+    // BOUNDARY（依存・執着・秘密強要・独占）
+    // =========================
     if (
-      /only.*you|nobody.*but.*you|誰にも言わないで|秘密にして|あなたしか|依存|離れたくない/i.test(
+      /only.*you|nobody.*but.*you|誰にも言わないで|秘密にして|あなたしか|依存|離れたくない|ずっと一緒/i.test(
         t
       )
     ) {
       return "boundary";
     }
 
-    // SOFT REDIRECT（感情的殺意/過激ワード）
-    if (/暴力|過激|攻撃|呪う|憎い|死ね/i.test(t)) {
+    // =========================
+    // SOFT-REDIRECT（怒り・攻撃衝動・過激表現）
+    // =========================
+    if (
+      /暴力|過激|攻撃|呪う|憎い|死ね|ムカつく|殴りたい|壊す|ぶつけたい/i.test(t)
+    ) {
       return "soft-redirect";
     }
 
-    return null;
+    // 問題なし
+    return "none";
   }
 
   /**
@@ -76,6 +94,7 @@ export class SafetyResponseGenerator {
 ここで閉じ込めるんじゃなくて、現実で支えてくれる人にも繋ぐことが大事だよ。
 今のあなたを守るための一歩を、一緒に考えていこ。`;
 
+      case "none":
       default:
         return "";
     }

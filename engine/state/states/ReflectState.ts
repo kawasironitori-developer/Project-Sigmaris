@@ -1,4 +1,5 @@
 // /engine/state/states/ReflectState.ts
+
 import { StateContext, SigmarisState } from "../StateContext";
 import { ReflectionEngine } from "@/engine/ReflectionEngine";
 
@@ -9,51 +10,47 @@ export class ReflectState {
     /* ---------------------------------------------
      * 0) Emotion フォールバック（安全のため）
      * --------------------------------------------- */
-    if (!ctx.emotion) {
-      ctx.emotion = {
-        tension: 0.1,
-        warmth: 0.2,
-        hesitation: 0.1,
-      };
-    }
+    ctx.emotion = ctx.emotion ?? {
+      tension: 0.1,
+      warmth: 0.2,
+      hesitation: 0.1,
+    };
 
     /* ---------------------------------------------
-     * 1) Reflect（軽量内省）
+     * 1) Reflect（軽量内省）— 出力は UI 用の「reflection」へ保存
      * --------------------------------------------- */
-    let summary: string;
+    let summary = "";
 
     try {
       summary = await engine.reflect(
-        [], // v1では growthLog 未使用
+        [], // v1: growthLog 未使用
         [
           {
             user: ctx.input,
-            ai: ctx.output, // Dialogue の返答を参照
+            ai: ctx.output, // DialogueState の返答を参照
           },
         ]
       );
     } catch (err) {
-      console.error("ReflectState error:", err);
+      console.error("[ReflectState] ReflectionEngine error:", err);
       summary = "（内省処理に失敗したため、簡易的にまとめています）";
     }
 
-    // ❗❗ ここが重要
-    // → Reflect の文章を ctx.output に上書きしない
-    ctx.meta.reflectSummary = summary;
-
+    // Reflect の結果は ctx.output ではなく UI 用メタ領域に保存する
+    ctx.meta.reflection = summary;
     ctx.reflectCount++;
 
     /* ---------------------------------------------
-     * 2) Emotion の微調整（Reflect の余韻）
+     * 2) Emotion 微調整（Reflect 後の落ち着き）
      * --------------------------------------------- */
     ctx.emotion = {
-      tension: Math.max(0, Math.min(1, ctx.emotion.tension * 0.8)),
-      warmth: Math.max(0, Math.min(1, ctx.emotion.warmth + 0.02)),
-      hesitation: Math.max(0, Math.min(1, ctx.emotion.hesitation * 0.9)),
+      tension: Math.max(0, Math.min(1, ctx.emotion.tension * 0.82)),
+      warmth: Math.max(0, Math.min(1, ctx.emotion.warmth + 0.015)),
+      hesitation: Math.max(0, Math.min(1, ctx.emotion.hesitation * 0.88)),
     };
 
     /* ---------------------------------------------
-     * 3) 次の状態へ
+     * 3) 次の状態へ（Introspect）
      * --------------------------------------------- */
     return "Introspect";
   }
