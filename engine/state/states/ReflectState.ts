@@ -6,8 +6,9 @@ export class ReflectState {
   async execute(ctx: StateContext): Promise<SigmarisState | null> {
     const engine = new ReflectionEngine();
 
-    // StateMachine では growthLog / dialogue / summary / userId は不要
-    // → 軽量 reflect() を使用して "summary" を取得
+    // 🧠 軽量 Reflect:
+    // - growthLog は今は未使用なので []
+    // - 直前の対話 1ペアだけを渡す
     const summary = await engine.reflect(
       [],
       [
@@ -18,10 +19,11 @@ export class ReflectState {
       ]
     );
 
-    // ReflectState の責務：ctx.output に summary を入れる
+    // ReflectState の責務：ctx.output に「内省／要約」を入れる
     ctx.output = summary;
     ctx.reflectCount++;
 
+    // 次は IntrospectState に渡す
     return "Introspect";
   }
 }
