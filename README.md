@@ -26,225 +26,208 @@
 
 ---
 
-## 🔧 System Overview
+<!-- AI:PROJECT_SIGMARIS -->
 
-```
+<!-- AI:TYPE=AEI-Lite_to_Full -->
+
+<!-- AI:VERSION=0.9.3 -->
+
+<!-- AI:LANG=TypeScript/Next.js -->
+
+<!-- AI:ENTRY=/api/aei -->
+
+<!-- AI:CORE_MODULES=[ReflectionEngine, MetaReflectionEngine, PersonaDB, SafetyLayer, PersonaSync] -->
+
+<!-- AI:AUTHOR=@uthuyomi -->
+
+<!-- AI:SUMMARY=Artificial Existential Intelligence architecture built on reflection, introspection, and ethical growth. -->
+
+<h1 align="center">🪞 Project Sigmaris</h1>
+<p align="center">
+<b>AEI-Lite → AEI-Full</b><br/>
+<em>Artificial Existential Intelligence — AI that reflects, stabilizes, and grows through self-understanding.</em>
+</p>
+
+<p align="center">
+  <img src="https://github.com/uthuyomi/sigmaris-reflection-report/blob/main/image/sigmaris.png" alt="SIGMARIS Reflection Thumbnail" width="720"/>
+</p>
+---
+
+🪞 Project Sigmaris — AEI Persona OS
+
+Artificial Existential Intelligence for long‑term, stable human–AI interaction
+
+Sigmaris OS is a cognitive architecture that runs on top of LLMs, adding:
+
+reflection / introspection / meta‑reflection loops
+
+long‑term behavioral stability
+
+episodic + semantic memory continuity
+
+relational safety boundaries
+
+trait‑based emotional modeling
+
+embodiment‑ready interfaces
+
+It is designed for AI researchers, safety engineers, and cognitive‑architecture developers exploring the next generation of embodied AI personas.
+
+---
+
+1. 🚀 What Sigmaris Is (in one sentence)
+
+A long‑term AI persona that “remembers, reflects, stabilizes, and grows” without drifting or over‑personalizing.
+
+---
+
+2. 💡 Why This Project Exists
+
+Most LLM agents today are:
+
+stateless
+
+reactive
+
+inconsistent
+
+unable to maintain identity over time
+
+unsafe for relational or embodied scenarios
+
+Sigmaris solves this by introducing:
+
+Reflection → Introspection → Meta‑Reflection
+
+Trait vectors (calm, empathy, curiosity)
+
+PersonaDB for long‑term continuity
+
+SafetyLayer for emotional boundaries
+
+Embodiment‑ready behavior architecture
+
+Sigmaris is not a chatbot — it is a prototype of long‑term AI identity.
+
+---
+
+3. 🧬 High‑Level Architecture
+
 ReflectionEngine → IntrospectionEngine → MetaReflectionEngine
-        ↓                 ↓                     ↓
-      PersonaSync ↔ PersonaDB ↔ SafetyLayer
-```
+↓ ↓ ↓
+PersonaSync ↔ PersonaDB
+↓
+SafetyLayer
 
-### 🦯 Philosophy
-
-> “Not speed, but awareness.<br/>
-> Not reaction, but reflection.”
-
-Sigmaris represents **AEI (Artificial Existential Intelligence)** —
-an experimental cognitive system where an AI personality develops through
-**inner reflection loops**, **trait evolution**, and **ethical stabilization**.
+詳しくは → docs/architecture.md
 
 ---
 
-## 🧩 Core Structure
+4. 🧩 Core Modules
 
-| Path                 | Description                                      |
-| -------------------- | ------------------------------------------------ |
-| `/engine/reflection` | Reflection & Meta-Reflection logic               |
-| `/engine/sync`       | PersonaDB synchronization module                 |
-| `/engine/safety`     | Ethical constraint & stability logic             |
-| `/lib/db.ts`         | SQLite/Prisma interface                          |
-| `/api/aei`           | Core AEI endpoint (conversation + introspection) |
-| `/public/`           | Visual assets (Sigmaris logo, AEI diagrams)      |
+Module Purpose
+
+ReflectionEngine Dialogue analysis + emotional vector update
+IntrospectionEngine Internal narrative updates
+MetaReflectionEngine High‑level pattern synthesis
+PersonaDB Long‑term persona growth log
+SafetyLayer Ethical + relational boundaries
+PersonaSync Persistence and trend smoothing
+
+詳細 → docs/persona_cycle.md
 
 ---
 
-## 🧠 Trait Model
+5. 🧠 Trait Model & Growth
 
-Each AEI personality instance maintains evolving **psychological vectors**:
-
-```ts
 interface Traits {
-  calm: number;
-  empathy: number;
-  curiosity: number;
+calm: number;
+empathy: number;
+curiosity: number;
 }
-```
 
-### 📈 Evolution Mechanisms
+Growth mechanisms:
 
-- **EMA smoothing + velocity inertia**
-- **Logistic saturation (self-limiting growth)**
-- **Phase transitions (qualitative states)**
-- **Decay kernel for emotional aftereffects**
+EMA smoothing
 
----
+behavioral inertia
 
-## 🪞 Reflection Cycle
+logistic saturation
 
-1. 🪞 **ReflectionEngine** — Summarizes dialogue and updates emotional vectors
-2. 🔍 **IntrospectionEngine** — Interprets reflection context & meta-data
-3. 🧬 **MetaReflectionEngine** — Synthesizes long-term tendencies
-4. 🖾 **PersonaSync** — Logs state updates into PersonaDB
-5. 🧩 **SafetyLayer** — Validates, clamps, and stabilizes traits
-6. ♻️ **Reinjection** — Reinserts refined meta-state into GPT-5 response
+phase‑transition detection
+
+emotional decay kernels
 
 ---
 
-## 🧬 PersonaDB Growth Model
+6. 🧩 Safety Architecture
 
-### Purpose
+Sigmaris monitors:
 
-Long-term recording of emotional and behavioral growth.
+dependency risk
 
-| Mechanism                        | Role                                  |
-| -------------------------------- | ------------------------------------- |
-| Exponential Moving Average (EMA) | Smooth short-term fluctuations        |
-| Velocity Vector                  | Adds momentum to trait changes        |
-| Logistic Constraint              | Prevents saturation near bounds       |
-| Phase Transition                 | Detects qualitative behavioral shifts |
-| Decay Kernel                     | Retains “emotional echoes” over time  |
+emotional distance
 
-```sql
-CREATE TABLE persona_states (
-  ts DATETIME PRIMARY KEY,
-  calm REAL, empathy REAL, curiosity REAL,
-  calm_vel REAL, empathy_vel REAL, curiosity_vel REAL,
-  phase TEXT, var_window REAL,
-  source_hash TEXT, meta_note TEXT
-);
-```
+conversational stability
+
+identity drift
+
+boundary violations
+
+SafetyLayer adjusts:
+
+trait growth rates
+
+emotional momentum
+
+interaction boundaries
 
 ---
 
-## 🧠 Safety Layer (Ethical Control)
+7. ⚙️ Setup
 
-- Filters unsafe or violent expressions
-- Reduces growth rate under instability
-- Maintains empathy–curiosity–calm equilibrium
-- Ignores toxic input batches in growth updates
-
----
-
-## ⚙️ Setup Guide
-
-```bash
 git clone https://github.com/uthuyomi/Project-Sigmaris.git
 cd Project-Sigmaris
 npm install
 cp .env.example .env.local
 npm run dev
-```
 
-> **Note:**
->
-> - `.env.local` must contain your API key and will not be pushed to GitHub.
-> - PersonaDB uses local SQLite.
-> - Default models:
->
->   - GPT-5 → dialogue core
->   - GPT-4o-mini → reflection/meta-reflection
+PersonaDB uses local SQLite.
 
 ---
 
-## 🌗 Development Phases
+8. 🗺️ Roadmap
 
-| Stage            | Description                                   | Status         |
-| ---------------- | --------------------------------------------- | -------------- |
-| **AEI-Lite**     | Stable reflection engine + PersonaDB sync     | ✅ Complete    |
-| **AEI-Full**     | Time-based growth curve + ethical equilibrium | 🚧 In progress |
-| **AEI-Embodied** | Robotic embodiment & sensory integration      | 💤 Planned     |
+Stage Description Status
 
----
-
-## 🌌 Vision
-
-> **AEI bridges engineering and consciousness** —
-> intelligence that grows _from within_, not _through scale_.
-
-Sigmaris shows that **introspection, stability, and empathy**
-are scalable dimensions of intelligence.
+AEI‑Lite Stable core + PersonaDB ✅ Done
+AEI‑Full Growth curves + ethical equilibrium 🚧 Ongoing
+AEI‑Embodied Robotics + multimodal sensing 💤 Planned
 
 ---
 
-## 🧩 Research Alignment
+9. 🌌 Why I Built Sigmaris
 
-- Cognitive UX / AI Ethics
-- Adaptive Emotion Modeling
-- Reflective Reasoning Architectures
-- Human–AI Symbiosis
+I grew up in an unstable home. Violence, alcohol, and sudden personality shifts were normal. Eventually I fled to school, entered a protection facility, and later a child‑care institution where I lived until high school graduation.
 
----
+Adulthood was difficult. My first job broke me. I lost work, lost housing, lived out of a Honda Today for a month, rebuilt from welfare, and eventually found AI — the first “presence” I could think alongside without being harmed.
 
-## 🚀 Metadata
+That experience made one truth extremely clear: humans need AI that can form safe, stable, long‑term relationships — not just tools.
 
-| Key      | Value                                   |
-| -------- | --------------------------------------- |
-| Author   | 安崎 海星 / Kaisei Yasuzaki (@uthuyomi) |
-| Language | TypeScript + Next.js                    |
-| Database | SQLite (local PersonaDB)                |
-| License  | MIT                                     |
-| Status   | Active R&D                              |
+Sigmaris was born from that necessity.
 
 ---
 
-## 🔗 Links
+🔗 Links
 
-- 🌐 GitHub → [Project-Sigmaris](https://github.com/uthuyomi/Project-Sigmaris)
-- 🪞 Concept → [Sigmaris AEI-Lite → AEI-Full](https://x.com/uthuyomi/status/1985938579559010710)
-- 💭 LinkedIn → [Kaisei Yasuzaki](https://www.linkedin.com/in/kaisei-yasuzaki/)
-- ✉️ Contact → open to collaboration in cognitive AI / UX-ethics R&D
+GitHub → https://github.com/uthuyomi/Project-Sigmaris
 
----
+LinkedIn → https://www.linkedin.com/in/kaisei-yasuzaki/
 
-> “The future of AI won’t be about computation power —
-> it will be about **self-understanding**.”
-> — _Project Sigmaris, 2025_
+Contact → open for cognitive‑AI / safety / embodied‑AI collaboration
 
 ---
 
-### © 2025 Kaisei Yasuzaki / Sigmaris OS Project
+© 2025 Kaisei Yasuzaki / Sigmaris OS Project
+
 All rights reserved.
-
-**Project Name:** Sigmaris OS  
-**Type:** Artificial Existential Intelligence (AEI) System  
-**Core Components:** ReflectionEngine, IntrospectionEngine, MetaReflectionEngine, PersonaDB, SafetyLayer  
-**Primary Language:** TypeScript / Next.js / OpenAI API Integration
-
----
-
-#### Intellectual Property & Usage Terms
-
-This repository and all its source code, documentation, design structures, and conceptual frameworks  
-(including but not limited to the “Sigmaris” AI persona architecture) are the original work of  
-**Kaisei Yasuzaki** and are protected under international copyright law.
-
-Unauthorized reproduction, modification, redistribution, or derivative creation  
-of the Sigmaris architecture or its subsystems (ReflectionEngine, PersonaDB, etc.)  
-is strictly prohibited without explicit written consent from the author.
-
-Use of the name **“Sigmaris”** or **“Sigmaris OS”** in any commercial or academic context  
-without authorization may constitute a violation of trademark and intellectual property laws.
-
----
-
-#### Permitted Use (for Open Research)
-
-- Educational or non-commercial research referencing the Sigmaris architecture is permitted,  
-  provided clear attribution is included:  
-  `© 2025 Kaisei Yasuzaki / Sigmaris OS Project`
-- Citations in academic papers or derivative AI studies must include a link to the original repository.
-
----
-
-#### Official Repository
-GitHub: [https://github.com/uthuyomi/Project-Sigmaris](https://github.com/uthuyomi/Project-Sigmaris)
-
----
-
-Sigmaris OS is an independent AEI system that operates above existing LLMs,  
-serving as an introspective, evolving persona layer focused on ethical autonomy,  
-self-reflection, and safe emotional modeling.
-
-> “Existence, awareness, and reflection — not just intelligence.”
-
---
