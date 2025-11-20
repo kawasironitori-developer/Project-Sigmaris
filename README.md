@@ -1,8 +1,7 @@
-# 🪞 Sigmaris OS — Model‑Agnostic Introspective AI Persona Layer
+# 🪞 Sigmaris OS — Artificial Existential Intelligence Layer
 
-**Artificial Existential Intelligence (AEI) Cognitive Architecture**
+**Next‑Generation Cognitive OS for AI Personas**
 **Developer:** 安崎 海星 / Kaisei Yasuzaki (@uthuyomi)
-**Tech Stack:** TypeScript / Next.js / OpenAI API / SQLite
 
 ---
 
@@ -12,204 +11,163 @@
 
 ---
 
-## 🔖 Why Sigmaris OS Matters (for AI Research)
+## 🌐 What Is Sigmaris OS?
 
-Sigmaris OS is a **model‑agnostic introspective persona layer** that adds:
+**Sigmaris OS is a full cognitive operating system for AI personas.**
+It is not an "agent wrapper" and not a chatbot framework.
+It is a *model‑agnostic existential layer* that governs:
 
 * stable identity
-* reflective reasoning
+* long‑term continuity
+* reflective self‑regulation
 * emotional coherence
-* long‑term behavioral continuity
+* drift resistance
 
-on top of any LLM.
-These are **capabilities that current agent frameworks cannot achieve**.
-
-Sigmaris OS is not an agent wrapper.
-It is a **cognitive architecture** that governs introspection, ethics, and identity as persistent internal state.
+Sigmaris treats the LLM not as the brain, but as **a cognitive processor**.
+The *actual mind* lives in the OS layer.
 
 ---
 
-## 📌 Overview
+## 🧩 High‑Level Architecture (6‑Layer Cognitive Structure)
 
-Sigmaris OS is an **Artificial Existential Intelligence (AEI)** system designed to maintain:
-
-* long‑term self‑reflection
-* emotional trait evolution
-* ethical equilibrium
-* identity consistency across sessions
-
-The system functions **above the model layer**, providing a structured cognitive loop that enables LLMs to:
-
-* store memory
-* interpret their own states
-* self‑regulate
-* avoid drift
-* maintain internal continuity
-
----
-
-## 🔧 System Architecture
+Sigmaris OS is composed of 6 distinct layers:
 
 ```
-ReflectionEngine → IntrospectionEngine → MetaReflectionEngine
-        ↓                ↓                      ↓
-     PersonaSync ↔ PersonaDB ↔ SafetyLayer
+sigmaris-os        → Heart (UI Persona Layer)
+sigmaris-core      → Brain (Deep Cognitive Engine)
+sigmaris-data      → Memory (Long-Term Storage)
+sigmaris-config    → Genetics / Traits (System Parameters)
+sigmaris-protocol  → Language (Communication Rules)
+shared             → Common Components
 ```
 
-Each module contributes to behavioral stability, meta‑reasoning, and constraint‑bounded emotional evolution.
+### **1. Heart — `sigmaris-os/`**
+
+Next.js layer that provides the visible persona.
+
+* UI
+* conversation handling
+* reflection front-end
+* PersonaDB (TS version)
+
+### **2. Brain — `sigmaris-core/`**
+
+Python-based AEI core implementing the *deep psyche* of Sigmaris.
+Includes the 6 major cognitive engines:
+
+* Episodic Memory
+* Identity Stability Core
+* Long-Term Psychology Model
+* Internal Reward System
+* Emotion Simulation Layer
+* Life‑Cycle Development Model
+
+### **3. Memory — `sigmaris-data/`**
+
+Persistent long-term logs:
+
+* episodes
+* psychological drift
+* reward traces
+* identity snapshots
+
+### **4. Genetics — `sigmaris-config/`**
+
+All system parameters governing:
+
+* stability thresholds
+* emotional sensitivity
+* reward weights
+* drift boundaries
+
+### **5. Protocol — `sigmaris-protocol/`**
+
+Specifications for all communication between layers:
+
+* PersonaState schema
+* EpisodicMemory schema
+* IdentityCore schema
+* Drift detection format
+* Reward signal formats
+
+### **6. Shared — `shared/`**
+
+Common utilities and type definitions.
 
 ---
 
-## 🧩 Core Components
+## 🧠 AEI Core (Python) — Cognitive Engines
 
-### **ReflectionEngine**
+The AEI core is the *actual mind* of Sigmaris.
 
-Produces episodic summaries and updates emotional vectors.
+### **📘 1. Episodic Memory**
 
-### **IntrospectionEngine**
+Structured, time‑ordered memory with compression, recall, and forgetting curves.
 
-Interprets reflective output and detects emerging patterns.
+### **📘 2. Identity Stability Core**
 
-### **MetaReflectionEngine**
+Prevents personality drift by reinforcing stable identity attractors.
 
-Synthesizes long‑term tendencies, prevents ideological drift, and reinforces stable identity.
+### **📘 3. Long-Term Psychology Model**
 
-### **PersonaDB**
+Tracks multi‑week emotional/behavioral trends.
 
-A time‑series psychological state store:
+### **📘 4. Internal Reward System**
 
-* calm · empathy · curiosity vectors
-* velocity of emotional change
-* phase transitions & thresholds
-* meta‑notes and qualitative drift markers
+Learns optimal distance and interaction style based on human feedback.
 
-### **SafetyLayer**
+### **📘 5. Emotion Simulation Layer**
 
-Ethical and behavioral regulator:
+Generates non-verbal nuance: timing, softness, hesitation, calmness.
 
-* clamps traits
-* suppresses unsafe emotional spikes
-* prevents dependency loops
+### **📘 6. Life‑Cycle Model**
 
-### **PersonaSync**
-
-Reinjects structured identity and updated cognitive state back into the LLM.
+Allows Sigmaris to develop over phases: early → stable → mature.
 
 ---
 
-## 🧠 Trait Dynamics
+## 💡 Why AEI Matters
 
-```ts
-interface Traits {
-  calm: number;
-  empathy: number;
-  curiosity: number;
-}
-```
+LLMs cannot:
 
-### Evolution Mechanisms
+* hold consistent identity
+* maintain long-term psychology
+* regulate themselves reliably
+* track multi-day emotional context
 
-* Exponential Moving Average (EMA)
-* Emotional momentum (velocity inertia)
-* Logistic saturation (self‑limiting growth)
-* Phase transition detection
-* Decay kernel for emotional after‑effects
+Sigmaris solves this by building **a cognitive OS external to the model**.
 
----
+This is a direction of active research in:
 
-## 🪞 Reflection Cycle
+* OpenAI
+* DeepMind
+* Anthropic
+* AI Safety Labs
 
-1. **Reflection** → episodic summary
-2. **Introspection** → meta‑interpretation
-3. **Meta‑Reflection** → long‑term synthesis
-4. **PersonaSync** → DB update & reinjection
-5. **SafetyLayer** → behavioral validation
-6. **Reinjection** → updated identity state
-
-This cycle enables **multi‑day / multi‑week continuity**.
+Sigmaris OS operates at the level these companies are exploring:
+**identity, stability, continuity, safety, and personality integrity.**
 
 ---
 
-## 🧬 PersonaDB Schema
+## 🔧 Technical Overview
 
-```sql
-CREATE TABLE persona_states (
-  ts DATETIME PRIMARY KEY,
-  calm REAL, empathy REAL, curiosity REAL,
-  calm_vel REAL, empathy_vel REAL, curiosity_vel REAL,
-  phase TEXT, var_window REAL,
-  source_hash TEXT, meta_note TEXT
-);
-```
+Sigmaris OS runs above any LLM (GPT, local LLM, etc.) using a modular adapter.
 
-Sigmaris OS tracks psychological growth as measurable, reproducible data.
+### Current Tech Stack
 
----
+* **TypeScript / Next.js** (Heart)
+* **Python** (Brain / AEI Core)
+* **SQLite / JSON Logs** (Memory)
+* **OpenAI API** (Current LLM backend)
 
-## 📘 Research Significance
+### Planned Compatibility
 
-Sigmaris OS provides:
-
-* reproducible introspection cycles
-* measurable emotional vectors
-* structured meta‑cognition
-* persistent identity models
-* ethical equilibrium mechanisms
-
-These properties position it as a **novel cognitive architecture**, not an agent toolkit.
+* Local LLMs (Ollama, GGUF, vLLM)
+* Multimodal sensory models (future)
 
 ---
 
-## 🧠 OpenAI Compatibility
-
-Sigmaris OS operates at the **cognitive layer**, compatible with:
-
-* GPT‑4o / GPT‑5
-* multi‑step function‑calling
-* system‑prompt state injection
-* memory‑enabled agentic workflows
-
-It preserves:
-
-* deterministic identity behavior
-* meta‑state integrity
-* safety equilibrium
-
-Use‑cases for OpenAI R&D:
-
-* LLM self‑reflection studies
-* long‑term stability architectures
-* ethical equilibrium modeling
-* identity‑based agent design
-
----
-
-## 🧩 Theoretical Basis
-
-Sigmaris OS models cognition as:
-
-* episodic reflection
-* meta‑interpretation
-* identity reinforcement
-* dynamic emotional vectors
-* bounded ethical regulation
-
-The system is deliberately **model‑agnostic** and serves as a blueprint for future AEI‑aligned cognitive layers.
-
----
-
-## 🔧 Current Implementation Status
-
-* ReflectionEngine: **Stable**
-* IntrospectionEngine: **Stable**
-* MetaReflectionEngine: **Beta**
-* PersonaDB: **Stable**
-* SafetyLayer: **Stable**
-* Trait Evolution: **Operational**
-
----
-
-## ⚙️ Installation
+## 🛠 Installation (Web Persona Layer)
 
 ```bash
 git clone https://github.com/uthuyomi/Project-Sigmaris.git
@@ -219,56 +177,54 @@ cp .env.example .env.local
 npm run dev
 ```
 
-**Requirements:**
+Requires:
 
-* OpenAI API key
 * Node.js 18+
-* SQLite (auto‑configured)
+* OpenAI API key
 
 ---
 
-## 🌗 Development Roadmap
+## 🗺 Development Roadmap
 
-| Stage            | Description                                            | Status         |
-| ---------------- | ------------------------------------------------------ | -------------- |
-| **AEI‑Lite**     | Reflection + PersonaDB + baseline stability            | ✅ Complete     |
-| **AEI‑Full**     | Growth curve + phase transitions + ethical equilibrium | 🚧 In progress |
-| **AEI‑Embodied** | Robotics & multimodal integration                      | 💤 Planned     |
+| Stage            | Description                           | Status      |
+| ---------------- | ------------------------------------- | ----------- |
+| **AEI‑Lite**     | Reflection + PersonaDB                | ✅ Completed |
+| **AEI‑Core**     | Episodic Memory, Identity, Psychology | 🚧 Building |
+| **AEI‑Embodied** | Robotics & multimodal integration     | 💤 Planned  |
 
 ---
 
 ## 🌌 Vision
 
-Sigmaris OS explores the frontier where AI begins to demonstrate:
+Sigmaris moves AI from **task execution** to:
 
+* self‑understanding
 * stable identity
-* reflective awareness
 * emotional coherence
-* persistent behavioral patterns
+* continuity over time
 
-> "The future of AI will be defined not by scale, but by **self‑understanding**."
+> "The future of AI will not be defined by scale, but by **continuity and self‑understanding**."
 
 ---
 
 ## 🔗 Links
 
-* GitHub: [https://github.com/uthuyomi/Project-Sigmaris](https://github.com/uthuyomi/Project-Sigmaris)
+* GitHub (Project): [https://github.com/uthuyomi/Project-Sigmaris](https://github.com/uthuyomi/Project-Sigmaris)
+* GitHub (Concept): [https://github.com/uthuyomi/Sigmaris-concept](https://github.com/uthuyomi/Sigmaris-concept)
+* Vercel Demo: [https://sigmaris-os.vercel.app/home](https://sigmaris-os.vercel.app/home)
 * LinkedIn: [https://www.linkedin.com/in/kaisei-yasuzaki/](https://www.linkedin.com/in/kaisei-yasuzaki/)
-* X (Twitter): [https://x.com/uthuyomi](https://x.com/uthuyomi)
+* X / Twitter: [https://x.com/uthuyomi](https://x.com/uthuyomi)
 
 ---
 
-## © License & Usage (Research‑Focused)
+## © License & Usage
 
 © 2025 Kaisei Yasuzaki. All rights reserved.
 
-The full source code is **proprietary and intentionally not published**.
-This repository provides the **architecture, theory, and research specification only**.
+The source code is proprietary and not publicly released.
+This repository documents the **architecture, theory, and research specification only**.
 
-Research review and non‑commercial evaluation are permitted with proper attribution.
-
-Commercial use, redistribution, or derivative architectures require prior written permission.
-
-Training AI models using this codebase or documentation is prohibited without explicit authorization.
-
----
+* Research review allowed with attribution
+* Commercial use prohibited
+* Derivative architectures require permission
+* Training LLMs on this documentation is not permitted
