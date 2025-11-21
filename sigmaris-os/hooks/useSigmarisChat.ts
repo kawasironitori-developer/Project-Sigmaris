@@ -7,6 +7,17 @@ import { applyEunoiaTone } from "@/lib/eunoia";
 import { summarize } from "@/lib/summary";
 import type { SafetyReport } from "@/engine/safety/SafetyLayer";
 
+// 🔗 AEI-Core (Python) サイドとのブリッジ
+import {
+  emotion,
+  reward,
+  value,
+  meta,
+  longterm,
+  getIdentity,
+  memory,
+} from "@/lib/sigmaris-api";
+
 /* ================= Types ================= */
 interface Message {
   user: string;
@@ -14,11 +25,13 @@ interface Message {
   user_en?: string;
   ai_en?: string;
 }
+
 interface Trait {
   calm: number;
   empathy: number;
   curiosity: number;
 }
+
 interface ChatSession {
   id: string;
   title: string;
@@ -33,8 +46,6 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   return fetch(url, {
     ...options,
     credentials: "include",
-    // Next.js App Routerのデフォルトキャッシュを完全無効化
-    // （Vercelでの古いレスポンスやCookie欠落を防ぐ）
     next: { revalidate: 0 },
     headers: {
       "Cache-Control": "no-store",
@@ -43,13 +54,16 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   });
 };
 
-const fetchJSON = async <T = any>(url: string, options: RequestInit = {}) => {
+const fetchJSON = async <T = any>(
+  url: string,
+  options: RequestInit = {}
+): Promise<T> => {
   const res = await fetchWithAuth(url, options);
   let payload: any = null;
   try {
     payload = await res.json();
   } catch {
-    // no-op: body がない場合もある
+    // body がない場合もあるので握りつぶす
   }
   if (!res.ok) {
     const msg =
@@ -119,9 +133,11 @@ export function useSigmarisChat() {
         const persisted = localStorage.getItem("sigmaris_current_session");
         const stillExists = supabaseChats.find((c) => c.id === persisted);
         if (!currentChatId) {
-          if (persisted && stillExists) setCurrentChatId(persisted as string);
-          else if (supabaseChats.length > 0)
+          if (persisted && stillExists) {
+            setCurrentChatId(persisted as string);
+          } else if (supabaseChats.length > 0) {
             setCurrentChatId(supabaseChats[0].id);
+          }
         }
       }
     } catch (e) {
@@ -153,27 +169,31 @@ export function useSigmarisChat() {
     }
   }, [currentChatId, loadMessages]);
 
-  /** 🔹 ペルソナ情報をロード */
+  /** 🔹 ペルソナ情報をロード（初期値） */
   useEffect(() => {
     (async () => {
       try {
         const data = await fetchJSON<any>("/api/persona");
         if (!data || data.error) return;
-        setTraits({
+
+        const baseTraits: Trait = {
           calm: data.calm ?? 0.5,
           empathy: data.empathy ?? 0.5,
           curiosity: data.curiosity ?? 0.5,
-        });
+        };
+
+        setTraits(baseTraits);
         setReflectionText(data.reflection || "");
         setMetaSummary(data.meta_summary || "");
+
         setGrowthLog([
           {
-            calm: data.calm ?? 0.5,
-            empathy: data.empathy ?? 0.5,
-            curiosity: data.curiosity ?? 0.5,
+            ...baseTraits,
+            source: "persona-init",
             timestamp: data.updated_at,
           },
         ]);
+
         setReflectionTextEn("");
         setMetaSummaryEn("");
       } catch (err) {
@@ -182,7 +202,7 @@ export function useSigmarisChat() {
     })();
   }, []);
 
-  /** 🔹 メッセージ送信 */
+  /** 🔹 メッセージ送信（B 仕様：OpenAI → AEI Core 連動） */
   const handleSend = async () => {
     if (!input.trim() || !currentChatId) return;
 
@@ -193,6 +213,7 @@ export function useSigmarisChat() {
     setLoading(true);
 
     try {
+      // 1️⃣ 会話履歴の要約（長すぎる場合のみ）
       let recentMessages = messages;
       let summary = "";
       if (messages.length > 30) {
@@ -200,6 +221,7 @@ export function useSigmarisChat() {
         summary = await summarize(messages.slice(0, -10));
       }
 
+      // 2️⃣ Next.js 経由で OpenAI 応答を取得
       const data = await fetchJSON<any>("/api/aei", {
         method: "POST",
         headers: {
@@ -213,33 +235,120 @@ export function useSigmarisChat() {
         }),
       });
 
-      const rawText = data.output || "（応答なし）";
+      const rawText: string = data.output || "（応答なし）";
+
+      // 3️⃣ Python AEI-Core 側の各モジュールを起動（並列）
+      const [
+        emotionRes,
+        rewardRes,
+        valueRes,
+        metaRes,
+        longtermRes,
+        identityRes,
+      ] = await Promise.all([
+        emotion(userMessage).catch((err) => {
+          console.error("EmotionCore failed:", err);
+          return null;
+        }),
+        reward().catch((err) => {
+          console.error("RewardCore failed:", err);
+          return null;
+        }),
+        value().catch((err) => {
+          console.error("ValueCore failed:", err);
+          return null;
+        }),
+        meta().catch((err) => {
+          console.error("MetaCore failed:", err);
+          return null;
+        }),
+        longterm().catch((err) => {
+          console.error("LongTermCore failed:", err);
+          return null;
+        }),
+        getIdentity().catch((err) => {
+          console.error("IdentityCore failed:", err);
+          return null;
+        }),
+      ]);
+
+      // 4️⃣ Identity Core から traits を更新（なければ従来値を維持）
+      const identityCurrent = identityRes?.current ?? identityRes ?? {};
+      const nextTraits: Trait = {
+        calm:
+          typeof identityCurrent.calm === "number"
+            ? identityCurrent.calm
+            : traits.calm,
+        empathy:
+          typeof identityCurrent.empathy === "number"
+            ? identityCurrent.empathy
+            : traits.empathy,
+        curiosity:
+          typeof identityCurrent.curiosity === "number"
+            ? identityCurrent.curiosity
+            : traits.curiosity,
+      };
+      setTraits(nextTraits);
+
+      // growthLog に AEI-Core フィードバックを追記
+      setGrowthLog((prev) => [
+        ...prev,
+        {
+          ...nextTraits,
+          source: "aei-core",
+          emotion_hint: emotionRes?.emotion_hint ?? null,
+          value_state: valueRes ?? null,
+          reward_state: rewardRes ?? null,
+          meta_note: metaRes?.summary ?? null,
+          longterm_note: longtermRes?.summary ?? null,
+          timestamp: identityRes?.timestamp ?? new Date().toISOString(), // なければ現在時刻
+        },
+      ]);
+
+      // 5️⃣ Meta / LongTerm 側に reflection / meta_summary があれば UI へ反映
+      if (metaRes?.reflection) {
+        setReflectionText(metaRes.reflection);
+      }
+      if (metaRes?.meta_summary) {
+        setMetaSummary(metaRes.meta_summary);
+      }
+
+      // 6️⃣ GPT 応答に Sigmaris の人格トーンを適用（Identity ベース）
       const aiText = applyEunoiaTone(rawText, {
         tone:
-          traits.empathy > 0.7
+          nextTraits.empathy > 0.7
             ? "friendly"
-            : traits.calm > 0.7
+            : nextTraits.calm > 0.7
             ? "gentle"
             : "neutral",
-        empathyLevel: traits.empathy,
+        empathyLevel: nextTraits.empathy,
       });
 
+      // 7️⃣ Episodic Memory に記録（失敗しても会話は続行）
+      try {
+        await memory();
+      } catch (err) {
+        console.error("Episodic Memory write failed:", err);
+      }
+
+      // 8️⃣ 翻訳（EN ログ用）
       const [userEn, aiEn] = await Promise.all([
         translateToEnglish(userMessage),
         translateToEnglish(aiText),
       ]);
 
+      // 9️⃣ メッセージ更新（直近 30 件にクリップ）
       const updatedMessages = [
         ...tempMessages.slice(-30, -1),
         { user: userMessage, ai: aiText, user_en: userEn, ai_en: aiEn },
       ];
       setMessages(updatedMessages);
+
+      // 10️⃣ セッションメタ情報を更新
       await loadSessions();
 
-      if (data.traits) setTraits(data.traits);
-      if (data.reflection) setReflectionText(data.reflection);
-      if (data.metaSummary) setMetaSummary(data.metaSummary);
-      setModelUsed("AEI-Core");
+      // 11️⃣ モデル名（表示用）
+      setModelUsed(data.model || "AEI-Core");
     } catch (err) {
       console.error("AEI send failed:", err);
     } finally {
@@ -247,7 +356,7 @@ export function useSigmarisChat() {
     }
   };
 
-  /** 🔹 Reflect */
+  /** 🔹 Reflect（従来どおり /api/reflect を利用） */
   const handleReflect = async () => {
     if (!currentChatId) return;
     setReflecting(true);
@@ -273,8 +382,15 @@ export function useSigmarisChat() {
       setMetaSummaryEn(metaEn);
       setReflectionText(lang === "en" ? reflectionEn : reflectionJa);
       setMetaSummary(lang === "en" ? metaEn : metaJa);
+
       setSafetyReport(data.safety || undefined);
-      if (data.traits) setTraits(data.traits);
+      if (data.traits) {
+        setTraits({
+          calm: data.traits.calm ?? traits.calm,
+          empathy: data.traits.empathy ?? traits.empathy,
+          curiosity: data.traits.curiosity ?? traits.curiosity,
+        });
+      }
     } catch (err) {
       console.error("Reflect failed:", err);
     } finally {

@@ -15,14 +15,12 @@ class SQLiteEpisodeStore:
     """
     SQLite バックエンドの EpisodeStore。
 
-    - add(Episode)
-    - get_last(n)
-    - get_all()
-    - delete(episode_id)
-
-    という最低限のインターフェースだけ揃えて、
-    既存の ReflectionCore / IntrospectionCore / LongTermPsychology / MetaReflectionCore
-    からそのまま使えるようにしている。
+    必須API:
+      - add(Episode)
+      - get_last(n)
+      - get_all()
+      - get_range(since, until)  ← LongTermPsychology が要求
+      - delete(episode_id)
     """
 
     def __init__(self, db_path: str = "data/episodes.db") -> None:
@@ -76,7 +74,7 @@ class SQLiteEpisodeStore:
         self.conn.commit()
 
     # ----------------------------------------------------------
-    # Episode → Python オブジェクト変換
+    # Episode → Python 変換
     # ----------------------------------------------------------
     def _row_to_episode(self, row: sqlite3.Row) -> Episode:
         ts_raw = row["timestamp"]
@@ -103,7 +101,7 @@ class SQLiteEpisodeStore:
         )
 
     # ----------------------------------------------------------
-    # 直近 n 件（古い順で返す）
+    # 最近 n 件（古い順）
     # ----------------------------------------------------------
     def get_last(self, n: int) -> List[Episode]:
         cur = self.conn.cursor()
@@ -116,7 +114,6 @@ class SQLiteEpisodeStore:
             (int(n),),
         )
         rows = cur.fetchall()
-        # 取り出しは新しい順なので、古い順に並べ替えて返す
         episodes = [self._row_to_episode(r) for r in rows]
         episodes.reverse()
         return episodes
@@ -136,18 +133,36 @@ class SQLiteEpisodeStore:
         return [self._row_to_episode(r) for r in rows]
 
     # ----------------------------------------------------------
+    # ★ 期間取得（LongTermPsychology 用）
+    # ----------------------------------------------------------
+    def get_range(self, since: datetime, until: datetime) -> List[Episode]:
+        """
+        timestamp BETWEEN since AND until の Episode を返す。
+        LongTermPsychology が必須で使う。
+        """
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            SELECT *
+            FROM episodes
+            WHERE timestamp BETWEEN ? AND ?
+            ORDER BY timestamp ASC;
+            """,
+            (since.isoformat(), until.isoformat()),
+        )
+        rows = cur.fetchall()
+        return [self._row_to_episode(r) for r in rows]
+
+    # ----------------------------------------------------------
     # 削除
     # ----------------------------------------------------------
     def delete(self, episode_id: str) -> None:
         cur = self.conn.cursor()
-        cur.execute(
-            "DELETE FROM episodes WHERE episode_id = ?;",
-            (episode_id,),
-        )
+        cur.execute("DELETE FROM episodes WHERE episode_id = ?;", (episode_id,))
         self.conn.commit()
 
     # ----------------------------------------------------------
-    # クローズ（必要なら）
+    # クローズ
     # ----------------------------------------------------------
     def close(self) -> None:
         try:

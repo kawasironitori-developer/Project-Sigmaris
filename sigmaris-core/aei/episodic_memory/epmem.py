@@ -191,3 +191,19 @@ class EpisodeStore:
             "empathy": round(e, 4),
             "curiosity": round(u, 4),
         }
+
+    # ------------------------------------------------------------ #
+    # Export for ValueCore / API
+    # ------------------------------------------------------------ #
+
+    def export_state(self) -> Dict[str, Any]:
+        """
+        ValueCore や API から参照されるためのシリアライズビュー。
+        既存のメソッド構造は一切壊さず、「読み出し専用」の追加。
+        """
+        episodes = self.load_all()
+        return {
+            "count": len(episodes),
+            "episodes": [ep.as_dict() for ep in episodes],
+            "trait_trend": self.trait_trend(n=10),
+        }

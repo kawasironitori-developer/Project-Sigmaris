@@ -49,12 +49,17 @@ export async function GET(req: Request) {
 
     const supabase = getSupabaseServer();
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("messages")
       .select("role, content, created_at")
       .eq("user_id", user.id)
-      .eq("session_id", sessionId) // ← DB側は session_id カラム
+      .eq("session_id", sessionId)
       .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("AEI GET messages error:", error.message);
+      return NextResponse.json({ messages: [] }, { status: 500 });
+    }
 
     const paired: { user: string; ai: string }[] = [];
     let pendingUser: string | null = null;
@@ -71,7 +76,8 @@ export async function GET(req: Request) {
     if (pendingUser !== null) paired.push({ user: pendingUser, ai: "" });
 
     return NextResponse.json({ messages: paired });
-  } catch {
+  } catch (e) {
+    console.error("AEI GET handler failed:", e);
     return NextResponse.json({ messages: [] }, { status: 500 });
   }
 }
@@ -84,11 +90,17 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { text } = body;
+    const { text, recent, summary } = body as {
+      text?: string;
+      recent?: any;
+      summary?: any;
+    };
 
     const userText = text?.trim() || "こんにちは";
     const sessionId = req.headers.get("x-session-id") || crypto.randomUUID();
     step.sessionId = sessionId;
+    step.recentCount = Array.isArray(recent) ? recent.length : 0;
+    step.hasSummary = !!summary;
 
     // 認証
     const supabaseAuth = createRouteHandlerClient({ cookies });
@@ -97,22 +109,28 @@ export async function POST(req: Request) {
       error: authError,
     } = await supabaseAuth.auth.getUser();
 
-    if (authError || !user)
+    if (authError || !user) {
+      step.authError = authError?.message;
       return NextResponse.json(
         { error: "Unauthorized", step },
         { status: 401 }
       );
+    }
 
     const supabase = getSupabaseServer();
 
     /* -------------------------------------------------------
      * クレジットチェック
      * ----------------------------------------------------- */
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from("user_profiles")
       .select("credit_balance")
       .eq("id", user.id)
       .single();
+
+    if (profileError) {
+      console.error("AEI credit load error:", profileError.message);
+    }
 
     const currentCredits = profile?.credit_balance ?? 0;
     step.credit = currentCredits;
@@ -125,7 +143,7 @@ export async function POST(req: Request) {
       await supabase.from("messages").insert([
         {
           user_id: user.id,
-          session_id: sessionId, // ← カラム名を session_id に統一
+          session_id: sessionId,
           role: "user",
           content: userText,
           created_at: now,
@@ -143,10 +161,14 @@ export async function POST(req: Request) {
     }
 
     // クレジット減算
-    await supabase
+    const { error: creditUpdateError } = await supabase
       .from("user_profiles")
       .update({ credit_balance: currentCredits - 1 })
       .eq("id", user.id);
+
+    if (creditUpdateError) {
+      console.error("AEI credit update error:", creditUpdateError.message);
+    }
 
     /* -------------------------------------------------------
      * Persona ロード
@@ -164,9 +186,11 @@ export async function POST(req: Request) {
     const ctx = createInitialContext();
     ctx.input = userText;
     ctx.traits = SafetyLayer.stabilize(traits);
-    ctx.sessionId = sessionId; // ★ StateContext へ紐付け
+    ctx.sessionId = sessionId;
+    ctx.summary = summary ?? null;
+    ctx.recent = recent ?? null;
 
-    // SafetyLayer → SafetyReport（正式仕様に沿う初期値）
+    // SafetyLayer → SafetyReport 初期化
     const overloadText = SafetyLayer.checkOverload(ctx.traits);
 
     ctx.safety = overloadText
@@ -216,7 +240,7 @@ export async function POST(req: Request) {
     await supabase.from("messages").insert([
       {
         user_id: user.id,
-        session_id: sessionId, // ← ここも session_id
+        session_id: sessionId,
         role: "user",
         content: userText,
         created_at: now,
@@ -234,12 +258,13 @@ export async function POST(req: Request) {
       success: true,
       output: aiOutput,
       traits: updatedTraits,
-      safety: finalCtx.safety ?? ctx.safety, // ★ 最終コンテキストを優先
+      safety: finalCtx.safety ?? ctx.safety,
       sessionId,
       step,
     });
   } catch (e: any) {
     step.error = e?.message;
+    console.error("AEI POST handler failed:", e);
     return NextResponse.json(
       { error: e?.message || "Unknown error", step },
       { status: 500 }

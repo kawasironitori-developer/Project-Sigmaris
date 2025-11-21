@@ -1,7 +1,6 @@
-# aei/identity/identity_core.py
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 from .trait_vector import TraitVector
 from .identity_state import IdentityState
@@ -70,20 +69,37 @@ class IdentityCore:
 
     # ------------------------------------------------------------------ #
     # 長期変動（baseline 成長）
+    # ValueCore が TraitVector を渡してくるケースにも対応
     # ------------------------------------------------------------------ #
 
     def apply_baseline_adjustment(
         self,
-        delta: Tuple[float, float, float],
+        delta: Union[Tuple[float, float, float], TraitVector],
+        weight: float = 1.0,
     ) -> None:
+        # --- delta の型を吸収 ---
+        if isinstance(delta, TraitVector):
+            dc, de, du = delta.calm, delta.empathy, delta.curiosity
+        else:
+            dc, de, du = delta
 
-        dc, de, du = delta
-
+        # --- clamp ---
         dc = max(-self.max_delta_baseline, min(self.max_delta_baseline, dc))
         de = max(-self.max_delta_baseline, min(self.max_delta_baseline, de))
         du = max(-self.max_delta_baseline, min(self.max_delta_baseline, du))
 
-        self.state.adjust_baseline((dc, de, du))
+        # --- 現 baseline 取得 ---
+        base = self.state.baseline
+
+        # --- weight を適用して new baseline 生成 ---
+        new_baseline = TraitVector(
+            calm=base.calm + dc * weight,
+            empathy=base.empathy + de * weight,
+            curiosity=base.curiosity + du * weight,
+        ).clamp()
+
+        # --- baseline 更新 ---
+        self.state.baseline = new_baseline
 
     # ------------------------------------------------------------------ #
     # 保存 / 復元
