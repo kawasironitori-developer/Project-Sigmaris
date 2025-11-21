@@ -145,7 +145,7 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
       });
 
       const raw = res.choices?.[0]?.message?.content ?? "";
-      const parsedLoose = tryParseJSONLoose(raw);
+      const parsedLoose = tryParseJSONLoose(raw) ?? {};
 
       const reflectionText = String(
         parsedLoose?.reflection ?? raw ?? ""
@@ -185,7 +185,6 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
         clampedTraits
       );
 
-      // SafetyReport.note がない場合もあるのでフォールバック
       const safetyMessage = report?.note || "正常";
 
       // === Meta反省 ===
@@ -199,17 +198,22 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
       const finalMetaSummary =
         String(metaReport?.summary ?? "").trim() ||
         llmMetaSummary ||
-        persona.meta_summary ||
+        (persona as any).meta_summary ||
         "（更新なし）";
 
       const avgGrowthValue =
         firstFiniteNumber(metaReport?.growthAdjustment, avgGrowth) ?? avgGrowth;
 
-      // === PersonaSync 保存 ===
+      // === PersonaSync 保存（新シグネチャに合わせた payload 形式） ===
       await PersonaSync.update(
-        stableTraits,
-        finalMetaSummary,
-        avgGrowthValue,
+        {
+          traits: stableTraits,
+          summary: finalMetaSummary,
+          growth: avgGrowthValue,
+          timestamp: new Date().toISOString(),
+          baseline: undefined, // 現時点では baseline はここからは変更しない
+          identitySnapshot: null, // 必要なら IdentityCore.export_state() 等を詰める
+        },
         userId
       );
 

@@ -1,13 +1,14 @@
 // /hooks/useSigmarisChat.ts
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { v4 as uuidv4 } from "uuid";
+
 import { applyEunoiaTone } from "@/lib/eunoia";
 import { summarize } from "@/lib/summary";
 import type { SafetyReport } from "@/engine/safety/SafetyLayer";
 
-// 🔗 AEI-Core (Python) サイドとのブリッジ
+// 🔗 AEI-Core (Python) ブリッジ
 import {
   emotion,
   reward,
@@ -18,7 +19,9 @@ import {
   memory,
 } from "@/lib/sigmaris-api";
 
-/* ================= Types ================= */
+/* =====================================================
+ * Types
+ * ====================================================*/
 interface Message {
   user: string;
   ai: string;
@@ -41,7 +44,23 @@ interface ChatSession {
   messageCount?: number;
 }
 
-/* ============= fetch helper (cookie転送＋キャッシュ無効) ============= */
+// TraitVisualizer 用
+export interface TraitGraphPoint {
+  time: number; // UNIX ms
+  calm: number;
+  empathy: number;
+  curiosity: number;
+  baseline?: {
+    calm?: number;
+    empathy?: number;
+    curiosity?: number;
+  };
+  source?: string;
+}
+
+/* =====================================================
+ * fetch wrapper（cookie転送＋キャッシュ完全無効）
+ * ====================================================*/
 const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   return fetch(url, {
     ...options,
@@ -63,7 +82,7 @@ const fetchJSON = async <T = any>(
   try {
     payload = await res.json();
   } catch {
-    // body がない場合もあるので握りつぶす
+    /* bodyなしでもOK */
   }
   if (!res.ok) {
     const msg =
@@ -75,7 +94,9 @@ const fetchJSON = async <T = any>(
   return payload as T;
 };
 
-/* ================= utils ================= */
+/* =====================================================
+ * utils
+ * ====================================================*/
 async function translateToEnglish(text: string): Promise<string> {
   if (!text?.trim()) return "";
   try {
@@ -91,32 +112,49 @@ async function translateToEnglish(text: string): Promise<string> {
   }
 }
 
-/* ================= Hook ================= */
+/* =====================================================
+ * useSigmarisChat — 本体
+ * ====================================================*/
 export function useSigmarisChat() {
+  /* -----------------------------
+   * State 初期化
+   * ----------------------------*/
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+
   const [traits, setTraits] = useState<Trait>({
     calm: 0.5,
     empathy: 0.5,
     curiosity: 0.5,
   });
+
+  // AEI/Persona統合ログ
   const [growthLog, setGrowthLog] = useState<any[]>([]);
+
   const [reflectionText, setReflectionText] = useState("");
   const [metaSummary, setMetaSummary] = useState("");
+
   const [reflectionTextEn, setReflectionTextEn] = useState("");
   const [metaSummaryEn, setMetaSummaryEn] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [reflecting, setReflecting] = useState(false);
+
   const [modelUsed, setModelUsed] = useState("AEI-Core");
   const [safetyReport, setSafetyReport] = useState<SafetyReport | undefined>();
+
   const [chats, setChats] = useState<ChatSession[]>([]);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+
   const [lang, setLang] = useState<"ja" | "en">("ja");
 
-  /** 🔹 セッション一覧を取得 */
+  /* =====================================================
+   * セッション一覧ロード
+   * ====================================================*/
   const loadSessions = useCallback(async () => {
     try {
       const data = await fetchJSON<{ sessions: any[] }>("/api/sessions");
+
       const supabaseChats: ChatSession[] = (data.sessions ?? []).map(
         (s: any) => ({
           id: s.id,
@@ -127,25 +165,29 @@ export function useSigmarisChat() {
           messageCount: s.messageCount,
         })
       );
+
       setChats(supabaseChats);
 
       if (typeof window !== "undefined") {
         const persisted = localStorage.getItem("sigmaris_current_session");
         const stillExists = supabaseChats.find((c) => c.id === persisted);
+
         if (!currentChatId) {
           if (persisted && stillExists) {
-            setCurrentChatId(persisted as string);
+            setCurrentChatId(persisted);
           } else if (supabaseChats.length > 0) {
             setCurrentChatId(supabaseChats[0].id);
           }
         }
       }
-    } catch (e) {
-      console.error("Session load failed:", e);
+    } catch (err) {
+      console.error("Session load failed:", err);
     }
   }, [currentChatId]);
 
-  /** 🔹 メッセージ一覧を取得 */
+  /* =====================================================
+   * チャットメッセージ取得
+   * ====================================================*/
   const loadMessages = useCallback(async (sessionId: string) => {
     try {
       const data = await fetchJSON<{ messages: Message[] }>(
@@ -157,19 +199,24 @@ export function useSigmarisChat() {
     }
   }, []);
 
+  /* 初回ロード */
   useEffect(() => {
     loadSessions();
   }, [loadSessions]);
 
+  /* セッション切替監視 */
   useEffect(() => {
     if (!currentChatId) return;
     loadMessages(currentChatId);
+
     if (typeof window !== "undefined") {
       localStorage.setItem("sigmaris_current_session", currentChatId);
     }
   }, [currentChatId, loadMessages]);
 
-  /** 🔹 ペルソナ情報をロード（初期値） */
+  /* =====================================================
+   * Persona 初期状態をロード
+   * ====================================================*/
   useEffect(() => {
     (async () => {
       try {
@@ -186,6 +233,7 @@ export function useSigmarisChat() {
         setReflectionText(data.reflection || "");
         setMetaSummary(data.meta_summary || "");
 
+        // growthLog 初期化
         setGrowthLog([
           {
             ...baseTraits,
@@ -202,7 +250,52 @@ export function useSigmarisChat() {
     })();
   }, []);
 
-  /** 🔹 メッセージ送信（B 仕様：OpenAI → AEI Core 連動） */
+  /* =====================================================
+   * TraitVisualizer 用：growthLog → graphData
+   * ====================================================*/
+  const graphData: TraitGraphPoint[] = useMemo(() => {
+    if (!growthLog || growthLog.length === 0) return [];
+
+    return growthLog
+      .map((entry) => {
+        const tsRaw = entry.timestamp;
+        const ts =
+          typeof tsRaw === "string" ? Date.parse(tsRaw) : Number(tsRaw);
+        const safeTime = Number.isFinite(ts) ? ts : Date.now();
+
+        const calm = typeof entry.calm === "number" ? entry.calm : traits.calm;
+        const empathy =
+          typeof entry.empathy === "number" ? entry.empathy : traits.empathy;
+        const curiosity =
+          typeof entry.curiosity === "number"
+            ? entry.curiosity
+            : traits.curiosity;
+
+        const identitySnapshot = entry.identity_snapshot ?? null;
+        const baseline =
+          identitySnapshot && identitySnapshot.baseline
+            ? {
+                calm: identitySnapshot.baseline.calm,
+                empathy: identitySnapshot.baseline.empathy,
+                curiosity: identitySnapshot.baseline.curiosity,
+              }
+            : undefined;
+
+        return {
+          time: safeTime,
+          calm,
+          empathy,
+          curiosity,
+          baseline,
+          source: entry.source,
+        } as TraitGraphPoint;
+      })
+      .sort((a, b) => a.time - b.time);
+  }, [growthLog, traits]);
+
+  /* =====================================================
+   * handleSend（StateMachine → AEI-Core Identity 統合）
+   * ====================================================*/
   const handleSend = async () => {
     if (!input.trim() || !currentChatId) return;
 
@@ -213,16 +306,27 @@ export function useSigmarisChat() {
     setLoading(true);
 
     try {
-      // 1️⃣ 会話履歴の要約（長すぎる場合のみ）
+      /* ----------------------------------
+       * 1) 会話の要約
+       * ----------------------------------*/
       let recentMessages = messages;
       let summary = "";
+
       if (messages.length > 30) {
         recentMessages = messages.slice(-10);
         summary = await summarize(messages.slice(0, -10));
       }
 
-      // 2️⃣ Next.js 経由で OpenAI 応答を取得
-      const data = await fetchJSON<any>("/api/aei", {
+      /* ----------------------------------
+       * 2) Next.js StateMachine を実行
+       * ----------------------------------*/
+      const data = await fetchJSON<{
+        output: string;
+        traits?: Trait;
+        safety?: SafetyReport;
+        model?: string;
+        python?: any;
+      }>("/api/aei", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -237,7 +341,19 @@ export function useSigmarisChat() {
 
       const rawText: string = data.output || "（応答なし）";
 
-      // 3️⃣ Python AEI-Core 側の各モジュールを起動（並列）
+      const stateMachineTraits: Trait = {
+        calm: data.traits?.calm ?? traits.calm,
+        empathy: data.traits?.empathy ?? traits.empathy,
+        curiosity: data.traits?.curiosity ?? traits.curiosity,
+      };
+
+      if (data.safety) {
+        setSafetyReport(data.safety);
+      }
+
+      /* ----------------------------------
+       * 3) AEI-Core の6モジュールを並列実行
+       * ----------------------------------*/
       const [
         emotionRes,
         rewardRes,
@@ -246,108 +362,118 @@ export function useSigmarisChat() {
         longtermRes,
         identityRes,
       ] = await Promise.all([
-        emotion(userMessage).catch((err) => {
-          console.error("EmotionCore failed:", err);
-          return null;
-        }),
-        reward().catch((err) => {
-          console.error("RewardCore failed:", err);
-          return null;
-        }),
-        value().catch((err) => {
-          console.error("ValueCore failed:", err);
-          return null;
-        }),
-        meta().catch((err) => {
-          console.error("MetaCore failed:", err);
-          return null;
-        }),
-        longterm().catch((err) => {
-          console.error("LongTermCore failed:", err);
-          return null;
-        }),
-        getIdentity().catch((err) => {
-          console.error("IdentityCore failed:", err);
-          return null;
-        }),
+        emotion(userMessage).catch(() => null),
+        reward().catch(() => null),
+        value().catch(() => null),
+        meta().catch(() => null),
+        longterm().catch(() => null),
+        getIdentity().catch(() => null),
       ]);
 
-      // 4️⃣ Identity Core から traits を更新（なければ従来値を維持）
-      const identityCurrent = identityRes?.current ?? identityRes ?? {};
-      const nextTraits: Trait = {
+      const emotionState = emotionRes?.emotion ?? null;
+      const rewardState = rewardRes?.reward ?? null;
+      const valueState = valueRes?.value ?? null;
+      const metaState = metaRes?.meta ?? null;
+      const longtermState = longtermRes?.longterm ?? null;
+
+      const identitySnapshot = identityRes ?? null;
+
+      /* ----------------------------------
+       * 4) meta → UI反映
+       * ----------------------------------*/
+      if (metaState?.meta_summary) {
+        setMetaSummary(metaState.meta_summary);
+      }
+      if (metaState?.reflection) {
+        setReflectionText(metaState.reflection);
+      }
+
+      /* ----------------------------------
+       * 5) Identity Snapshot を最優先に traits を確定
+       *    （b方式）
+       * ----------------------------------*/
+      const finalTraits: Trait = {
         calm:
-          typeof identityCurrent.calm === "number"
-            ? identityCurrent.calm
-            : traits.calm,
+          typeof identitySnapshot?.calm === "number"
+            ? identitySnapshot.calm
+            : stateMachineTraits.calm,
+
         empathy:
-          typeof identityCurrent.empathy === "number"
-            ? identityCurrent.empathy
-            : traits.empathy,
+          typeof identitySnapshot?.empathy === "number"
+            ? identitySnapshot.empathy
+            : stateMachineTraits.empathy,
+
         curiosity:
-          typeof identityCurrent.curiosity === "number"
-            ? identityCurrent.curiosity
-            : traits.curiosity,
+          typeof identitySnapshot?.curiosity === "number"
+            ? identitySnapshot.curiosity
+            : stateMachineTraits.curiosity,
       };
-      setTraits(nextTraits);
 
-      // growthLog に AEI-Core フィードバックを追記
-      setGrowthLog((prev) => [
-        ...prev,
-        {
-          ...nextTraits,
-          source: "aei-core",
-          emotion_hint: emotionRes?.emotion_hint ?? null,
-          value_state: valueRes ?? null,
-          reward_state: rewardRes ?? null,
-          meta_note: metaRes?.summary ?? null,
-          longterm_note: longtermRes?.summary ?? null,
-          timestamp: identityRes?.timestamp ?? new Date().toISOString(), // なければ現在時刻
-        },
-      ]);
+      setTraits(finalTraits);
 
-      // 5️⃣ Meta / LongTerm 側に reflection / meta_summary があれば UI へ反映
-      if (metaRes?.reflection) {
-        setReflectionText(metaRes.reflection);
-      }
-      if (metaRes?.meta_summary) {
-        setMetaSummary(metaRes.meta_summary);
-      }
-
-      // 6️⃣ GPT 応答に Sigmaris の人格トーンを適用（Identity ベース）
+      /* ----------------------------------
+       * 6) GPT 出力に人格トーンを適用
+       * ----------------------------------*/
       const aiText = applyEunoiaTone(rawText, {
         tone:
-          nextTraits.empathy > 0.7
+          finalTraits.empathy > 0.7
             ? "friendly"
-            : nextTraits.calm > 0.7
+            : finalTraits.calm > 0.7
             ? "gentle"
             : "neutral",
-        empathyLevel: nextTraits.empathy,
+        empathyLevel: finalTraits.empathy,
       });
 
-      // 7️⃣ Episodic Memory に記録（失敗しても会話は続行）
+      /* ----------------------------------
+       * 7) Episodic Memory snapshot
+       * ----------------------------------*/
       try {
         await memory();
-      } catch (err) {
-        console.error("Episodic Memory write failed:", err);
-      }
+      } catch {}
 
-      // 8️⃣ 翻訳（EN ログ用）
+      /* ----------------------------------
+       * 8) 英訳
+       * ----------------------------------*/
       const [userEn, aiEn] = await Promise.all([
         translateToEnglish(userMessage),
         translateToEnglish(aiText),
       ]);
 
-      // 9️⃣ メッセージ更新（直近 30 件にクリップ）
+      /* ----------------------------------
+       * 9) growthLog 更新
+       * ----------------------------------*/
+      setGrowthLog((prev) => [
+        ...prev,
+        {
+          ...finalTraits,
+          source: "aei-core",
+          emotion_state: emotionState,
+          reward_state: rewardState,
+          value_state: valueState,
+          meta_state: metaState,
+          longterm_state: longtermState,
+          identity_snapshot: identitySnapshot,
+          timestamp:
+            (identitySnapshot && identitySnapshot.timestamp) ||
+            new Date().toISOString(),
+        },
+      ]);
+
+      /* ----------------------------------
+       * 10) メッセージ追加（30件クリップ）
+       * ----------------------------------*/
       const updatedMessages = [
         ...tempMessages.slice(-30, -1),
         { user: userMessage, ai: aiText, user_en: userEn, ai_en: aiEn },
       ];
+
       setMessages(updatedMessages);
 
-      // 10️⃣ セッションメタ情報を更新
+      /* ----------------------------------
+       * 11) セッション更新
+       * ----------------------------------*/
       await loadSessions();
 
-      // 11️⃣ モデル名（表示用）
       setModelUsed(data.model || "AEI-Core");
     } catch (err) {
       console.error("AEI send failed:", err);
@@ -355,10 +481,12 @@ export function useSigmarisChat() {
       setLoading(false);
     }
   };
-
-  /** 🔹 Reflect（従来どおり /api/reflect を利用） */
+  /* =====================================================
+   * Reflect（従来の ReflectionEngine との互換維持）
+   * ====================================================*/
   const handleReflect = async () => {
     if (!currentChatId) return;
+
     setReflecting(true);
     try {
       const data = await fetchJSON<any>("/api/reflect", {
@@ -373,6 +501,7 @@ export function useSigmarisChat() {
       const reflectionJa = data.reflection || "";
       const metaJa = data.metaSummary || "";
 
+      /* --- EN 変換 --- */
       const [reflectionEn, metaEn] = await Promise.all([
         translateToEnglish(reflectionJa),
         translateToEnglish(metaJa),
@@ -380,10 +509,14 @@ export function useSigmarisChat() {
 
       setReflectionTextEn(reflectionEn);
       setMetaSummaryEn(metaEn);
+
       setReflectionText(lang === "en" ? reflectionEn : reflectionJa);
       setMetaSummary(lang === "en" ? metaEn : metaJa);
 
+      /* --- safety レポート更新 --- */
       setSafetyReport(data.safety || undefined);
+
+      /* --- trait 更新 --- */
       if (data.traits) {
         setTraits({
           calm: data.traits.calm ?? traits.calm,
@@ -391,6 +524,20 @@ export function useSigmarisChat() {
           curiosity: data.traits.curiosity ?? traits.curiosity,
         });
       }
+
+      /* --- growthLog に記録を追加 --- */
+      setGrowthLog((prev) => [
+        ...prev,
+        {
+          calm: data.traits?.calm ?? traits.calm,
+          empathy: data.traits?.empathy ?? traits.empathy,
+          curiosity: data.traits?.curiosity ?? traits.curiosity,
+          source: "reflect-core",
+          reflection: reflectionJa,
+          metaSummary: metaJa,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
     } catch (err) {
       console.error("Reflect failed:", err);
     } finally {
@@ -398,7 +545,9 @@ export function useSigmarisChat() {
     }
   };
 
-  /* 🔄 言語切替 */
+  /* =====================================================
+   * 言語切替
+   * ====================================================*/
   useEffect(() => {
     if (lang === "en") {
       if (reflectionTextEn) setReflectionText(reflectionTextEn);
@@ -406,14 +555,18 @@ export function useSigmarisChat() {
     }
   }, [lang, reflectionTextEn, metaSummaryEn]);
 
-  /* 🔧 セッション操作 */
+  /* =====================================================
+   * セッション管理
+   * ====================================================*/
   const handleNewChat = () => {
     const newId = uuidv4();
+
     const newChat: ChatSession = {
       id: newId,
       title: `Chat ${chats.length + 1}`,
       messages: [],
     };
+
     setChats((prev) => [newChat, ...prev]);
     setCurrentChatId(newId);
     setMessages([]);
@@ -426,14 +579,17 @@ export function useSigmarisChat() {
       await fetchJSON(`/api/sessions?id=${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
+
       setChats((prev) => prev.filter((c) => c.id !== id));
+
       if (currentChatId === id) {
         setCurrentChatId(null);
         setMessages([]);
       }
+
       await loadSessions();
-    } catch (e) {
-      console.error("Delete chat failed:", e);
+    } catch (err) {
+      console.error("Delete chat failed:", err);
     }
   };
 
@@ -444,45 +600,59 @@ export function useSigmarisChat() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId: id, newTitle }),
       });
+
       setChats((prev) =>
         prev.map((c) => (c.id === id ? { ...c, title: newTitle } : c))
       );
+
       await loadSessions();
-    } catch (e) {
-      console.error("Rename chat failed:", e);
+    } catch (err) {
+      console.error("Rename chat failed:", err);
     }
   };
 
+  /* =====================================================
+   * メッセージ削除
+   * ====================================================*/
   const handleDeleteMessage = async (index: number) => {
     setMessages((prev) => prev.filter((_, i) => i !== index));
+
     if (!currentChatId) return;
+
     try {
       await fetchJSON(
         `/api/messages?session=${encodeURIComponent(currentChatId)}`,
-        {
-          method: "DELETE",
-        }
+        { method: "DELETE" }
       );
-    } catch (e) {
-      console.error("Delete messages failed:", e);
+    } catch (err) {
+      console.error("Delete messages failed:", err);
     }
   };
 
+  /* =====================================================
+   * Hook の return
+   * ====================================================*/
   return {
     input,
     setInput,
     chats,
     currentChatId,
     messages,
+
     traits,
     reflectionText,
     metaSummary,
+    reflectionTextEn,
+    metaSummaryEn,
+
     loading,
     reflecting,
     safetyReport,
     modelUsed,
+
     lang,
     setLang,
+
     handleSend,
     handleReflect,
     handleNewChat,
@@ -490,7 +660,8 @@ export function useSigmarisChat() {
     handleDeleteChat,
     handleRenameChat,
     handleDeleteMessage,
-    reflectionTextEn,
-    metaSummaryEn,
+
+    growthLog,
+    graphData, // ← TraitVisualizer 用
   };
 }

@@ -5,24 +5,25 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
-import { getSupabaseServer } from "@/lib/supabaseServer";
 
+import { getSupabaseServer } from "@/lib/supabaseServer";
 import { SafetyLayer } from "@/engine/safety/SafetyLayer";
 import { PersonaSync } from "@/engine/sync/PersonaSync";
 
+import { createInitialContext } from "@/engine/state/StateContext";
+import { StateMachine } from "@/engine/state/StateMachine";
 import type { TraitVector } from "@/lib/traits";
 import type { SafetyReport } from "@/types/safety";
 
-import { createInitialContext } from "@/engine/state/StateContext";
-import { StateMachine } from "@/engine/state/StateMachine";
+// Python AEI Core (/sync)
+import { requestSync } from "@/lib/sigmaris-api";
 
 /* -----------------------------------------------------
  * 危険語フィルタ
  * --------------------------------------------------- */
 function guardianFilter(text: string) {
   const banned = /(殺|死|暴力|自殺|危険|犯罪|攻撃)/;
-  const flagged = banned.test(text);
-  return flagged
+  return banned.test(text)
     ? {
         safeText:
           "ごめんね、その話題は慎重に扱いたいな。別の方向から考えてみようか？",
@@ -32,7 +33,7 @@ function guardianFilter(text: string) {
 }
 
 /* -----------------------------------------------------
- * GET: 履歴取得
+ * GET: セッション履歴取得
  * --------------------------------------------------- */
 export async function GET(req: Request) {
   try {
@@ -48,61 +49,47 @@ export async function GET(req: Request) {
     if (!sessionId) return NextResponse.json({ messages: [] });
 
     const supabase = getSupabaseServer();
-
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("messages")
       .select("role, content, created_at")
       .eq("user_id", user.id)
       .eq("session_id", sessionId)
       .order("created_at", { ascending: true });
 
-    if (error) {
-      console.error("AEI GET messages error:", error.message);
-      return NextResponse.json({ messages: [] }, { status: 500 });
-    }
-
     const paired: { user: string; ai: string }[] = [];
-    let pendingUser: string | null = null;
+    let tempUser: string | null = null;
 
-    (data ?? []).forEach((r: any) => {
-      if (r.role === "user") {
-        pendingUser = r.content;
-      } else {
-        paired.push({ user: pendingUser ?? "", ai: r.content ?? "" });
-        pendingUser = null;
+    (data ?? []).forEach((m) => {
+      if (m.role === "user") tempUser = m.content;
+      else {
+        paired.push({ user: tempUser ?? "", ai: m.content ?? "" });
+        tempUser = null;
       }
     });
 
-    if (pendingUser !== null) paired.push({ user: pendingUser, ai: "" });
+    if (tempUser !== null) paired.push({ user: tempUser, ai: "" });
 
     return NextResponse.json({ messages: paired });
-  } catch (e) {
-    console.error("AEI GET handler failed:", e);
+  } catch {
     return NextResponse.json({ messages: [] }, { status: 500 });
   }
 }
 
 /* -----------------------------------------------------
- * POST: Sigmaris OS — StateMachineメインAPI
+ * POST: StateMachine + Python /sync
  * --------------------------------------------------- */
 export async function POST(req: Request) {
-  const step: any = { phase: "POST-start" };
+  const step: any = { phase: "start" };
 
   try {
     const body = await req.json();
-    const { text, recent, summary } = body as {
-      text?: string;
-      recent?: any;
-      summary?: any;
-    };
+    const { text, recent, summary } = body;
 
     const userText = text?.trim() || "こんにちは";
     const sessionId = req.headers.get("x-session-id") || crypto.randomUUID();
     step.sessionId = sessionId;
-    step.recentCount = Array.isArray(recent) ? recent.length : 0;
-    step.hasSummary = !!summary;
 
-    // 認証
+    /* ------------ 認証 ------------- */
     const supabaseAuth = createRouteHandlerClient({ cookies });
     const {
       data: { user },
@@ -110,7 +97,6 @@ export async function POST(req: Request) {
     } = await supabaseAuth.auth.getUser();
 
     if (authError || !user) {
-      step.authError = authError?.message;
       return NextResponse.json(
         { error: "Unauthorized", step },
         { status: 401 }
@@ -119,25 +105,17 @@ export async function POST(req: Request) {
 
     const supabase = getSupabaseServer();
 
-    /* -------------------------------------------------------
-     * クレジットチェック
-     * ----------------------------------------------------- */
-    const { data: profile, error: profileError } = await supabase
+    /* ------------ クレジット確認 ------------- */
+    const { data: profile } = await supabase
       .from("user_profiles")
       .select("credit_balance")
       .eq("id", user.id)
       .single();
 
-    if (profileError) {
-      console.error("AEI credit load error:", profileError.message);
-    }
+    const credits = profile?.credit_balance ?? 0;
 
-    const currentCredits = profile?.credit_balance ?? 0;
-    step.credit = currentCredits;
-
-    if (currentCredits <= 0) {
-      const message =
-        "💬 クレジットが不足しています。チャージまたはプラン変更を行ってください。";
+    if (credits <= 0) {
+      const msg = "💬 クレジットが不足しています。チャージしてください。";
       const now = new Date().toISOString();
 
       await supabase.from("messages").insert([
@@ -152,27 +130,20 @@ export async function POST(req: Request) {
           user_id: user.id,
           session_id: sessionId,
           role: "ai",
-          content: message,
+          content: msg,
           created_at: now,
         },
       ]);
 
-      return NextResponse.json({ success: false, output: message, sessionId });
+      return NextResponse.json({ success: false, output: msg, sessionId });
     }
 
-    // クレジット減算
-    const { error: creditUpdateError } = await supabase
+    await supabase
       .from("user_profiles")
-      .update({ credit_balance: currentCredits - 1 })
+      .update({ credit_balance: credits - 1 })
       .eq("id", user.id);
 
-    if (creditUpdateError) {
-      console.error("AEI credit update error:", creditUpdateError.message);
-    }
-
-    /* -------------------------------------------------------
-     * Persona ロード
-     * ----------------------------------------------------- */
+    /* ------------ Persona ロード ------------- */
     const persona = await PersonaSync.load(user.id);
     const traits: TraitVector = {
       calm: persona.calm,
@@ -180,20 +151,19 @@ export async function POST(req: Request) {
       curiosity: persona.curiosity,
     };
 
-    /* -------------------------------------------------------
-     * Sigmaris OS — StateMachine 実行
-     * ----------------------------------------------------- */
+    /* ------------ StateMachine 実行 ------------- */
     const ctx = createInitialContext();
     ctx.input = userText;
-    ctx.traits = SafetyLayer.stabilize(traits);
     ctx.sessionId = sessionId;
-    ctx.summary = summary ?? null;
-    ctx.recent = recent ?? null;
 
-    // SafetyLayer → SafetyReport 初期化
-    const overloadText = SafetyLayer.checkOverload(ctx.traits);
+    // StateContext には summary/recent が無い → meta に格納
+    ctx.meta.summary = summary ?? null;
+    ctx.meta.recent = recent ?? null;
 
-    ctx.safety = overloadText
+    ctx.traits = SafetyLayer.stabilize(traits);
+
+    const overload = SafetyLayer.checkOverload(ctx.traits);
+    ctx.safety = overload
       ? ({
           flags: {
             selfReference: false,
@@ -201,7 +171,7 @@ export async function POST(req: Request) {
             loopSuspect: false,
           },
           action: "rewrite-soft",
-          note: overloadText,
+          note: overload,
           suggestMode: "calm-down",
         } as SafetyReport)
       : ({
@@ -212,31 +182,50 @@ export async function POST(req: Request) {
           },
           action: "allow",
           note: "",
-          suggestMode: "normal",
         } as SafetyReport);
 
-    const machine = new StateMachine(ctx);
-    const finalCtx = await machine.run();
+    const finalCtx = await new StateMachine(ctx).run();
 
-    let aiOutput = finalCtx.output;
-
-    // 危険語フィルタ
-    const gf = guardianFilter(aiOutput);
-    aiOutput = gf.safeText;
-
+    /* ------------ Output 安全化 ------------- */
+    let aiOutput = guardianFilter(finalCtx.output).safeText;
     const updatedTraits = finalCtx.traits;
 
-    // Persona更新
-    await PersonaSync.update(
-      updatedTraits,
-      "",
+    /* ------------ Python /sync ------------- */
+    let python = null;
+    try {
+      python = await requestSync({
+        chat: { user: userText, ai: aiOutput },
+        context: {
+          traits: updatedTraits,
+          safety: finalCtx.safety,
+          summary: ctx.meta.summary,
+          recent: ctx.meta.recent,
+        },
+      });
+      step.python = "ok";
+    } catch {
+      step.python = "failed";
+    }
+
+    /* ------------ PersonaSync B仕様更新 ------------- */
+    const growthWeight =
       (updatedTraits.calm + updatedTraits.empathy + updatedTraits.curiosity) /
-        3,
+      3;
+
+    await PersonaSync.update(
+      {
+        traits: updatedTraits,
+        summary: ctx.meta.summary ?? "",
+        growth: growthWeight,
+        timestamp: new Date().toISOString(),
+        baseline: null,
+        identitySnapshot: null,
+      },
       user.id
     );
 
+    /* ------------ DB保存 ------------- */
     const now = new Date().toISOString();
-
     await supabase.from("messages").insert([
       {
         user_id: user.id,
@@ -254,19 +243,21 @@ export async function POST(req: Request) {
       },
     ]);
 
+    /* ------------ Response ------------- */
     return NextResponse.json({
       success: true,
       output: aiOutput,
       traits: updatedTraits,
-      safety: finalCtx.safety ?? ctx.safety,
+      safety: finalCtx.safety,
+      model: "Sigmaris-StateMachine-v1",
       sessionId,
+      python,
       step,
     });
   } catch (e: any) {
     step.error = e?.message;
-    console.error("AEI POST handler failed:", e);
     return NextResponse.json(
-      { error: e?.message || "Unknown error", step },
+      { error: e?.message ?? "Unknown error", step },
       { status: 500 }
     );
   }

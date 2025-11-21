@@ -11,11 +11,12 @@ import { OverloadPreventState } from "./states/OverloadPreventState";
 import { SafetyModeState } from "./states/SafetyModeState";
 
 /**
- * Sigmaris OS — StateMachine v5
- * ---------------------------------------
- * ・内部 3〜6ステップの思考ループ
- * ・安全性 / 過負荷チェックは SafetyLayer に一本化
- * ・State による明示的遷移を尊重
+ * Sigmaris OS — StateMachine v6（B-Spec 完全対応）
+ * -------------------------------------------------------
+ * ● summary / recent / traits / safety を流しながら処理
+ * ● Python /sync と Next.js PersonaSync の両方と整合
+ * ● 過負荷・安全性は SafetyLayer（単一責務）
+ * ● State クラスは execute(ctx): Promise<SigmarisState | null>
  */
 export class StateMachine {
   ctx: StateContext;
@@ -24,7 +25,7 @@ export class StateMachine {
     this.ctx = ctx;
   }
 
-  /** 利用可能な State クラスを返す */
+  /** State のインスタンス返却 */
   private getStateHandler(state: SigmarisState) {
     switch (state) {
       case "Idle":
@@ -44,7 +45,7 @@ export class StateMachine {
     }
   }
 
-  /** 許可遷移テーブル（v5） */
+  /** B仕様用：許可遷移テーブル */
   private transitionMap: Record<SigmarisState, SigmarisState[]> = {
     Idle: ["Dialogue"],
     Dialogue: ["Reflect"],
@@ -55,31 +56,42 @@ export class StateMachine {
   };
 
   /**
-   * === StateMachine: run() ===
-   * 内部ループ → 1 会話分の処理を統合
+   * === run(): return StateContext ===
+   * 会話 → Reflect → Introspect → Idle
    */
   async run(): Promise<StateContext> {
     console.log("🟦 [StateMachine] run() start");
 
     // -------------------------------------------------
-    // 0) SafetyLayer による 過負荷チェック
+    // 0) 過負荷チェック（traitsに依存）
     // -------------------------------------------------
-    const overloadWarning = SafetyLayer.checkOverload(this.ctx.traits);
+    const overloadNote = SafetyLayer.checkOverload(this.ctx.traits);
 
-    if (overloadWarning) {
+    if (overloadNote) {
       console.log("⚠️ Overload detected → OverloadPrevent");
       this.ctx.previousState = this.ctx.currentState;
       this.ctx.currentState = "OverloadPrevent";
+
+      this.ctx.safety = {
+        flags: {
+          abstractionOverload: true,
+          selfReference: false,
+          loopSuspect: false,
+        },
+        action: "rewrite-soft",
+        note: overloadNote,
+      };
     }
 
     // -------------------------------------------------
-    // 1) 内部ステップループ（最大 6 回）
+    // 1) 内部ループ（最大6ステップ）
     // -------------------------------------------------
-    for (let step = 0; step < 6; step++) {
-      console.log(`🔷 Step ${step} — Current: ${this.ctx.currentState}`);
+    for (let i = 0; i < 6; i++) {
+      console.log(`🔷 Step ${i}: ${this.ctx.currentState}`);
 
       const handler = this.getStateHandler(this.ctx.currentState);
 
+      /** execute(ctx) → 次の State */
       let next: SigmarisState | null = null;
       try {
         next = await handler.execute(this.ctx);
@@ -89,25 +101,35 @@ export class StateMachine {
       }
 
       const allowed = this.transitionMap[this.ctx.currentState] ?? [];
-      console.log("➡️ Allowed:", allowed, "/ Next:", next);
+      console.log("➡ Allowed:", allowed, "Next:", next);
 
-      // 不正遷移 → 強制停止
+      // --- 不正遷移 ---
       if (!next || !allowed.includes(next)) {
-        console.log("⏹️ Invalid transition — Ending internal cycle.");
+        console.log("⏹ Invalid transition — stopping loop.");
         break;
       }
 
       // 遷移
-      console.log(`🔄 ${this.ctx.currentState} → ${next}`);
       this.ctx.previousState = this.ctx.currentState;
       this.ctx.currentState = next;
 
       // Idle に戻ったら終了
       if (next === "Idle") {
-        console.log("🟩 Reached Idle — internal processing end.");
+        console.log("🟩 Returned to Idle — end of cycle.");
         break;
       }
     }
+
+    // -------------------------------------------------
+    // 2) SafetyLayer で traits を最終安定化
+    // -------------------------------------------------
+    this.ctx.traits = SafetyLayer.stabilize(this.ctx.traits);
+
+    // -------------------------------------------------
+    // 3) summary / recent の B仕様準拠フォーマット
+    // -------------------------------------------------
+    if (this.ctx.summary === undefined) this.ctx.summary = null;
+    if (this.ctx.recent === undefined) this.ctx.recent = null;
 
     console.log("🟩 [StateMachine] run() end");
     return this.ctx;

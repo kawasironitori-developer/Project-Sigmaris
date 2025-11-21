@@ -9,6 +9,7 @@ from .identity_state import IdentityState
 class IdentityCore:
     """
     Sigmaris OS — Identity Core (人格核)
+    current（短期人格）と baseline（長期人格）の2層構造を扱う。
     """
 
     def __init__(self, state: Optional[IdentityState] = None) -> None:
@@ -52,6 +53,35 @@ class IdentityCore:
         self.state.gently_correct(weight)
 
     # ------------------------------------------------------------------ #
+    # Next.js StateMachine → Python /sync から traits を受け取る
+    # ------------------------------------------------------------------ #
+
+    def update_traits(self, calm=None, empathy=None, curiosity=None) -> None:
+        """
+        Web版 Sigmaris OS の StateMachine が計算した traits を
+        Python 側の current に反映するための統合メソッド。
+
+        baseline は変更しない。（長期成長は ValueCore 側が担当）
+        """
+
+        # 現 current を取得
+        curr = self.current
+
+        # 値が None の場合は現状維持
+        new_vec = TraitVector(
+            calm=float(calm) if calm is not None else curr.calm,
+            empathy=float(empathy) if empathy is not None else curr.empathy,
+            curiosity=float(curiosity) if curiosity is not None else curr.curiosity,
+        )
+
+        # clamp + そのまま現在値として採用（即時置き換え）
+        self.current = new_vec.clamp()
+
+        # 安定性が低ければ軽い correction
+        if not self.is_stable():
+            self.gently_correct()
+
+    # ------------------------------------------------------------------ #
     # 観察された traits を current へ反映
     # ------------------------------------------------------------------ #
 
@@ -68,8 +98,7 @@ class IdentityCore:
             self.gently_correct()
 
     # ------------------------------------------------------------------ #
-    # 長期変動（baseline 成長）
-    # ValueCore が TraitVector を渡してくるケースにも対応
+    # baseline 成長
     # ------------------------------------------------------------------ #
 
     def apply_baseline_adjustment(
@@ -77,28 +106,23 @@ class IdentityCore:
         delta: Union[Tuple[float, float, float], TraitVector],
         weight: float = 1.0,
     ) -> None:
-        # --- delta の型を吸収 ---
         if isinstance(delta, TraitVector):
             dc, de, du = delta.calm, delta.empathy, delta.curiosity
         else:
             dc, de, du = delta
 
-        # --- clamp ---
         dc = max(-self.max_delta_baseline, min(self.max_delta_baseline, dc))
         de = max(-self.max_delta_baseline, min(self.max_delta_baseline, de))
         du = max(-self.max_delta_baseline, min(self.max_delta_baseline, du))
 
-        # --- 現 baseline 取得 ---
         base = self.state.baseline
 
-        # --- weight を適用して new baseline 生成 ---
         new_baseline = TraitVector(
             calm=base.calm + dc * weight,
             empathy=base.empathy + de * weight,
             curiosity=base.curiosity + du * weight,
         ).clamp()
 
-        # --- baseline 更新 ---
         self.state.baseline = new_baseline
 
     # ------------------------------------------------------------------ #

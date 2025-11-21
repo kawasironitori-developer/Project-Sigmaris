@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import os
-from fastapi import FastAPI
-from pydantic import BaseModel
 from typing import Optional
 
-from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 # .env 読み込み
 load_dotenv()
@@ -35,13 +35,13 @@ OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 USE_REAL_API = OPENAI_KEY not in (None, "", "0", "false", "False")
 
 # ============================================================
-# LLM Adapter（本物 or ダミー自動切替）
+# LLM Adapter（実API or ダミー自動切替）
 # ============================================================
 
 def make_llm_adapter(dummy_json: str) -> LLMAdapter:
     if USE_REAL_API:
         return LLMAdapter(api_key=OPENAI_KEY)
-    return LLMAdapter(test_mode=True, dummy_fn=lambda p: dummy_json)
+    return LLMAdapter(test_mode=True, dummy_fn=lambda _prompt: dummy_json)
 
 # Reflection（短期）
 llm_reflect = make_llm_adapter("""
@@ -85,7 +85,7 @@ llm_reward = make_llm_adapter("""
 }
 """)
 
-# EmotionCore
+# Emotion
 llm_emotion = make_llm_adapter("""
 {
   "emotion": "calm-focus",
@@ -96,7 +96,7 @@ llm_emotion = make_llm_adapter("""
 }
 """)
 
-# ValueCore
+# Value
 llm_value = make_llm_adapter("""
 {
   "importance": ["clarity", "self-consistency", "curiosity-growth"],
@@ -146,8 +146,15 @@ class LogInput(BaseModel):
     text: str
     episode_id: Optional[str] = None
 
+class SyncInput(BaseModel):
+    """
+    Next.js の StateMachine → Python AEI Core へ同期されるデータ
+    """
+    chat: dict
+    context: dict
+
 # ============================================================
-# API Routes
+# Normal APIs（既存）
 # ============================================================
 
 @app.post("/reflect")
@@ -155,22 +162,24 @@ def api_reflect(inp: LogInput):
     ep = reflection.reflect(inp.text, episode_id=inp.episode_id)
     return {"episode": ep.as_dict(), "identity": identity.export_state()}
 
+
 @app.post("/introspect")
 def api_introspect():
     res = introspection.introspect()
     return {"introspection": res, "identity": identity.export_state()}
+
 
 @app.post("/longterm")
 def api_longterm():
     res = longterm.analyze()
     return {"longterm": res, "identity": identity.export_state()}
 
+
 @app.post("/meta")
 def api_meta():
     res = metaref.meta_reflect()
     return {"meta": res, "identity": identity.export_state()}
 
-# ---------------- Reward ----------------
 
 @app.post("/reward")
 def api_reward():
@@ -179,42 +188,75 @@ def api_reward():
     last_reward_state = res
     return {"reward": res, "identity": identity.export_state()}
 
+
 @app.get("/reward/state")
 def api_reward_state():
     return {"reward": last_reward_state, "identity": identity.export_state()}
 
-# ---------------- Emotion ----------------
 
 @app.post("/emotion")
 def api_emotion(inp: LogInput):
     res = emotion_core.analyze(inp.text)
     return {"emotion": res, "identity": identity.export_state()}
 
-# ---------------- Value ----------------
 
 @app.post("/value")
 def api_value():
     res = value_core.analyze()
     return {"value": res, "identity": identity.export_state()}
 
+
 @app.get("/value/state")
 def api_value_state():
     return value_core.export_state()
 
-# ---------------- Identity ----------------
 
 @app.get("/identity")
 def api_identity():
     return identity.export_state()
 
-# ============================================================
-# NEW: Raw Memory Dump API（UI グラフ用）
-# ============================================================
 
 @app.get("/memory")
 def api_memory():
-    eps = episodes.load_all()  # → Episode オブジェクト
+    eps = episodes.load_all()
     return {
         "episodes": [ep.as_dict() for ep in eps],
         "count": len(eps),
+    }
+
+# ============================================================
+# 🔥 NEW — 統合API：Next.js → Python (Identity Sync)
+# ============================================================
+
+@app.post("/sync")
+def api_sync(data: SyncInput):
+    """
+    ・chat: {user, ai}
+    ・context: {traits, safety, summary, recent}
+    を Python 側に統合
+    """
+
+    # --- ユーザー発話を記録 ---
+    user_text = data.chat.get("user", "")
+    ai_text = data.chat.get("ai", "")
+
+    if user_text:
+        reflection.reflect(user_text)
+
+    if ai_text:
+        reflection.reflect(f"[AI_OUTPUT] {ai_text}")
+
+    # --- traits 同期 ---
+    ctx_traits = data.context.get("traits", {})
+
+    identity.update_traits(
+        calm=ctx_traits.get("calm", identity.current.calm),
+        empathy=ctx_traits.get("empathy", identity.current.empathy),
+        curiosity=ctx_traits.get("curiosity", identity.current.curiosity),
+    )
+
+    return {
+        "status": "synced",
+        "identity": identity.export_state(),
+        "episode_count": len(episodes.load_all()),
     }

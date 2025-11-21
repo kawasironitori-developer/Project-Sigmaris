@@ -2,6 +2,9 @@
 import { TraitVector } from "@/lib/traits";
 import { SafetyReport } from "@/types/safety";
 
+/* ---------------------------------------------
+ * State 種類
+ * --------------------------------------------- */
 export type SigmarisState =
   | "Idle"
   | "Dialogue"
@@ -11,7 +14,7 @@ export type SigmarisState =
   | "SafetyMode";
 
 /* ---------------------------------------------
- * Emotion (短期的感情状態)
+ * Emotion（短期感情）
  * --------------------------------------------- */
 export interface EmotionState {
   tension: number;
@@ -20,7 +23,7 @@ export interface EmotionState {
 }
 
 /* ---------------------------------------------
- * StateContext（全ステート間で共有される中核データ）
+ * StateContext（全ステート共通の中核データ）
  * --------------------------------------------- */
 export interface StateContext {
   input: string;
@@ -29,24 +32,38 @@ export interface StateContext {
   currentState: SigmarisState;
   previousState: SigmarisState | null;
 
-  /** Trait はプロジェクト標準の TraitVector に統一 */
+  /** Trait（Sigmaris-Persona 標準仕様） */
   traits: TraitVector;
 
-  /** Emotion は optional → State で安全フォールバック */
+  /** Emotion（optional） */
   emotion?: EmotionState;
 
+  /** Reflect / Dialogue の回数等 */
   reflectCount: number;
   tokenUsage: number;
 
-  /** SafetyReport は optional */
+  /** Safety Report（optional） */
   safety?: SafetyReport;
 
+  /** ループ時間 */
   timestamp: number;
 
-  /** route.ts が付与する session ID */
+  /** session ID（route.ts で付与） */
   sessionId: string;
 
-  /** 任意のメタ情報（StateMachine 内部で利用） */
+  /** route.ts → StateMachine に渡す “古い履歴要約” */
+  summary: string | null;
+
+  /** 直近の会話（useSigmarisChat → route.ts） */
+  recent: any[] | null;
+
+  /** Python AEI-Core 側の Identity Snapshot（optional） */
+  identitySnapshot?: any;
+
+  /** Python AEI-Core のレスポンスをそのまま格納 */
+  python?: Record<string, any>;
+
+  /** その他 StateMachine 内部用メタ情報 */
   meta: Record<string, any>;
 }
 
@@ -81,6 +98,13 @@ export function createInitialContext(): StateContext {
     timestamp: Date.now(),
 
     sessionId: "",
+
+    /** 追加（B仕様） */
+    summary: null,
+    recent: null,
+
+    identitySnapshot: undefined,
+    python: undefined,
 
     meta: {},
   };

@@ -3,17 +3,23 @@ import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 
-/**
- * === POST: 人格データの保存 ===
- * - calm / empathy / curiosity / reflection / meta_summary を記録
- * - user_id が UNIQUE でない場合でも安全にフォールバック
- */
+import { requestSync, getIdentity } from "@/lib/sigmaris-api";
+import { PersonaSync } from "@/engine/sync/PersonaSync";
+import type { TraitVector } from "@/lib/traits";
+
+/* -------------------------------------------------------
+ * POST: Persona 更新（DB → Python → PersonaSync の完全統合）
+ * ----------------------------------------------------- */
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { traits, reflectionText, metaSummary, growthWeight } = body;
+    const {
+      traits, // calm / empathy / curiosity
+      reflectionText, // 振り返り
+      metaSummary, // meta summary
+      growthWeight, // 成長重み（平均など）
+    } = body;
 
-    // ✅ 認証付き Supabase クライアント
     const supabase = createRouteHandlerClient({ cookies });
     const {
       data: { user },
@@ -21,11 +27,15 @@ export async function POST(req: Request) {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      console.warn("⚠️ Unauthorized POST /api/persona");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const payload = {
+    const now = new Date().toISOString();
+
+    /* -------------------------------------------------------
+     * ① Next.js DB 側に Persona upsert
+     * ----------------------------------------------------- */
+    const payloadDB = {
       user_id: user.id,
       calm: traits?.calm ?? 0,
       empathy: traits?.empathy ?? 0,
@@ -33,24 +43,64 @@ export async function POST(req: Request) {
       reflection: reflectionText ?? "",
       meta_summary: metaSummary ?? "",
       growth: growthWeight ?? 0,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     };
 
-    // ✅ upsert + fallback 対応
     const { error: upsertError } = await supabase
       .from("persona")
-      .upsert(payload, { onConflict: "user_id" });
+      .upsert(payloadDB, { onConflict: "user_id" });
 
-    if (upsertError?.code === "42P10") {
-      console.warn(
-        "⚠ persona.user_id に UNIQUE 制約がないため insert にフォールバックします。"
-      );
-      await supabase.from("persona").insert(payload);
-    } else if (upsertError) {
+    if (upsertError) {
+      console.error("Persona upsert failed:", upsertError);
       throw upsertError;
     }
 
-    console.log(`🧠 Persona updated for ${user.id}`);
+    /* -------------------------------------------------------
+     * ② PersonaSync.update（B仕様）に完全統合
+     * ----------------------------------------------------- */
+    const traitVector: TraitVector = {
+      calm: traits?.calm ?? 0,
+      empathy: traits?.empathy ?? 0,
+      curiosity: traits?.curiosity ?? 0,
+    };
+
+    await PersonaSync.update(
+      {
+        traits: traitVector,
+        summary: metaSummary ?? "",
+        growth: growthWeight ?? 0,
+        timestamp: now,
+        baseline: null,
+        identitySnapshot: {
+          reflection: reflectionText ?? "",
+        },
+      },
+      user.id
+    );
+
+    /* -------------------------------------------------------
+     * ③ Python IdentityCore にも統合反映
+     *     （B仕様サブセット：Identity only）
+     * ----------------------------------------------------- */
+    try {
+      await requestSync({
+        chat: null,
+        context: {
+          traits: traitVector,
+          summary: metaSummary ?? "",
+          safety: null,
+          recent: null,
+        },
+        identity: {
+          reflection: reflectionText ?? "",
+          meta_summary: metaSummary ?? "",
+          growth: growthWeight ?? 0,
+        },
+      });
+    } catch (e) {
+      console.warn("⚠ Python Identity Sync failed:", e);
+    }
+
     return NextResponse.json({ success: true });
   } catch (e: any) {
     console.error("❌ POST /api/persona failed:", e);
@@ -61,11 +111,9 @@ export async function POST(req: Request) {
   }
 }
 
-/**
- * === GET: 人格データの取得 ===
- * - calm / empathy / curiosity / reflection / meta_summary を返す
- * - 初回アクセス時はデフォルト値を返す
- */
+/* -------------------------------------------------------
+ * GET: Persona + Python Identity Snapshot（フル統合）
+ * ----------------------------------------------------- */
 export async function GET() {
   try {
     const supabase = createRouteHandlerClient({ cookies });
@@ -75,35 +123,54 @@ export async function GET() {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      console.warn("⚠️ Unauthorized GET /api/persona");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { data, error: dbError } = await supabase
+    /* -------------------------------------------------------
+     * ① DB Persona 読み込み
+     * ----------------------------------------------------- */
+    const { data: persona, error: dbError } = await supabase
       .from("persona")
       .select(
         "calm, empathy, curiosity, reflection, meta_summary, growth, updated_at"
       )
       .eq("user_id", user.id)
-      .maybeSingle(); // 複数行エラー防止
+      .maybeSingle();
 
     if (dbError) throw dbError;
 
-    if (!data) {
-      console.log(`ℹ️ No persona found — returning defaults for ${user.id}`);
-      return NextResponse.json({
-        calm: 0.5,
-        empathy: 0.5,
-        curiosity: 0.5,
-        reflection: "",
-        meta_summary: "",
-        growth: 0,
-        updated_at: new Date().toISOString(),
-      });
+    /* -------------------------------------------------------
+     * ② Python Identity Snapshot 読み込み
+     * ----------------------------------------------------- */
+    let identity: any = null;
+    try {
+      identity = await getIdentity();
+    } catch {
+      console.warn("⚠ getIdentity() failed, using DB only");
     }
 
-    console.log(`✅ Persona fetched for ${user.id}`);
-    return NextResponse.json(data);
+    /* -------------------------------------------------------
+     * ③ Persona 統合（優先順位： Python > DB > デフォルト）
+     * ----------------------------------------------------- */
+    const merged = {
+      traits: {
+        calm: identity?.calm ?? persona?.calm ?? 0.5,
+        empathy: identity?.empathy ?? persona?.empathy ?? 0.5,
+        curiosity: identity?.curiosity ?? persona?.curiosity ?? 0.5,
+      },
+
+      reflection: identity?.reflection ?? persona?.reflection ?? "",
+      summary: identity?.meta_summary ?? persona?.meta_summary ?? "",
+
+      baseline: identity?.baseline ?? null,
+      persona_vector: identity?.persona_vector ?? null,
+
+      growth: persona?.growth ?? 0,
+      updated_at:
+        identity?.timestamp ?? persona?.updated_at ?? new Date().toISOString(),
+    };
+
+    return NextResponse.json(merged);
   } catch (e: any) {
     console.error("❌ GET /api/persona failed:", e);
     return NextResponse.json(
