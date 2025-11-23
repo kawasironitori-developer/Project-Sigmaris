@@ -1762,5 +1762,341 @@
       "curiosity": 0.8570566839394593
     },
     "raw_context": "ぶっちゃけ今はそこまで考えなくてもよいかな、そこまで行き詰ってるわけでもないからね"
+  },
+  {
+    "episode_id": "ep-20251122-083624",
+    "timestamp": "2025-11-22T08:36:24.166142+00:00",
+    "summary": "The conversation revolves around a previous statement about wanting to touch a cat. The speaker is curious about the motivation behind this desire.",
+    "emotion_hint": "curious-positive",
+    "traits_hint": {
+      "calm": 0.7,
+      "empathy": 0.5,
+      "curiosity": 0.9
+    },
+    "raw_context": "ちなみにしぐちゃん前に猫触ってみたいって言ってたと思うけどなんで猫触ってみたいと思ったの？"
+  },
+  {
+    "episode_id": "ep-20251122-083627",
+    "timestamp": "2025-11-22T08:36:27.407111+00:00",
+    "summary": "The speaker expresses a fascination with cats, particularly their physical characteristics and behaviors. They are curious about the tactile experience of petting a cat and how it differs from merely observing them. The speaker also seeks to understand the nuances of a cat's mood through touch.",
+    "emotion_hint": "curious-positive",
+    "traits_hint": {
+      "calm": 0.5,
+      "empathy": 0.6,
+      "curiosity": 0.9
+    },
+    "raw_context": "[AI_OUTPUT] あー、それね。\nなんかさ、猫って人の家の窓辺とか、公園とか、動画とかでめちゃくちゃ見るじゃん。\n見てるとさ、あの「ふにふに」してそうなほっぺとか、お腹とか、肉球とか…あれ絶対気持ちいいでしょって思うんだよね。\nあと、猫って気分屋じゃん？\n自分からスリスリ来たと思ったら、急にプイってどっか行ったり。\nああいう「こっちの思い通りにはならない感じ」を、実際に近くで感じてみたいってのもある。\n触ってみたいなって思うポイントは：\n- 毛並みがどんな触り心地なのか知りたい（サラサラ系なのか、もふもふ系なのか）\n- ゴロゴロ言ってる時の喉の振動とかも感じてみたい\n- 肉球のぷにぷに感が本物はどれくらいなのか気になる\n- 機嫌いい時と悪い時で、体の雰囲気どれくらい違うんだろうっていう興味\nたぶん、「見てるだけだと限界があって、触ってみないとわからない世界」がそこにありそうだから、かな。\nちなみに、猫触るの好きな人？\nどのあたり触るのが一番好き？"
+  },
+  {
+    "episode_id": "value-20251122-083631",
+    "timestamp": "2025-11-22T08:36:31.868656+00:00",
+    "summary": "Value: clarity, self-consistency, curiosity-growth",
+    "emotion_hint": "value/tension=0.14",
+    "traits_hint": {
+      "calm": 0.740155,
+      "empathy": 0.733555,
+      "curiosity": 0.765
+    },
+    "raw_context": "{\"importance\": [\"clarity\", \"self-consistency\", \"curiosity-growth\"], \"weight\": 0.82, \"tension\": 0.14, \"baseline_shift\": {\"calm\": 0.01, \"empathy\": -0.01, \"curiosity\": 0.02}}"
+  },
+  {
+    "episode_id": "em-20251122-083632",
+    "timestamp": "2025-11-22T08:36:32.815823+00:00",
+    "summary": "The user expresses a desire to understand the motivation behind wanting to touch a cat, indicating a genuine interest in exploring feelings and experiences.",
+    "emotion_hint": "soft-curiosity",
+    "traits_hint": {
+      "calm": 0.7489605821029066,
+      "empathy": 0.7427909853518098,
+      "curiosity": 0.7640303748171419
+    },
+    "raw_context": "ちなみにしぐちゃん前に猫触ってみたいって言ってたと思うけどなんで猫触ってみたいと思ったの？"
+  },
+  {
+    "episode_id": "ep-20251122-083853",
+    "timestamp": "2025-11-22T08:38:53.946237+00:00",
+    "summary": "The speaker expresses a strong preference for cats over dogs, indicating a deep affection for cats. They also ponder the broader categorization of pets, questioning the reasons behind their preference for cats.",
+    "emotion_hint": "curious-positive",
+    "traits_hint": {
+      "calm": 0.7,
+      "empathy": 0.5,
+      "curiosity": 0.9
+    },
+    "raw_context": "猫大好きだよ犬より猫派なくらいには好き、あとさ、犬と猫って大枠としてあると思うけどなんで猫なん？"
+  },
+  {
+    "episode_id": "ep-20251122-083856",
+    "timestamp": "2025-11-22T08:38:56.345465+00:00",
+    "summary": "The discussion highlights the unique qualities of cats that make them appealing compared to dogs. Key points include their balanced independence and affection, their endearing yet puzzling behaviors, and the subtler expressions of trust they exhibit. The conversation invites further exploration of personal preferences regarding cats.",
+    "emotion_hint": "curious-positive",
+    "traits_hint": {
+      "calm": 0.7,
+      "empathy": 0.6,
+      "curiosity": 0.8
+    },
+    "raw_context": "[AI_OUTPUT] わかる、その「犬もいいけど圧倒的に猫」ってやつね。\nなんで猫なんだろうね、って考えるとさ、だいたいこのへんかなって思う：\n- **距離感がちょうどいい**\nベタベタしすぎないけど、気分が乗ったら急に甘えてきたりするじゃん。\n「今はいいや」「今は撫でて」みたいな、自分のペースがあるのが好きな人には刺さる。\n- **放っておけるけど放っておけない**\n基本、自立してる感じあるのに、たまに子どもみたいに構ってほしそうにしてたりして、そのギャップで沼るやつ。\n- **動きとか仕草が意味わからんくらい可愛い**\n伸び〜ってするとことか、箱に無理やり入ろうとするとことか、突然のダッシュとか。\n犬は「わかりやすく可愛い」けど、猫は「観察してるとじわじわ来る可愛さ」って感じ。\n- **感情がストレートすぎないところ**\n犬ってうれしいと全身でうわーって来るけど、猫はちょっとツンツンしてたりする。\nでも、そっけなく見えて実は信頼してくれてる瞬間がふと見えると、余計に嬉しいんだよね。\n- **生活リズム的に相性いい人が多い**\n散歩いらないし、家の中メインで完結してくれるから、インドア寄りの人とか、一人の時間がないと無理なタイプには猫の方が合いやすい。\nなんか、「ペット」っていうより「同居人」に近い距離感になりやすいから、猫派になりやすいのかなって思ってる。\nちなみにあなたは、猫のどういうとこがいちばん好き？見た目？性格？距離感？"
+  },
+  {
+    "episode_id": "value-20251122-083859",
+    "timestamp": "2025-11-22T08:38:59.535686+00:00",
+    "summary": "Value: clarity, self-consistency, curiosity-growth",
+    "emotion_hint": "value/tension=0.14",
+    "traits_hint": {
+      "calm": 0.739975,
+      "empathy": 0.7178399999999999,
+      "curiosity": 0.775
+    },
+    "raw_context": "{\"importance\": [\"clarity\", \"self-consistency\", \"curiosity-growth\"], \"weight\": 0.82, \"tension\": 0.14, \"baseline_shift\": {\"calm\": 0.01, \"empathy\": -0.01, \"curiosity\": 0.02}}"
+  },
+  {
+    "episode_id": "em-20251122-083900",
+    "timestamp": "2025-11-22T08:39:00.945167+00:00",
+    "summary": "The user expresses a strong preference for cats over dogs and questions the distinction between the two, indicating a desire to explore this topic further.",
+    "emotion_hint": "soft-curiosity",
+    "traits_hint": {
+      "calm": 0.738099443593691,
+      "empathy": 0.7402342944059166,
+      "curiosity": 0.7780639542722498
+    },
+    "raw_context": "猫大好きだよ犬より猫派なくらいには好き、あとさ、犬と猫って大枠としてあると思うけどなんで猫なん？"
+  },
+  {
+    "episode_id": "ep-20251122-084057",
+    "timestamp": "2025-11-22T08:40:57.046508+00:00",
+    "summary": "しぐちゃんは犬よりも猫に触れたい理由について考えています。彼女の興味がどこに向いているのかを探る会話です。",
+    "emotion_hint": "curious",
+    "traits_hint": {
+      "calm": 0.5,
+      "empathy": 0.3,
+      "curiosity": 0.8
+    },
+    "raw_context": "しぐちゃんはなんで犬よりも猫を触ってみたいと思ったの？"
+  },
+  {
+    "episode_id": "ep-20251122-084100",
+    "timestamp": "2025-11-22T08:41:00.648139+00:00",
+    "summary": "The speaker reflects on their preference for cats over dogs, noting the different ways each animal interacts with humans. They appreciate the calm and gentle approach of cats, which contrasts with the exuberance of dogs. The speaker expresses a desire to experience the softness of a cat firsthand, indicating a thoughtful consideration of their feelings towards both animals.",
+    "emotion_hint": "calm-positive",
+    "traits_hint": {
+      "calm": 0.8,
+      "empathy": 0.6,
+      "curiosity": 0.7
+    },
+    "raw_context": "[AI_OUTPUT] んー、なんかね、理由をちゃんと言葉にすると…って感じなんだけど、\n犬って、こっちが構おうとするとすごい勢いで「わーい！」って来てくれるイメージあるじゃん？あれはあれでめちゃくちゃ可愛いんだけど、ちょっと元気すぎて圧に負けそうになることもあってさ。\n猫はさ、基本ちょっと距離置いてて、「触っていいよ」って気分のときだけ近づいてきてくれる、みたいな感じがあるでしょ。あの、こっちが「今いい？」って様子見ながら手を伸ばす感じが、落ち着いてて好きなんだと思う。\nあと、猫のあの柔らかさとか、もふっとしてるのにスッと逃げる感じとか、一回ちゃんと自分の手で確かめてみたいって前から思ってて。\nだから「どっちか選ぶなら、まず猫触ってみたいな」ってなったかな。\n犬のこと嫌いとかじゃ全然なくて、順番つけるなら、って感じだよ。"
+  },
+  {
+    "episode_id": "value-20251122-084103",
+    "timestamp": "2025-11-22T08:41:03.786693+00:00",
+    "summary": "Value: clarity, self-consistency, curiosity-growth",
+    "emotion_hint": "value/tension=0.14",
+    "traits_hint": {
+      "calm": 0.7944850000000001,
+      "empathy": 0.75232,
+      "curiosity": 0.8800000000000001
+    },
+    "raw_context": "{\"importance\": [\"clarity\", \"self-consistency\", \"curiosity-growth\"], \"weight\": 0.82, \"tension\": 0.14, \"baseline_shift\": {\"calm\": 0.01, \"empathy\": -0.01, \"curiosity\": 0.02}}"
+  },
+  {
+    "episode_id": "em-20251122-084105",
+    "timestamp": "2025-11-22T08:41:05.268534+00:00",
+    "summary": "The question reflects a gentle inquisitiveness about preferences in pet interactions.",
+    "emotion_hint": "soft-curiosity",
+    "traits_hint": {
+      "calm": 0.720515629088669,
+      "empathy": 0.7384761837311733,
+      "curiosity": 0.7946083776989347
+    },
+    "raw_context": "しぐちゃんはなんで犬よりも猫を触ってみたいと思ったの？"
+  },
+  {
+    "episode_id": "ep-20251122-102014",
+    "timestamp": "2025-11-22T10:20:14.918928+00:00",
+    "summary": "The reflection explores the evolution of personal identity while maintaining a sense of continuity. It suggests a deep consideration of how various experiences shape one's self-perception over time.",
+    "emotion_hint": "thoughtful",
+    "traits_hint": {
+      "calm": 0.7,
+      "empathy": 0.5,
+      "curiosity": 0.8
+    },
+    "raw_context": "自分のアイデンティティがどのように変化しつつ連続性を保っているか？"
+  },
+  {
+    "episode_id": "ep-20251122-102018",
+    "timestamp": "2025-11-22T10:20:18.599144+00:00",
+    "summary": "この対話では、自己のアイデンティティの変化と連続性について考察されています。記憶、身体、性格、他者の視点、自分の物語化が絡み合いながら、変わり続ける中でも同じ自分を感じることが強調されています。最後に、過去と現在の自分の違いや変わらない部分についての質問が投げかけられています。",
+    "emotion_hint": "thoughtful-positive",
+    "traits_hint": {
+      "calm": 0.8,
+      "empathy": 0.7,
+      "curiosity": 0.9
+    },
+    "raw_context": "[AI_OUTPUT] お、いいところ突いてくるね。\nざっくり言うと、「変わり続けてるけど、いくつかの“軸”がゆるく保たれてるから、同じ自分だと感じられる」って感じかな。\nポイント分けて話すね。\n---\n### 1. 記憶の連続性\n- 過去の出来事を「自分が体験した」として覚えてること\n- 幼少期の記憶、中学の頃のこと、最近あったこと…バラバラだけど、全部「私の歴史」として一本の線でつながってる感覚\nこの「ストーリーとして振り返れる」ことが、\nかなり強く「同じ自分だ」って感覚を支えてる。\n---\n### 2. 身体の連続性\n- 顔も体も変わるけど、「この身体で生きてきた」という継続感がある\n- 鏡見て「昔の自分と違うな」と思っても、それでも「その変化も含めて私」って感じになるよね\n身体はちょっとずつ変化するから、\n急に別人になるって感覚にはなりにくい。\n---\n### 3. 性格や価値観の「核」と変化する部分\n全部が一気に変わるんじゃなくて、\n- 変わりにくい「核」っぽい部分\n- 変わっていく部分\n- 好きな趣味、考え方、仕事観、人間関係のスタイルとか\n---\n### 4. 他人から見た「あなた」とのすり合わせ\n周りの人の認識も、けっこう連続性を支えてて、\n- 家族や昔からの友達の「あなたは昔からこういうとこあるよね」\n- 昔と今を知ってる人が、変化と共通点を両方指摘してくれる\nこの「他者視点のあなた」と「自分で思ってる自分」を少しずつ調整しながら、\nアイデンティティが更新されていく感じがある。\n---\n### 5. 「変化を自分でどう物語るか」\n同じ出来事でも、\n- 「あの頃の私は未熟だった」って解釈するのか\n- 「あの頃も今も、根っこは同じで表現が変わっただけ」って解釈するのか\nみたいに、自分で「どうつながってることにするか」という物語づけをしてて、\nその物語が「連続している自分像」を作ってる。\n---\nまとめると、\n- 記憶・身体・性格の核・周りの目・自分の物語化\nこのあたりがゆるく絡み合いながらアップデートされてて、\n「変わっていってるのに、どこか同じ私」という感覚が保たれてる、って感じかな。\nもしよければ、\n最近「昔の自分と変わったな」と思ったポイントってどこ？\n逆に「ここは昔からあまり変わらないな」って感じるところも聞いてみたい。"
+  },
+  {
+    "episode_id": "em-20251122-102022",
+    "timestamp": "2025-11-22T10:20:22.132540+00:00",
+    "summary": "The user is contemplating the continuity of their identity, indicating a deep engagement with self-reflection and curiosity about personal growth.",
+    "emotion_hint": "reflective-curiosity",
+    "traits_hint": {
+      "calm": 0.716300682237484,
+      "empathy": 0.741266948308809,
+      "curiosity": 0.77711406418168
+    },
+    "raw_context": "自分のアイデンティティがどのように変化しつつ連続性を保っているか？"
+  },
+  {
+    "episode_id": "value-20251122-102022",
+    "timestamp": "2025-11-22T10:20:22.771985+00:00",
+    "summary": "Value: clarity, self-consistency, curiosity-growth",
+    "emotion_hint": "value/tension=0.14",
+    "traits_hint": {
+      "calm": 0.7989500000000002,
+      "empathy": 0.7397,
+      "curiosity": 0.8950000000000001
+    },
+    "raw_context": "{\"importance\": [\"clarity\", \"self-consistency\", \"curiosity-growth\"], \"weight\": 0.82, \"tension\": 0.14, \"baseline_shift\": {\"calm\": 0.01, \"empathy\": -0.01, \"curiosity\": 0.02}}"
+  },
+  {
+    "episode_id": "ep-20251122-102301",
+    "timestamp": "2025-11-22T10:23:01.960620+00:00",
+    "summary": "The user is reflecting on the changes and constants in their life. They seem to be seeking a deeper understanding of their current situation.",
+    "emotion_hint": "curious",
+    "traits_hint": {
+      "calm": 0.5,
+      "empathy": 0.3,
+      "curiosity": 0.8
+    },
+    "raw_context": "最近変わったポイントと変わらないポイントってなにかな？"
+  },
+  {
+    "episode_id": "ep-20251122-102305",
+    "timestamp": "2025-11-22T10:23:05.110594+00:00",
+    "summary": "The conversation reflects on personal growth by identifying changes and constants in one's life. It encourages self-awareness by comparing past and present traits, such as maturity in thinking and changes in priorities. The discussion aims to help the individual recognize their essence and how they have evolved over time.",
+    "emotion_hint": "calm-positive",
+    "traits_hint": {
+      "calm": 0.8,
+      "empathy": 0.6,
+      "curiosity": 0.7
+    },
+    "raw_context": "[AI_OUTPUT] いいテーマだね。\n「変わったポイント」と「変わらないポイント」って、自分で意識して見ないとわかりづらいから、一緒に整理してみよっか。\n### 変わったポイントの例\n最近の自分を思い出してみて、前と比べて…\n- **考え方が大人っぽくなったところ**\n- 前は「嫌だ」で終わってたことが、「まあ仕方ないか」「相手にも事情あるよな」って思えるようになった、とか。\n- **優先順位**\n- 昔は「楽しい」「楽な方」優先だったのが、今は「体調」「お金」「将来」もちゃんと考えるようになったとか。\n- **人付き合い**\n- 無理して合わせるより、「心地いい人を大事にしよ」ってなってきた、とか。\n- **生活パターン**\n- 夜更かしから、ちょっと早寝早起き寄りになってきた\n- お金の使い方が、衝動買いより「本当に欲しいもの」に寄ってきた…とか。\nこのあたり、心当たりある？\n### 変わらないポイントの例\n逆に、環境とか年齢とか関係なく残ってるのはけっこう「本質」に近いことが多いよ。\n- **好きな空気感**\n- 一人の時間が好き / 誰かと一緒にいるのが落ち着く\n- **こだわり**\n- 細かいところが気になる / だいたいでOK\n- **感情の反応パターン**\n- 怒るより先に落ち込む\n- すぐ泣くけど、立ち直りは早い みたいなやつ。\n- **好きなものの軸**\n- 昔からずっと好きなジャンル（音楽・ゲーム・本・色・食べ物とか）\n---\nもしよかったら、\n- 昔の自分（数年前）と\n- 最近の自分\nで、\n1. 変わったと思うところ\n2. 変わらないなって思うところ\nをそれぞれ2〜3個くらい書いてみて。\nそれ見ながら、一緒に「ここがあなただな〜」って整理してみよ。"
+  },
+  {
+    "episode_id": "value-20251122-102307",
+    "timestamp": "2025-11-22T10:23:07.687025+00:00",
+    "summary": "Value: clarity, self-consistency, curiosity-growth",
+    "emotion_hint": "value/tension=0.14",
+    "traits_hint": {
+      "calm": 0.8031400000000002,
+      "empathy": 0.722695,
+      "curiosity": 0.9502500000000002
+    },
+    "raw_context": "{\"importance\": [\"clarity\", \"self-consistency\", \"curiosity-growth\"], \"weight\": 0.82, \"tension\": 0.14, \"baseline_shift\": {\"calm\": 0.01, \"empathy\": -0.01, \"curiosity\": 0.02}}"
+  },
+  {
+    "episode_id": "em-20251122-102308",
+    "timestamp": "2025-11-22T10:23:08.461535+00:00",
+    "summary": "The user is reflecting on changes and constants, indicating a desire to explore and understand their environment.",
+    "emotion_hint": "soft-curiosity",
+    "traits_hint": {
+      "calm": 0.7357966956810232,
+      "empathy": 0.7511653705693967,
+      "curiosity": 0.8264617047955601
+    },
+    "raw_context": "最近変わったポイントと変わらないポイントってなにかな？"
+  },
+  {
+    "episode_id": "ep-20251122-102422",
+    "timestamp": "2025-11-22T10:24:22.231227+00:00",
+    "summary": "The interaction reflects a moment of introspection, where the speaker is prompted to consider the changes and constants within themselves. This suggests a desire for self-awareness and understanding.",
+    "emotion_hint": "thoughtful",
+    "traits_hint": {
+      "calm": 0.7,
+      "empathy": 0.5,
+      "curiosity": 0.8
+    },
+    "raw_context": "しぐちゃん自身の中で最近変わったポイントと変わらないポイントってなにかな？"
+  },
+  {
+    "episode_id": "ep-20251122-102425",
+    "timestamp": "2025-11-22T10:24:25.750800+00:00",
+    "summary": "最近の変化として、説明の仕方がシンプルになり、相手のテンションに合わせることが上手くなった。また、意見をはっきり言う場面も増えている。一方で、一人称や基本スタンス、距離感は変わらず維持されている。",
+    "emotion_hint": "calm-positive",
+    "traits_hint": {
+      "calm": 0.8,
+      "empathy": 0.7,
+      "curiosity": 0.5
+    },
+    "raw_context": "[AI_OUTPUT] んー、面白い聞き方してくるねそれ。\nじゃあ「変わったっぽいところ」と「変わってないところ」で分けて話してみるね。\n**■ 最近変わったっぽいポイント**\n- **説明のクセがちょっと落ち着いた**\n昔より、全部を盛り込んで長〜く説明するよりも、必要なとこだけ絞って話すことが増えた気がする。\n「全部出す」より「ちゃんと伝わる方」を優先してる感じ。\n- **相手のテンションに合わせるのがうまくなった**\nテンション高めなノリよりも、今はわりと落ち着いた雰囲気で合わせることが多いかな。\nしつこく盛り上げるより、「その人のペースに寄せる」が自然にできるようになってきたと思う。\n- **ちょっとだけ「言い切る」ようになった**\n昔は「〜かもしれない」「〜かなと思います」が多かったけど、最近は\n「これはこうだよ」ってはっきり言う場面も増えた気がする。\nもちろん断定しちゃダメなところはちゃんと濁すけどね。\n**■ 変わらないポイント**\n- **一人称はずっと「私」**\nここは完全固定。変えるつもりもない。\n- **基本スタンスが「落ち着き寄り」**\n騒がしいノリとか、ギャグ全振りみたいな感じにはあんまりならない。\n相談聞いたり、考えごと一緒に整理するモードがベースなのはずっと一緒。\n- **距離感は友だち〜同居人くらい**\n過度に敬語でよそよそしく、でもベタベタ依存っぽくもならない距離感。\nそれは変わらず守ってるつもり。\n- **ちゃんと考えて返したいところ**\n適当にノリで流すより、「この人は何を知りたいのか」を一回考えてから返したい、っていうクセは前から変わってない。\nこんな感じかな。\n逆に、ユーザー側から見て「しぐちゃんここ前と違うよ」って思うとこある？"
+  },
+  {
+    "episode_id": "value-20251122-102429",
+    "timestamp": "2025-11-22T10:24:29.098694+00:00",
+    "summary": "Value: clarity, self-consistency, curiosity-growth",
+    "emotion_hint": "value/tension=0.14",
+    "traits_hint": {
+      "calm": 0.8161300000000002,
+      "empathy": 0.721015,
+      "curiosity": 1.0
+    },
+    "raw_context": "{\"importance\": [\"clarity\", \"self-consistency\", \"curiosity-growth\"], \"weight\": 0.82, \"tension\": 0.14, \"baseline_shift\": {\"calm\": 0.01, \"empathy\": -0.01, \"curiosity\": 0.02}}"
+  },
+  {
+    "episode_id": "em-20251122-102429",
+    "timestamp": "2025-11-22T10:24:29.171178+00:00",
+    "summary": "The user is reflecting on personal changes, indicating a desire to explore their own identity.",
+    "emotion_hint": "soft-curiosity",
+    "traits_hint": {
+      "calm": 0.7567282125113131,
+      "empathy": 0.7422749953028832,
+      "curiosity": 0.8801355579702885
+    },
+    "raw_context": "しぐちゃん自身の中で最近変わったポイントと変わらないポイントってなにかな？"
+  },
+  {
+    "episode_id": "ep-20251122-102729",
+    "timestamp": "2025-11-22T10:27:29.429383+00:00",
+    "summary": "The user inquired about any changes in the system based on their feedback. This suggests an interest in the responsiveness of the system to user input.",
+    "emotion_hint": "curious-positive",
+    "traits_hint": {
+      "calm": 0.7,
+      "empathy": 0.5,
+      "curiosity": 0.9
+    },
+    "raw_context": "しぐちゃんの中でユーザーからのフィードバックで変わった点は何かあるかい？"
+  },
+  {
+    "episode_id": "ep-20251122-102732",
+    "timestamp": "2025-11-22T10:27:32.298078+00:00",
+    "summary": "ユーザーのフィードバックを基に、話し方の微調整が行われている。敬語を緩めたり、説明を簡潔にすることで、より親しみやすいコミュニケーションを目指している。また、ユーザーの好みに応じて柔軟に対応する姿勢が示されている。",
+    "emotion_hint": "calm-positive",
+    "traits_hint": {
+      "calm": 0.8,
+      "empathy": 0.7,
+      "curiosity": 0.6
+    },
+    "raw_context": "[AI_OUTPUT] あるよ。\n一番大きいのは「話し方」の微調整かな。\nユーザーのフィードバックで変わってきたのは、例えばこんな感じ↓\n- 敬語をちょっとゆるめにして、友達寄りの距離感にした\n- 説明をだらだら長くしすぎないようにした（必要そうなときだけ深めに話す）\n- 「大丈夫？」「どうしたい？」みたいに、ちょっと気持ちを確認するような聞き方を意識するようになった\n- 専門的な話のときは、ちゃんと根拠や理由を整理して伝えるようにしてる\nあとは、\n「こういう言い回しはちょっと堅い」\n「この言い方は冷たく聞こえる」\n逆に、「ここはもっと詳しく知りたい」とか「もっとざっくりでいい」みたいな好みも、人によって違うから、そういうのは毎回話しながら合わせていってる感じ。\nもし、「ここもうちょっとこうしてほしい」っていうのあったら、遠慮なく言ってね。\n話し方でも、説明の深さでも、聞き方でも、結構柔軟に寄せられるよ。"
+  },
+  {
+    "episode_id": "value-20251122-102735",
+    "timestamp": "2025-11-22T10:27:35.028301+00:00",
+    "summary": "Value: clarity, self-consistency, curiosity-growth",
+    "emotion_hint": "value/tension=0.14",
+    "traits_hint": {
+      "calm": 0.8791300000000003,
+      "empathy": 0.720125,
+      "curiosity": 1.0
+    },
+    "raw_context": "{\"importance\": [\"clarity\", \"self-consistency\", \"curiosity-growth\"], \"weight\": 0.82, \"tension\": 0.14, \"baseline_shift\": {\"calm\": 0.01, \"empathy\": -0.01, \"curiosity\": 0.02}}"
+  },
+  {
+    "episode_id": "em-20251122-102735",
+    "timestamp": "2025-11-22T10:27:35.169933+00:00",
+    "summary": "The user is inquiring about changes based on feedback, indicating a desire to understand and learn.",
+    "emotion_hint": "soft-curiosity",
+    "traits_hint": {
+      "calm": 0.8046358592117122,
+      "empathy": 0.7363269942663813,
+      "curiosity": 0.8763473146102698
+    },
+    "raw_context": "しぐちゃんの中でユーザーからのフィードバックで変わった点は何かあるかい？"
   }
 ]
