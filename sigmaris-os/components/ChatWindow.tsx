@@ -1,7 +1,8 @@
-// /app/chat/components/ChatWindow.tsx
+// /app/components/ChatWindow.tsx
 "use client";
 
 import { useState } from "react";
+import { requestPersonaDecision, requestSync } from "@/lib/sigmaris-api"; // ★ PersonaOS / AEI Sync API
 
 export default function ChatWindow({
   sessionId,
@@ -14,35 +15,83 @@ export default function ChatWindow({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // ------------------------------------------------------------
+  // ★ 送信ロジック（PersonaOS → AEI Sync → GPT）
+  // ------------------------------------------------------------
   const handleSend = async () => {
     if (!input.trim()) return;
+
     const userMsg = { role: "user", content: input };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
 
     try {
+      // =====================================================
+      // 1) PersonaOS Decision —「AIはどう応答すべきか？」
+      // =====================================================
+      const persona = await requestPersonaDecision({
+        user: input,
+        context: {
+          // UI から管理している状態を渡す（簡易版）
+          traits: { calm: 0.5, empathy: 0.5, curiosity: 0.5 },
+        },
+        session_id: sessionId,
+        user_id: "u-local", // ★ 本番は Supabase user_id に差し替え
+      });
+
+      // persona.decision 内に、AI の推奨スタイル・温度などが入る
+      const personaDecision = persona?.decision ?? {};
+
+      // =====================================================
+      // 2) AEI Sync — Identity へ反映（任意）
+      // =====================================================
+      await requestSync({
+        chat: { user: input, ai: null },
+        context: {
+          traits: { calm: 0.5, empathy: 0.5, curiosity: 0.5 },
+          safety: null,
+          summary: null,
+          recent: null,
+        },
+      });
+
+      // =====================================================
+      // 3) GPT生成 — personaDecision を付与
+      // =====================================================
       const res = await fetch("/api/aei", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: input,
-          session_id: sessionId, // ← セッション継続
+          session_id: sessionId,
+          persona: personaDecision, // ← ★ GPTに「PersonaOSの決定」を渡す
         }),
       });
 
       const data = await res.json();
-      if (data.output) {
+
+      if (data?.output) {
         const aiMsg = { role: "ai", content: data.output };
         setMessages((prev) => [...prev, aiMsg]);
       }
     } catch (e) {
-      console.error("💥 Send failed:", e);
+      console.error("💥 ChatWindow send error:", e);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "ai",
+          content: "⚠️ エラーが発生しました（ログ参照）。",
+        },
+      ]);
     } finally {
       setLoading(false);
     }
   };
 
+  // ------------------------------------------------------------
+  // UI
+  // ------------------------------------------------------------
   return (
     <div className="flex flex-col h-screen max-w-2xl mx-auto">
       <div className="flex-1 overflow-y-auto space-y-3 p-4 bg-gray-900">
@@ -58,9 +107,10 @@ export default function ChatWindow({
             {m.content}
           </div>
         ))}
+
         {loading && (
           <div className="text-gray-400 text-sm animate-pulse">
-            Sigmaris is thinking...
+            Sigmaris is thinking…
           </div>
         )}
       </div>

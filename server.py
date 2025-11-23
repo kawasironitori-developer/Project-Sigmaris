@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
+import json
+from typing import Optional, Dict, Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -24,6 +25,18 @@ from aei.reward import RewardCore
 from aei.emotion.emotion_core import EmotionCore
 from aei.value.value_core import ValueCore
 
+# ====== Persona OS ======
+from sigmaris_persona_core.persona_os import PersonaOS
+from sigmaris_persona_core.config import PersonaOSConfig
+from sigmaris_persona_core.types import (
+    PersonaContext,
+    Message,
+)
+
+# ====== Persona DB ======
+from persona_db.memory_db import MemoryDB
+
+
 # ============================================================
 # AEI 初期化
 # ============================================================
@@ -31,11 +44,15 @@ from aei.value.value_core import ValueCore
 identity = IdentityCore()
 episodes = EpisodeStore()
 
+persona_config = PersonaOSConfig()
+persona_os = PersonaOS(persona_config)
+
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 USE_REAL_API = OPENAI_KEY not in (None, "", "0", "false", "False")
 
+
 # ============================================================
-# LLM Adapter（実API or ダミー自動切替）
+# LLM Adapter（実API or ダミー）
 # ============================================================
 
 def make_llm_adapter(dummy_json: str) -> LLMAdapter:
@@ -43,28 +60,22 @@ def make_llm_adapter(dummy_json: str) -> LLMAdapter:
         return LLMAdapter(api_key=OPENAI_KEY)
     return LLMAdapter(test_mode=True, dummy_fn=lambda _prompt: dummy_json)
 
-# Reflection（短期）
-llm_reflect = make_llm_adapter("""
-{
+
+# ----- 各モジュール -----
+llm_reflect = make_llm_adapter("""{
   "summary": "dummy summary",
   "emotion_hint": "neutral",
   "traits_hint": { "calm": 0.7, "empathy": 0.7, "curiosity": 0.7 }
-}
-""")
+}""")
 
-# Introspection（中期）
-llm_intro = make_llm_adapter("""
-{
+llm_intro = make_llm_adapter("""{
   "mid_term_summary": "dummy mid summary",
   "pattern": "neutral",
   "trait_adjustment": { "calm": 0.0, "empathy": 0.0, "curiosity": 0.0 },
   "risk": { "drift_warning": false, "dependency_warning": false }
-}
-""")
+}""")
 
-# Meta-Reflection（深層）
-llm_meta = make_llm_adapter("""
-{
+llm_meta = make_llm_adapter("""{
   "meta_summary": "dummy meta summary",
   "root_cause": "none",
   "adjustment": { "calm": 0.0, "empathy": 0.0, "curiosity": 0.0 },
@@ -73,32 +84,23 @@ llm_meta = make_llm_adapter("""
     "emotional_collapse_risk": false,
     "over_dependency_risk": false
   }
-}
-""")
+}""")
 
-# Reward（報酬）
-llm_reward = make_llm_adapter("""
-{
+llm_reward = make_llm_adapter("""{
   "global_reward": 0.25,
   "trait_reward": { "calm": 0.02, "empathy": 0.03, "curiosity": 0.04 },
   "reason": "dummy reward"
-}
-""")
+}""")
 
-# Emotion
-llm_emotion = make_llm_adapter("""
-{
+llm_emotion = make_llm_adapter("""{
   "emotion": "calm-focus",
   "intensity": 0.4,
   "reason": "dummy emotion",
   "trait_shift": { "calm": 0.01, "empathy": 0.00, "curiosity": 0.02 },
   "meta": { "energy": 0.3, "stability": 0.8, "valence": 0.1 }
-}
-""")
+}""")
 
-# Value
-llm_value = make_llm_adapter("""
-{
+llm_value = make_llm_adapter("""{
   "importance": ["clarity", "self-consistency", "curiosity-growth"],
   "weight": 0.82,
   "tension": 0.14,
@@ -107,8 +109,8 @@ llm_value = make_llm_adapter("""
     "empathy": -0.01,
     "curiosity": 0.02
   }
-}
-""")
+}""")
+
 
 # ============================================================
 # FastAPI
@@ -123,6 +125,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # ============================================================
 # Core modules
 # ============================================================
@@ -135,8 +138,30 @@ reward_core = RewardCore(identity, episodes, llm_reward.as_function())
 emotion_core = EmotionCore(identity, episodes, llm_emotion.as_function())
 value_core = ValueCore(identity, episodes, llm_value.as_function())
 
-# Reward 状態キャッシュ
-last_reward_state: Optional[dict] = None
+last_reward_state: Optional[Dict[str, Any]] = None
+
+
+# ============================================================
+# PersonaOS Bridge（AEI → PersonaOS）
+# ============================================================
+
+def bridge_reflection(user_text: str, summary: dict) -> None:
+    msg = Message(role="reflection", content=user_text)
+    ctx = PersonaContext(user_id="system", session_id="reflection")
+    persona_os.feed_reflection(msg, summary, ctx)
+
+
+def bridge_reward(reward_res: dict) -> None:
+    persona_os.feed_reward(reward_res)
+
+
+def bridge_emotion(emotion_res: dict) -> None:
+    persona_os.feed_emotion(emotion_res)
+
+
+def bridge_value(value_res: dict) -> None:
+    persona_os.feed_value(value_res)
+
 
 # ============================================================
 # Models
@@ -146,20 +171,27 @@ class LogInput(BaseModel):
     text: str
     episode_id: Optional[str] = None
 
+
 class SyncInput(BaseModel):
-    """
-    Next.js の StateMachine → Python AEI Core へ同期されるデータ
-    """
     chat: dict
     context: dict
 
+
+class PersonaDecisionInput(BaseModel):
+    user: str
+    context: dict
+    session_id: str
+    user_id: str
+
+
 # ============================================================
-# Normal APIs（既存）
+# Normal AEI APIs
 # ============================================================
 
 @app.post("/reflect")
 def api_reflect(inp: LogInput):
     ep = reflection.reflect(inp.text, episode_id=inp.episode_id)
+    bridge_reflection(inp.text, ep.summary_dict())
     return {"episode": ep.as_dict(), "identity": identity.export_state()}
 
 
@@ -186,6 +218,7 @@ def api_reward():
     global last_reward_state
     res = reward_core.evaluate()
     last_reward_state = res
+    bridge_reward(res)
     return {"reward": res, "identity": identity.export_state()}
 
 
@@ -197,12 +230,14 @@ def api_reward_state():
 @app.post("/emotion")
 def api_emotion(inp: LogInput):
     res = emotion_core.analyze(inp.text)
+    bridge_emotion(res)
     return {"emotion": res, "identity": identity.export_state()}
 
 
 @app.post("/value")
 def api_value():
     res = value_core.analyze()
+    bridge_value(res)
     return {"value": res, "identity": identity.export_state()}
 
 
@@ -224,29 +259,21 @@ def api_memory():
         "count": len(eps),
     }
 
+
 # ============================================================
-# 🔥 NEW — 統合API：Next.js → Python (Identity Sync)
+# Identity Sync（Next.js → AEI Core）
 # ============================================================
 
 @app.post("/sync")
 def api_sync(data: SyncInput):
-    """
-    ・chat: {user, ai}
-    ・context: {traits, safety, summary, recent}
-    を Python 側に統合
-    """
-
-    # --- ユーザー発話を記録 ---
     user_text = data.chat.get("user", "")
     ai_text = data.chat.get("ai", "")
 
     if user_text:
         reflection.reflect(user_text)
-
     if ai_text:
         reflection.reflect(f"[AI_OUTPUT] {ai_text}")
 
-    # --- traits 同期 ---
     ctx_traits = data.context.get("traits", {})
 
     identity.update_traits(
@@ -260,3 +287,99 @@ def api_sync(data: SyncInput):
         "identity": identity.export_state(),
         "episode_count": len(episodes.load_all()),
     }
+
+
+# ============================================================
+# PersonaOS Decision API（完全版）
+# ============================================================
+
+@app.post("/persona/decision")
+def api_persona_decision(data: PersonaDecisionInput):
+    msg = Message(role="user", content=data.user)
+
+    ctx = PersonaContext(
+        user_id=data.user_id,
+        session_id=data.session_id,
+        extra=data.context,
+    )
+
+    decision = persona_os.process(
+        incoming=msg,
+        context=ctx,
+    )
+
+    return {
+        "decision": vars(decision),
+        "identity": identity.export_state(),
+    }
+
+
+# ============================================================
+# PersonaDB TEST（旧） / UI向けAPI
+# ============================================================
+
+@app.get("/persona_db/growth_logs")
+def api_persona_db_growth_logs(user_id: str = "system", limit: int = 20):
+    db = MemoryDB(user_id=user_id)
+    logs = db.get_recent_growth_logs(limit=limit)
+    return {"user_id": user_id, "count": len(logs), "logs": logs}
+
+
+@app.get("/db/identity")
+def api_db_identity(user_id: str = "system"):
+    db = MemoryDB(user_id=user_id)
+    traits = db.load_latest_traits()
+    return {"user_id": user_id, "traits": traits}
+
+
+@app.get("/db/concepts")
+def api_db_concepts(user_id: str = "system", min_score: float = 0.0, limit: int = 64):
+    db = MemoryDB(user_id=user_id)
+    res = db.get_concept_map(min_score=min_score, limit=limit)
+    return {"user_id": user_id, "concepts": res}
+
+
+@app.get("/db/episodes")
+def api_db_episodes(user_id: str = "system", limit: int = 50):
+    db = MemoryDB(user_id=user_id)
+    conn = db.conn
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            id, ts, session_id, role, content,
+            topic_hint, emotion_hint, importance, meta_json
+        FROM episodes
+        ORDER BY id DESC
+        LIMIT ?
+    """, (int(limit),))
+
+    rows = cur.fetchall()
+    episodes_list = []
+
+    for r in rows:
+        try:
+            meta = json.loads(r["meta_json"]) if r["meta_json"] else {}
+        except Exception:
+            meta = {"_parse_error": True}
+
+        episodes_list.append({
+            "id": r["id"],
+            "ts": r["ts"],
+            "session_id": r["session_id"],
+            "role": r["role"],
+            "content": r["content"],
+            "topic_hint": r["topic_hint"],
+            "emotion_hint": r["emotion_hint"],
+            "importance": r["importance"],
+            "meta": meta,
+        })
+
+    return {"user_id": user_id, "episodes": episodes_list, "count": len(episodes_list)}
+
+
+@app.get("/db/growth")
+def api_db_growth(user_id: str = "system", limit: int = 50):
+    db = MemoryDB(user_id=user_id)
+    logs = db.get_recent_growth_logs(limit=limit)
+    return {"user_id": user_id, "count": len(logs), "logs": logs}

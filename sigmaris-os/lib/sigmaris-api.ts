@@ -1,5 +1,5 @@
 // ============================================================
-// Sigmaris AEI Core API Client (B-Spec Full Version)
+// Sigmaris AEI Core API Client (B-Spec Full Version + PersonaOS)
 // ============================================================
 
 // ----------------------------------------------
@@ -24,7 +24,7 @@ async function request(endpoint: string, options?: RequestInit): Promise<any> {
       },
     });
 
-    let json = null;
+    let json: any = null;
     try {
       json = await res.json();
     } catch {
@@ -78,25 +78,34 @@ export interface IdentitySnapshot {
 }
 
 export interface EmotionState {
-  label?: string;
-  score?: number;
+  emotion?: string;
+  intensity?: number;
+  reason?: string;
+  trait_shift?: TraitVector;
+  meta?: Record<string, any>;
   [key: string]: any;
 }
 
 export interface RewardState {
-  reward?: number;
+  global_reward?: number;
+  trait_reward?: TraitVector;
   reason?: string;
   [key: string]: any;
 }
 
 export interface ValueState {
-  value?: Record<string, any>;
+  importance?: string[];
+  weight?: number;
+  tension?: number;
+  baseline_shift?: TraitVector;
   [key: string]: any;
 }
 
 export interface MetaState {
-  reflection?: string;
   meta_summary?: string;
+  root_cause?: string;
+  adjustment?: TraitVector;
+  risk?: Record<string, boolean>;
   [key: string]: any;
 }
 
@@ -107,6 +116,7 @@ export interface LongTermState {
 
 export interface MemoryDump {
   episodes?: any[];
+  count?: number;
   [key: string]: any;
 }
 
@@ -135,11 +145,10 @@ export interface SyncPayload {
 
 // /sync response
 export interface SyncResponse {
+  status?: string;
   identity?: IdentitySnapshot;
-  updated_persona?: {
-    calm?: number;
-    empathy?: number;
-    curiosity?: number;
+  episode_count?: number;
+  updated_persona?: Partial<TraitVector> & {
     reflection?: string;
     meta_summary?: string;
     growth?: number;
@@ -156,6 +165,7 @@ export interface SyncResponse {
 // ============================================================
 // ★ AEI-Core Sync（人格統合の中心 API）
 // ============================================================
+
 export async function requestSync(payload: SyncPayload): Promise<SyncResponse> {
   return request("/sync", {
     method: "POST",
@@ -199,7 +209,7 @@ export async function rewardState() {
   return request("/reward/state", { method: "GET" });
 }
 
-// EmotionCore（感情推定）
+// Emotion（感情）
 export async function emotion(
   text: string
 ): Promise<{ emotion: EmotionState }> {
@@ -209,7 +219,7 @@ export async function emotion(
   });
 }
 
-// ValueCore（価値観）
+// Value（価値構造）
 export async function value(): Promise<{ value: ValueState }> {
   return request("/value", { method: "POST" });
 }
@@ -226,4 +236,80 @@ export async function memory(): Promise<MemoryDump> {
 // Identity Snapshot
 export async function getIdentity(): Promise<IdentitySnapshot> {
   return request("/identity", { method: "GET" });
+}
+
+// ============================================================
+// Persona-DB API (v0.2)
+// ============================================================
+
+// Concept Map（概念クラスタ）
+export async function getConceptMap(
+  minScore: number = 0.0,
+  limit: number = 64
+) {
+  return request(`/db/concepts?min_score=${minScore}&limit=${limit}`, {
+    method: "GET",
+  });
+}
+
+// Episodes（会話ログ）
+export async function getEpisodes(sessionId?: string) {
+  const q = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+  return request(`/db/episodes${q}`, {
+    method: "GET",
+  });
+}
+
+// Identity Events（Trait変動ログ）
+export async function getIdentityEvents() {
+  return request(`/db/identity`, { method: "GET" });
+}
+
+// Growth Logs（デバッグ用）
+export async function getGrowthLogs(limit: number = 50) {
+  return request(`/db/growth?limit=${limit}`, { method: "GET" });
+}
+
+// ============================================================
+// ★ PersonaOS Decision API（/persona/decision）
+// ============================================================
+
+export interface PersonaDecision {
+  allow_reply: boolean;
+  preferred_state: string;
+  tone: string;
+  temperature: number;
+  top_p: number;
+  need_reflection: boolean;
+  need_introspection: boolean;
+  apply_contradiction_note: boolean;
+  apply_identity_anchor: boolean;
+  updated_traits: TraitVector;
+  reward: any;
+  debug: any;
+}
+
+export interface PersonaDecisionResponse {
+  decision: PersonaDecision;
+  identity: any;
+}
+
+export interface PersonaDecisionRequest {
+  user: string;
+  context: Record<string, any>;
+  session_id: string;
+  user_id: string;
+}
+
+/**
+ * PersonaOS の「どう応答するか」を取得するメイン API。
+ * - LLM 生成はフロント側で行う前提。
+ */
+export async function requestPersonaDecision(
+  payload: PersonaDecisionRequest
+): Promise<PersonaDecisionResponse> {
+  return request("/persona/decision", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }

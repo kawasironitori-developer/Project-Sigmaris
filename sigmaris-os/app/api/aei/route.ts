@@ -15,8 +15,8 @@ import { StateMachine } from "@/engine/state/StateMachine";
 import type { TraitVector } from "@/lib/traits";
 import type { SafetyReport } from "@/types/safety";
 
-// Python AEI Core (/sync)
-import { requestSync } from "@/lib/sigmaris-api";
+// Python AEI Core (/sync + persona/decision)
+import { requestSync, BASE } from "@/lib/sigmaris-api";
 
 /* -----------------------------------------------------
  * 危険語フィルタ
@@ -76,7 +76,7 @@ export async function GET(req: Request) {
 }
 
 /* -----------------------------------------------------
- * POST: StateMachine + Python /sync
+ * POST: StateMachine + Python /sync + PersonaOS decision
  * --------------------------------------------------- */
 export async function POST(req: Request) {
   const step: any = { phase: "start" };
@@ -85,7 +85,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { text, recent, summary } = body;
 
-    const userText = text?.trim() || "こんにちは";
+    const userText = (text ?? "").trim() || "こんにちは";
     const sessionId = req.headers.get("x-session-id") || crypto.randomUUID();
     step.sessionId = sessionId;
 
@@ -191,7 +191,7 @@ export async function POST(req: Request) {
     const updatedTraits = finalCtx.traits;
 
     /* ------------ Python /sync ------------- */
-    let python = null;
+    let python: any = null;
     try {
       python = await requestSync({
         chat: { user: userText, ai: aiOutput },
@@ -203,8 +203,51 @@ export async function POST(req: Request) {
         },
       });
       step.python = "ok";
-    } catch {
+    } catch (err) {
+      console.error("AEI /sync failed:", err);
       step.python = "failed";
+    }
+
+    /* ------------ PersonaOS decision 呼び出し ------------- */
+    let personaDecision: any = null;
+    try {
+      const res = await fetch(`${BASE}/persona/decision`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          user: userText,
+          context: {
+            traits: updatedTraits,
+            safety: finalCtx.safety,
+            summary: ctx.meta.summary,
+            recent: ctx.meta.recent,
+          },
+          session_id: sessionId,
+          user_id: user.id,
+        }),
+      });
+
+      if (res.ok) {
+        personaDecision = await res.json();
+        step.persona = "ok";
+      } else {
+        const text = await res.text();
+        console.error("Persona decision error:", res.status, text);
+        step.persona = `error:${res.status}`;
+      }
+    } catch (err) {
+      console.error("Persona decision fetch failed:", err);
+      step.persona = "failed";
+    }
+
+    // PersonaOS の沈黙判定を反映
+    const allowReply = personaDecision?.decision?.allow_reply !== false; // undefined → 許可
+
+    if (!allowReply) {
+      // 沈黙モード：フロントには output を返さない・DBにも AI メッセージを保存しない
+      aiOutput = "";
     }
 
     /* ------------ PersonaSync B仕様更新 ------------- */
@@ -226,7 +269,8 @@ export async function POST(req: Request) {
 
     /* ------------ DB保存 ------------- */
     const now = new Date().toISOString();
-    await supabase.from("messages").insert([
+
+    const rows: any[] = [
       {
         user_id: user.id,
         session_id: sessionId,
@@ -234,24 +278,30 @@ export async function POST(req: Request) {
         content: userText,
         created_at: now,
       },
-      {
+    ];
+
+    if (aiOutput) {
+      rows.push({
         user_id: user.id,
         session_id: sessionId,
         role: "ai",
         content: aiOutput,
         created_at: now,
-      },
-    ]);
+      });
+    }
+
+    await supabase.from("messages").insert(rows);
 
     /* ------------ Response ------------- */
     return NextResponse.json({
       success: true,
-      output: aiOutput,
+      output: aiOutput, // allow_reply=false の場合は "" → ChatWindow 側では追加されない
       traits: updatedTraits,
       safety: finalCtx.safety,
       model: "Sigmaris-StateMachine-v1",
       sessionId,
       python,
+      persona: personaDecision,
       step,
     });
   } catch (e: any) {
