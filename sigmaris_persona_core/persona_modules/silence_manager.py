@@ -9,27 +9,27 @@ from ..config import SilenceConfig
 @dataclass
 class SilenceManager:
     """
-    主体的沈黙（あえて返答しない）を決めるモジュール。
+    主体的沈黙モジュール（PersonaOS 完全版 v0.2 対応）
 
-    PersonaOS.process() では次の形式で使用される：
+    PersonaOS.process() 内で使われる想定：
         silence_info = silence.decide(
             abstraction_score=...,
             loop_suspect_score=...,
             user_insists=...
         )
 
-    返却形式：
+    返却形式:
         {
-          "silence": bool,
-          "reason": str
+            "silence": bool,
+            "reason": str,
         }
     """
 
     config: SilenceConfig
 
-    # ------------------------------------------------------------
-    # Main Logic
-    # ------------------------------------------------------------
+    # ============================================================
+    # DECISION CORE
+    # ============================================================
     def decide(
         self,
         *,
@@ -38,29 +38,26 @@ class SilenceManager:
         user_insists: bool,
     ) -> Dict[str, Any]:
         """
-        主体的沈黙を行うかどうか判定する。
+        主体的沈黙ロジック。
 
-        方針：
-        - 抽象度が高い or ループ気味 → 「沈黙候補」
-        - ただし user が強く回答を求める場合、
-            allow_when_user_insists=True なら沈黙しない
+        方針（完全版 v0.2）:
+          - abstraction_score / loop_suspect_score が閾値を超えると沈黙候補
+          - user が強く要求している場合 allow_when_user_insists が True なら返答可能
+          - 返答理由は全てタグ化して debug に渡す
         """
 
-        # 安全クリップ
-        a = max(0.0, min(1.0, abstraction_score))
-        l = max(0.0, min(1.0, loop_suspect_score))
+        # ---- 0. 安全クリップ ---------------------------------
+        a = max(0.0, min(1.0, float(abstraction_score)))
+        l = max(0.0, min(1.0, float(loop_suspect_score)))
 
-        # 閾値判定
-        too_abstract = a >= self.config.max_abstraction
-        too_loopy = l >= self.config.max_loop_suspect
+        # ---- 1. 閾値判定 --------------------------------------
+        too_abstract = a >= float(self.config.max_abstraction)
+        too_loopy = l >= float(self.config.max_loop_suspect)
 
-        silence_candidate = (too_abstract or too_loopy)
+        silence_candidate = bool(too_abstract or too_loopy)
 
-        # ------------------------------------------------------------
-        # Case 1：ユーザーが強く要求している場合
-        # ------------------------------------------------------------
-        if user_insists and self.config.allow_when_user_insists:
-            # 本来沈黙候補でも“軽めの返答”を許可
+        # ---- 2. user insist -----------------------------------
+        if user_insists and bool(self.config.allow_when_user_insists):
             return {
                 "silence": False,
                 "reason": self._build_reason(
@@ -71,9 +68,7 @@ class SilenceManager:
                 ),
             }
 
-        # ------------------------------------------------------------
-        # Case 2：通常沈黙パターン
-        # ------------------------------------------------------------
+        # ---- 3. 沈黙発動 --------------------------------------
         if silence_candidate:
             return {
                 "silence": True,
@@ -85,17 +80,15 @@ class SilenceManager:
                 ),
             }
 
-        # ------------------------------------------------------------
-        # Case 3：沈黙不要
-        # ------------------------------------------------------------
+        # ---- 4. 通常返信 --------------------------------------
         return {
             "silence": False,
-            "reason": "threshold_not_reached",
+            "reason": "reply_selected:threshold_not_reached",
         }
 
-    # ------------------------------------------------------------
-    # Reason Builder
-    # ------------------------------------------------------------
+    # ============================================================
+    # REASON BUILDER
+    # ============================================================
     def _build_reason(
         self,
         *,
@@ -105,10 +98,9 @@ class SilenceManager:
         user_insists: bool,
     ) -> str:
         """
-        PersonaOS の debug 情報に入る「理由タグ」を生成する。
-        ここは UI で確認するため多少日本語寄りで OK。
+        PersonaOS.debug に入るタグ生成器。
         """
-        tags = []
+        tags: list[str] = []
 
         if too_abstract:
             tags.append("abstract_overload")

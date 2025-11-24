@@ -1,5 +1,6 @@
 # sigmaris_persona_core/state_machine.py
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Literal, Dict, Any, Optional
 import time
@@ -39,6 +40,13 @@ StateName = Literal[
 
 @dataclass
 class StateMachine:
+    """
+    PersonaOS 内部ステートマシン v0.3（完全版）
+
+    - StateMachineConfig と 1:1 で対応するフィールドのみ参照する
+    - PersonaOS からは step() / info() / load_hint() を使用
+    """
+
     config: StateMachineConfig
 
     # 現在ステート
@@ -132,7 +140,12 @@ class StateMachine:
         # --------------------------------------------------------
         # 2. 過負荷制御
         # --------------------------------------------------------
-        if self.messages_last_minute > self.config.overload_limit_per_min:
+        try:
+            overload_limit = int(self.config.overload_limit_per_min)
+        except Exception:
+            overload_limit = 20  # フォールバック
+
+        if overload_limit > 0 and self.messages_last_minute > overload_limit:
             # 一旦ブレーキ。ここでは応答自体は抑えめにする想定。
             self.current = "overload-prevent"
             return self.current
@@ -157,8 +170,13 @@ class StateMachine:
         # --------------------------------------------------------
         # 5. 矛盾（contradiction）→ reflect 優先
         # --------------------------------------------------------
+        try:
+            reflect_cd = float(self.config.reflect_cooldown_sec)
+        except Exception:
+            reflect_cd = 30.0
+
         if contradiction_flag:
-            if now - self.last_reflection_ts > self.config.reflection_cooldown_sec:
+            if now - self.last_reflection_ts > reflect_cd:
                 self.current = "reflect"
                 self.last_reflection_ts = now
                 return self.current
@@ -167,23 +185,28 @@ class StateMachine:
         # 6. 深度要求 deep の場合
         # --------------------------------------------------------
         if user_requested_depth == "deep":
-
             # 6-1 Reflect（短期反省）
-            if reflection_candidate and (
-                now - self.last_reflection_ts > self.config.reflection_cooldown_sec
-            ):
+            if reflection_candidate and (now - self.last_reflection_ts > reflect_cd):
                 self.current = "reflect"
                 self.last_reflection_ts = now
                 return self.current
 
             # 6-2 Introspect（中期内省）
+            try:
+                introspect_cd = float(self.config.introspect_cooldown_sec)
+            except Exception:
+                introspect_cd = 60.0
+
             if introspection_candidate and (
-                now - self.last_introspection_ts
-                > self.config.introspection_cooldown_sec
+                now - self.last_introspection_ts > introspect_cd
             ):
                 self.current = "introspect"
                 self.last_introspection_ts = now
                 return self.current
+
+        # abstraction_score / loop_suspect_score は将来の拡張用に残しておく
+        _ = abstraction_score
+        _ = loop_suspect_score
 
         # --------------------------------------------------------
         # 7. shallow / normal → 通常ダイアログ
@@ -213,10 +236,13 @@ class StateMachine:
         """
         フロント側で「今どれくらい負荷か」を表示するための簡易指標。
         """
-        ratio = min(
-            1.0,
-            self.messages_last_minute / float(self.config.overload_limit_per_min or 1),
-        )
+        try:
+            limit = float(self.config.overload_limit_per_min or 1)
+        except Exception:
+            limit = 1.0
+
+        ratio = min(1.0, self.messages_last_minute / limit)
+
         return {
             "messages_last_minute": self.messages_last_minute,
             "overload_limit_per_min": self.config.overload_limit_per_min,

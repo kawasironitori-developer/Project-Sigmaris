@@ -42,12 +42,11 @@ class MemoryIntegrator:
     mid_buffer: List[MemoryEntry] = field(default_factory=list)
 
     # ============================================================
-    #  Feed
+    # Feed
     # ============================================================
-
     def feed(self, entry: MemoryEntry) -> None:
         """
-        1 つの MemoryEntry を受け取り、short / mid の両ストラタを更新する。
+        1 つの MemoryEntry を受け取り、short / mid のストラタを更新する。
 
         kind は現状 "short" / "mid" を想定しているが、
         多少ラフに扱えるよう、防御的に実装。
@@ -57,11 +56,11 @@ class MemoryIntegrator:
         # kind 自体は今のところ挙動には使わないが、
         # 将来の分岐用に一応抜き出しておく
         kind = getattr(entry, "kind", "short") or "short"
-        _ = kind  # 予約
+        _ = kind  # reserved for future use
 
         # short レイヤに追加
         self.short_buffer.append(entry)
-        # mid レイヤにも積む（mid 専用エントリも想定）
+        # mid レイヤにも積む（mid 専用エントリも short と同様に蓄積）
         self.mid_buffer.append(entry)
 
         # 古い short / mid を時間窓から外す
@@ -69,9 +68,8 @@ class MemoryIntegrator:
         self._gc_mid(now=now)
 
     # ============================================================
-    #  ガーベジコレクション（時間窓でのトリミング）
+    # ガーベジコレクション（時間窓でのトリミング）
     # ============================================================
-
     def _gc_short(self, now: float) -> None:
         """
         short_window_sec を超えたエントリを short_buffer から除去。
@@ -114,9 +112,8 @@ class MemoryIntegrator:
         self.mid_buffer = new_buf
 
     # ============================================================
-    #  Snapshot / 可視化用ヘルパ
+    # Snapshot / 可視化用ヘルパ
     # ============================================================
-
     def snapshot(self) -> Dict[str, Any]:
         """
         UI / デバッグ用に、現在の short / mid メモリの概況を返す。

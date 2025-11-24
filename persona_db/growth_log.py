@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -12,97 +12,143 @@ from sigmaris_persona_core.types import TraitVector, RewardSignal
 @dataclass
 class GrowthLogEntry:
     """
-    PersonaOS → persona_db.growth_log 用の 1 レコード表現。
+    PersonaOS → MemoryDB.growth_log 用 1 レコード（完全版 v0.2）
 
-    - 1 ステップの「内面状態の変化」をまとめて記録する。
-    - 実際のテーブルには user_id は持たず、
-      「どのファイル(<user>.sqlite3)に書かれているか」で紐づける設計。
+    - 内面状態の変化（trait shift）
+    - RewardSignal
+    - モード（state）
+    - 安全系フラグ（silence / contradiction / intuition_allow）
+    - identity_hint / emotion / snapshot
+
+    MemoryDB.store_growth_log(entry.to_row()) 用の dict を生成する。
     """
 
+    # ベース情報
     user_id: str
     session_id: str
     last_message: str
 
+    # Traits
     traits_before: TraitVector
     traits_after: TraitVector
-    reward: RewardSignal
 
-    state: str                      # dialogue / reflect / introspect など
-    flags: Dict[str, bool]          # safety_flagged / silence / contradiction / intuition_allow
+    # RewardSignal（任意・None可）
+    reward: Optional[RewardSignal] = None
 
-    emotion: Optional[str] = None   # 将来的に EmotionCore から渡す
+    # state: "dialogue" / "reflect" / "introspect" / ...
+    state: str = ""
+
+    # silence / contradiction / intuition_allow など
+    flags: Dict[str, bool] = field(default_factory=dict)
+
+    # EmotionCore 互換
+    emotion: Optional[str] = None
     intensity: Optional[float] = None
+
+    # Identity Continuity 互換
     identity_hint: Optional[str] = None
+
+    # 任意デバッグ
     extra_debug: Optional[Dict[str, Any]] = None
 
+    # ============================================================
+    # to_row() → MemoryDB.growth_log INSERT 用 dict に変換
+    # ============================================================
+
     def to_row(self) -> Dict[str, Any]:
-        """
-        memory_db.MemoryDB.store_growth_log() がそのまま
-        `:ts`, `:session_id` ... として使う dict を返す。
-        growth_log テーブルのスキーマと完全に対応させている。
-        """
         ts = datetime.utcnow().isoformat()
 
-        # トレイト差分
-        delta_calm = float(self.traits_after.calm - self.traits_before.calm)
-        delta_empathy = float(self.traits_after.empathy - self.traits_before.empathy)
-        delta_curiosity = float(self.traits_after.curiosity - self.traits_before.curiosity)
+        # --------------------------------------------------------
+        # Trait shift
+        # --------------------------------------------------------
+        before = self.traits_before
+        after = self.traits_after
 
+        delta_calm = float(after.calm - before.calm)
+        delta_empathy = float(after.empathy - before.empathy)
+        delta_curiosity = float(after.curiosity - before.curiosity)
+
+        value_shift = abs(delta_calm) + abs(delta_empathy) + abs(delta_curiosity)
+
+        # --------------------------------------------------------
         # RewardSignal
-        reward_value = float(self.reward.value)
-        reward_reason = str(self.reward.reason or "")
-        reward_meta = self.reward.meta or {}
+        # --------------------------------------------------------
+        reward_value = 0.0
+        reward_reason = ""
+        reward_meta = {}
 
-        # value_shift は今のところ未定義なので 0.0 にしておく。
-        value_shift = 0.0
+        if isinstance(self.reward, RewardSignal):
+            reward_value = float(self.reward.value)
+            reward_reason = str(self.reward.reason or "")
+            reward_meta = self.reward.meta or {}
+
+        # reward_meta に value_shift が入っていれば優先
         if "value_shift" in reward_meta:
             try:
                 value_shift = float(reward_meta["value_shift"])
             except Exception:
-                value_shift = 0.0
+                pass
 
-        # emotion/intensity は引数が無ければ 0 扱い
+        # --------------------------------------------------------
+        # emotion / intensity
+        # --------------------------------------------------------
         emotion = self.emotion or ""
-        intensity = float(self.intensity) if self.intensity is not None else 0.0
+        intensity = (
+            float(self.intensity)
+            if self.intensity is not None
+            else min(1.0, max(0.0, value_shift))
+        )
 
-        # サブシステムフラグ（bool → int）
-        silence = 1 if self.flags.get("silence", False) else 0
-        contradiction = 1 if self.flags.get("contradiction", False) else 0
-        intuition = 1 if self.flags.get("intuition_allow", False) else 0
+        # --------------------------------------------------------
+        # Flags
+        # --------------------------------------------------------
+        f = self.flags or {}
+        silence = 1 if f.get("silence") else 0
+        contradiction = 1 if f.get("contradiction") else 0
+        intuition = 1 if (f.get("intuition_allow") or f.get("intuition")) else 0
 
-        # identity_hint / snapshot
+        # --------------------------------------------------------
+        # Identity Hint
+        # --------------------------------------------------------
         identity_hint = self.identity_hint or ""
 
-        snapshot_obj: Dict[str, Any] = {
+        # --------------------------------------------------------
+        # Snapshot（UI・デバッグ）
+        # --------------------------------------------------------
+        snapshot_obj = {
+            "ts": ts,
             "state": self.state,
             "user_id": self.user_id,
             "session_id": self.session_id,
             "last_message": self.last_message,
             "traits_before": {
-                "calm": float(self.traits_before.calm),
-                "empathy": float(self.traits_before.empathy),
-                "curiosity": float(self.traits_before.curiosity),
+                "calm": float(before.calm),
+                "empathy": float(before.empathy),
+                "curiosity": float(before.curiosity),
             },
             "traits_after": {
-                "calm": float(self.traits_after.calm),
-                "empathy": float(self.traits_after.empathy),
-                "curiosity": float(self.traits_after.curiosity),
+                "calm": float(after.calm),
+                "empathy": float(after.empathy),
+                "curiosity": float(after.curiosity),
             },
             "reward": {
                 "value": reward_value,
                 "reason": reward_reason,
                 "meta": reward_meta,
             },
-            "flags": self.flags,
+            "flags": f,
         }
 
         if self.extra_debug:
             snapshot_obj["extra_debug"] = self.extra_debug
-        if self.identity_hint:
-            snapshot_obj["identity_hint"] = self.identity_hint
+        if identity_hint:
+            snapshot_obj["identity_hint"] = identity_hint
 
         snapshot = json.dumps(snapshot_obj, ensure_ascii=False)
 
+        # --------------------------------------------------------
+        # MemoryDB.growth_log スキーマに完全対応
+        # --------------------------------------------------------
         return {
             "ts": ts,
             "session_id": self.session_id,

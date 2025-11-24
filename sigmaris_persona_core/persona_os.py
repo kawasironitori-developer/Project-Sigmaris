@@ -1,3 +1,4 @@
+# sigmaris_persona_core/persona_os.py
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -70,6 +71,7 @@ class PersonaOS:
     db_cache: Dict[str, MemoryDB] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        # ステートマシン & 基本モジュール
         self.state_machine = StateMachine(self.config.state)
         self.contradiction = ContradictionManager()
         self.silence = SilenceManager(self.config.silence)
@@ -77,8 +79,14 @@ class PersonaOS:
         self.value_drift = ValueDriftEngine(self.config.value_drift)
         self.memory = MemoryIntegrator(self.config.memory)
         self.identity = IdentityContinuityEngine()
+
+        # MetaRewardEngine（内部で window_sec 等を扱う。ここではデフォルト構成を利用）
         self.meta_reward = MetaRewardEngine()
+
+        # Emotion レイヤ
         self.emotion = EmotionCore(self.config.emotion)
+
+        # SnapshotBuilder（UI / デバッグ用）
         self.snapshot_builder = SnapshotBuilder()
 
     # ============================================================
@@ -199,8 +207,8 @@ class PersonaOS:
         # 3. 矛盾検出
         # --------------------------------------------------------
         contradiction_info = self.contradiction.detect(incoming)
-        contradiction_flags = contradiction_info["flags"]
-        contradiction_note = contradiction_info["note"]
+        contradiction_flags = contradiction_info.get("flags", {})
+        contradiction_note = contradiction_info.get("note")
 
         # --------------------------------------------------------
         # 4. 疑似直観 判定
@@ -214,26 +222,53 @@ class PersonaOS:
         user_insists = ("教えて" in content_str) or ("どう思う" in content_str)
         silence_info = self.silence.decide(
             abstraction_score=abstraction_score,
-            loop_suspect_score=loop_suspect_score,
+            loop_suspect_score=loop_spect_score,
             user_insists=user_insists,
         )
 
         # --------------------------------------------------------
-        # 6. 状態遷移
+        # 6. Identity Continuity ヒント
         # --------------------------------------------------------
+        identity_hint = self.identity.get_hint()
+        identity_anchor = identity_hint is not None
+
+        # --------------------------------------------------------
+        # 7. 状態遷移
+        # --------------------------------------------------------
+        intuition_allow = bool(intuition_info.get("allow", False))
+        contradiction_flag = bool(contradiction_flags.get("contradiction", False))
+
         state = self.state_machine.step(
             user_requested_depth=depth_pref,
             safety_flagged=safety_flagged,
-            reflection_candidate=(intuition_info["allow"] and depth_pref == "deep"),
-            introspection_candidate=(
-                (not intuition_info["allow"]) and depth_pref == "deep"
-            ),
+            reflection_candidate=(intuition_allow and depth_pref == "deep"),
+            introspection_candidate=((not intuition_allow) and depth_pref == "deep"),
+            contradiction_flag=contradiction_flag,
+            intuition_allow=intuition_allow,
+            identity_anchor=identity_anchor,
+            abstraction_score=abstraction_score,
+            loop_suspect_score=loop_suspect_score,
         )
 
         # --------------------------------------------------------
-        # 7. メタ報酬 & Value Drift
+        # 8. メタ報酬 & Value Drift
         # --------------------------------------------------------
-        reward: RewardSignal = self.meta_reward.compute()
+        raw_reward = self.meta_reward.compute()
+
+        if isinstance(raw_reward, RewardSignal):
+            reward: RewardSignal = raw_reward
+        elif isinstance(raw_reward, dict):
+            reward = RewardSignal(
+                global_reward=raw_reward.get(
+                    "global_reward", raw_reward.get("value", 0.0)
+                ),
+                reason=str(raw_reward.get("reason", "")),
+                meta=raw_reward,
+                detail=raw_reward.get("detail", {}),
+            )
+        else:
+            # 予期しない型の場合は安全側に倒す
+            reward = RewardSignal(value=0.0, reason="unsupported_reward_type")
 
         prev_traits = TraitVector(
             calm=self.traits.calm,
@@ -245,23 +280,19 @@ class PersonaOS:
         self.traits = new_traits
 
         # --------------------------------------------------------
-        # 8. Emotion レイヤ
+        # 9. Emotion レイヤ
         # --------------------------------------------------------
         emo = self.emotion.decide_tone_and_sampling(self.traits)
-
-        # --------------------------------------------------------
-        # 9. Identity Continuity
-        # --------------------------------------------------------
-        identity_hint = self.identity.get_hint()
 
         # --------------------------------------------------------
         # 10. Snapshot / Debug 構築
         # --------------------------------------------------------
         flags: Dict[str, bool] = {
             "safety_flagged": safety_flagged,
-            "silence": silence_info["silence"],
-            "contradiction": contradiction_flags.get("contradiction", False),
-            "intuition_allow": intuition_info["allow"],
+            "silence": bool(silence_info.get("silence")),
+            "contradiction": contradiction_flag,
+            "intuition_allow": intuition_allow,
+            "identity_anchor": identity_anchor,
         }
 
         snapshot = self.snapshot_builder.build(
@@ -273,8 +304,8 @@ class PersonaOS:
 
         debug: Dict[str, Any] = {
             "state": state,
-            "silence_reason": silence_info["reason"],
-            "intuition_reason": intuition_info["reason"],
+            "silence_reason": silence_info.get("reason"),
+            "intuition_reason": intuition_info.get("reason"),
             "contradiction_note": contradiction_note,
             "identity_hint": identity_hint,
             "snapshot": snapshot,
@@ -303,24 +334,24 @@ class PersonaOS:
                     )
                 )
             except Exception:
-                # ここも DB 例外は握りつぶす
+                # DB 例外は握りつぶす
                 pass
 
         # --------------------------------------------------------
         # 12. PersonaDecision を返す
         # --------------------------------------------------------
-        allow_reply = (not silence_info["silence"]) and (not safety_flagged)
+        allow_reply = (not bool(silence_info.get("silence"))) and (not safety_flagged)
 
         return PersonaDecision(
             allow_reply=allow_reply,
             preferred_state=state,
             tone=emo["tone"],
-            temperature=emo["temperature"],
-            top_p=emo["top_p"],
+            temperature=float(emo["temperature"]),
+            top_p=float(emo["top_p"]),
             need_reflection=(state == "reflect"),
             need_introspection=(state == "introspect"),
             apply_contradiction_note=flags["contradiction"],
-            apply_identity_anchor=(identity_hint is not None),
+            apply_identity_anchor=identity_anchor,
             updated_traits=self.traits,
             reward=reward,
             debug=debug,
@@ -368,7 +399,12 @@ class PersonaOS:
             db = self._db(user_id)
             db.store_identity_event(
                 kind="reward",
-                reward=float(reward_res.get("global_reward", 0.0)),
+                reward=float(
+                    reward_res.get(
+                        "global_reward",
+                        reward_res.get("value", 0.0),
+                    )
+                ),
                 meta=reward_res,
             )
         except Exception:

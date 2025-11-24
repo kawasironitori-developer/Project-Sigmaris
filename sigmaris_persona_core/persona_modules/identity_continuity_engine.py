@@ -86,8 +86,14 @@ class IdentityContinuityEngine:
         ]
     )
 
+    # ============================================================
+    #  Internal helpers
+    # ============================================================
+
     def _normalize(self, text: str) -> str:
         """改行・余分なスペースを潰して軽く正規化。"""
+        if not isinstance(text, str):
+            text = str(text or "")
         t = text.strip()
         t = re.sub(r"\s+", " ", t)
         return t
@@ -101,7 +107,7 @@ class IdentityContinuityEngine:
         新しいメッセージを観測し、「アンカー化するかどうか」を判定して保存。
 
         ざっくりルール：
-          - role=="user" のみ対象
+          - role == "user" のみ対象
           - 一定以上の長さがある
           - 自己言及 or 方向性 or 参照表現を含む場合は優先的にアンカー
         """
@@ -118,7 +124,6 @@ class IdentityContinuityEngine:
             return
 
         # Message に timestamp があれば尊重、なければ現在時刻
-        now_ts: float
         try:
             ts_attr = getattr(message, "timestamp", None)
             if isinstance(ts_attr, (int, float)):
@@ -142,6 +147,10 @@ class IdentityContinuityEngine:
         max_len = 120
         if len(snippet) > max_len:
             snippet = snippet[: max_len - 3] + "..."
+
+        # 直前のアンカーと全く同じならノイズとしてスキップ
+        if self.anchors and self.anchors[-1].text == snippet:
+            return
 
         anchor = IdentityAnchor(
             ts=now_ts,

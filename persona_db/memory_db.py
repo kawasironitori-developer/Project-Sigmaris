@@ -30,7 +30,7 @@ def _safe_user_id(user_id: str) -> str:
     """
     if not user_id:
         return "system"
-    safe = []
+    safe: List[str] = []
     for ch in user_id:
         if ch.isalnum() or ch in ("-", "_"):
             safe.append(ch)
@@ -76,6 +76,7 @@ def _simple_tokenize(text: str) -> List[str]:
 # ============================================================
 #   MemoryDB (PersonaOS: All Long-term Memory)
 # ============================================================
+
 
 class MemoryDB:
     """
@@ -564,7 +565,7 @@ class MemoryDB:
         return [dict(r) for r in rows]
 
     # ============================================================
-    # Identity Continuity API（★追加）
+    # Identity Continuity API
     # ============================================================
 
     def get_recent_episodes(
@@ -648,18 +649,18 @@ class MemoryDB:
                 results.append(h)
 
         # 重複排除（id ベース）
-        uniq = {}
+        uniq: Dict[int, Dict[str, Any]] = {}
         for r in results:
             eid = r["id"]
             if eid not in uniq:
                 uniq[eid] = r
 
         # importance と recency でスコア（簡易）
-        merged = list(uniq.values())
+        merged: List[Dict[str, Any]] = list(uniq.values())
         for r in merged:
             importance = float(r.get("importance") or 0.1)
-            # recency boost
-            r["_score"] = importance + (r["id"] / 1000000.0)
+            # recency boost: id が新しいほど少しだけ加点
+            r["_score"] = importance + (float(r["id"]) / 1_000_000.0)
 
         merged.sort(key=lambda x: x["_score"], reverse=True)
 

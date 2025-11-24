@@ -9,7 +9,7 @@ import time
 # 基本ロール
 # ============================================================
 
-Role = Literal["user", "assistant", "system", "meta"]
+Role = Literal["user", "assistant", "system", "system_user", "meta"]
 
 
 @dataclass
@@ -64,33 +64,73 @@ class MemoryEntry:
     meta: Dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass
+@dataclass(init=False)
 class RewardSignal:
     """
     PersonaOS 完全版のメタ報酬信号。
 
     MetaRewardEngine / ValueDriftEngine / PersonaOS 全体で共通利用する形。
 
-    - global_reward: float — 報酬スカラー（-1.0〜+1.0 を想定）
-    - trait_reward: Optional[TraitVector] — 軸ごとの報酬（使わなければ None）
-    - reason: str — なぜこの報酬が発生したか（タグ）
-    - meta: dict — AEI 側の生データや補足情報
-    - detail: dict — ヒューリスティック内訳など UI 可視化用
+    基本仕様（新）:
+      - value: float                      — 報酬スカラー（-1.0〜+1.0 を想定）
+      - trait_reward: Optional[dict|TraitVector]
+          軸ごとの報酬（使わなければ None）
+      - reason: str                       — なぜこの報酬が発生したか（タグ）
+      - meta: dict                        — AEI 側の生データや補足情報
+          - とくに meta["trait_reward"] に dict を入れてもよい（ValueDrift 互換）
+      - detail: dict                      — ヒューリスティック内訳など UI 可視化用
+
+    互換性:
+      - 旧コードの `RewardSignal(global_reward=...)` も受け付ける。
+      - プロパティ `global_reward` は `value` のエイリアス。
     """
-    global_reward: float
-    trait_reward: Optional[TraitVector] = None
+
+    # 実フィールド（dataclass 用）
+    value: float
+    trait_reward: Optional[Dict[str, float] | TraitVector] = None
     reason: str = ""
     meta: Dict[str, Any] = field(default_factory=dict)
     detail: Dict[str, Any] = field(default_factory=dict)
 
-    # 互換用プロパティ（古い「value」参照を吸収）
-    @property
-    def value(self) -> float:
-        return self.global_reward
+    def __init__(
+        self,
+        value: Optional[float] = None,
+        *,
+        global_reward: Optional[float] = None,
+        trait_reward: Optional[Dict[str, float] | TraitVector] = None,
+        reason: str = "",
+        meta: Optional[Dict[str, Any]] = None,
+        detail: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        新旧両方の呼び出しに対応するコンストラクタ。
 
-    @value.setter
-    def value(self, v: float) -> None:
-        self.global_reward = v
+        OK:
+          RewardSignal(value=0.8, reason="meta_reward")
+          RewardSignal(global_reward=0.8, reason="meta_reward")
+        """
+        # value / global_reward のマージ
+        if value is None and global_reward is None:
+            v = 0.0
+        elif value is not None:
+            v = float(value)
+        else:
+            v = float(global_reward)
+
+        object.__setattr__(self, "value", v)
+        object.__setattr__(self, "trait_reward", trait_reward)
+        object.__setattr__(self, "reason", reason)
+        object.__setattr__(self, "meta", meta or {})
+        object.__setattr__(self, "detail", detail or {})
+
+    # 互換用プロパティ（旧コードが global_reward を参照しても動く）
+    @property
+    def global_reward(self) -> float:
+        return self.value
+
+    @global_reward.setter
+    def global_reward(self, v: float) -> None:
+        object.__setattr__(self, "value", float(v))
 
 
 # ============================================================

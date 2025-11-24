@@ -1,8 +1,8 @@
 # sigmaris_persona_core/persona_modules/intuition_engine.py
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import List, Dict, Any
-import time
 
 from ..types import Message
 from ..config import IntuitionConfig
@@ -11,59 +11,60 @@ from ..config import IntuitionConfig
 @dataclass
 class IntuitionEngine:
     """
-    疑似直観（Pseudo-Intuition）を判定するエンジン。
+    疑似直観（Pseudo-Intuition）エンジン — PersonaOS 完全版 v0.2 対応
 
-    PersonaOS では：
+    PersonaOS.process() 内の利用：
         intuition_info = self.intuition.infer(self.messages)
 
-    返却形式：
+    戻り値：
         {
-          "allow": bool,
-          "reason": str
+            "allow": bool,
+            "reason": str,
         }
-
-    v0.2 仕様のポイント：
-      - コンテキスト量が十分であること
-      - 一定以上の時間スパンで会話が続いていること
-      - 内容が「深層系問い」に該当すること
     """
 
     config: IntuitionConfig
 
-    # ------------------------------------------------------------
-    # Main
-    # ------------------------------------------------------------
+    # ============================================================
+    # PUBLIC API
+    # ============================================================
     def infer(self, messages: List[Message]) -> Dict[str, Any]:
         """
-        メッセージ履歴から疑似直観を発火させるか判定する。
-        PersonaOS の "need_reflection" / "need_introspection" の根拠になる。
+        全メッセージ履歴から「疑似直観」を発火させるか判定する。
+        Reflection / Introspection の起動条件にも関わる。
         """
+
         # --------------------------------------------------------
-        # 0. メッセージが存在しない
+        # 0. 履歴が存在しない
         # --------------------------------------------------------
         if not messages:
             return {"allow": False, "reason": "no_messages"}
 
         # --------------------------------------------------------
-        # 1. コンテキスト量チェック
+        # 1. user メッセージの抽出
         # --------------------------------------------------------
-        total = len(messages)
-        if total < self.config.min_context_size:
+        user_msgs = [m for m in messages if getattr(m, "role", None) == "user"]
+        total = len(user_msgs)
+
+        min_ctx = max(1, int(self.config.min_context_size))
+
+        if total < min_ctx:
             return {
                 "allow": False,
                 "reason": f"context_too_small:{total}",
             }
 
         # --------------------------------------------------------
-        # 2. 時間的スパンチェック
+        # 2. timestamp の整合性チェック
         # --------------------------------------------------------
         timestamps: List[float] = []
-
-        for m in messages:
+        for m in user_msgs:
+            raw = getattr(m, "timestamp", None)
             try:
-                timestamps.append(float(m.timestamp))
+                if raw is not None:
+                    timestamps.append(float(raw))
             except Exception:
-                pass
+                continue
 
         if len(timestamps) < 2:
             return {
@@ -71,32 +72,31 @@ class IntuitionEngine:
                 "reason": "insufficient_timestamp",
             }
 
-        t_min = min(timestamps)
-        t_max = max(timestamps)
-        span = max(0.0, t_max - t_min)
+        span = max(0.0, max(timestamps) - min(timestamps))
+        min_span = max(0.0, float(self.config.min_time_span_sec))
 
-        if span < self.config.min_time_span_sec:
+        if span < min_span:
             return {
                 "allow": False,
                 "reason": f"timespan_short:{span:.2f}",
             }
 
         # --------------------------------------------------------
-        # 3. 内容ベースの深層パターンチェック
+        # 3. 内容ベース（深層パターン）
         # --------------------------------------------------------
-        # latest message に深層質問・自己探求系が含まれるか？
-        last = (messages[-1].content or "").lower()
+        last_msg = user_msgs[-1]
+        content_raw = getattr(last_msg, "content", "") or ""
+        content = content_raw.lower().strip()
 
-        # LLM/人間ハイブリッド環境向けに和英両方をケア
+        # PersonaOS 側で introspection/reflect の根拠に使う深層パターン
         deep_keywords = [
-            # Japanese question patterns
-            "どう思う", "なんで", "理由", "意味", "方向", "変わった", "今の私",
-            "本質", "深い", "正直", "内面",
-            # English patterns
-            "why", "meaning", "reason", "direction", "inner", "core"
+            "どう思う", "なんで", "理由", "意味", "方向", "本質",
+            "変わった", "内面", "深い", "正直",
+            # 英語圏用
+            "why", "meaning", "reason", "direction", "inner", "core",
         ]
 
-        deep_hit = any(k in last for k in deep_keywords)
+        deep_hit = any(k in content for k in deep_keywords)
 
         if not deep_hit:
             return {

@@ -55,19 +55,18 @@ class EmotionCore:
         arousal = (1.0 - calm) * 0.6 + curiosity * 0.4
         arousal = _clamp(arousal, 0.0, 1.0)
 
-        # 「温かさ」: 共感性が高いほど warm 寄り
+        # 「温かさ」: 共感性が高いほど warm 寄り（現状は meta 用）
         warmth = _clamp(empathy, 0.0, 1.0)
 
         # -------------------------
         # 2. temperature 決定
         # -------------------------
         base_t = float(self.config.base_temperature)
-        min_t = float(self.config.min_temperature)
-        max_t = float(self.config.max_temperature)
 
         # arousal が 0.5 より高いなら温度を上げ、低ければ下げる
-        temperature = base_t + (arousal - 0.5) * 0.4
-        temperature = _clamp(temperature, min_t, max_t)
+        raw_temperature = base_t + (arousal - 0.5) * 0.4
+        # 実際のクリップは EmotionConfig.clamp を通す
+        temperature = self.config.clamp(raw_temperature)
 
         # -------------------------
         # 3. top_p 決定
