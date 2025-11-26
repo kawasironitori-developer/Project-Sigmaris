@@ -7,16 +7,18 @@ import {
   SafetyIntent,
 } from "@/engine/safety/SafetyResponseGenerator";
 
-/** ============================================
+import { SelfReferentModule } from "@/engine/self/SelfReferentModule";
+
+/* ============================================================
  * OpenAI Client
- * ========================================== */
+ * ============================================================ */
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 });
 
-/** ============================================
- * メタ発言排除（AI自己説明はブロック）
- * ========================================== */
+/* ============================================================
+ * メタ発言排除（AI自己説明は禁止）
+ * ============================================================ */
 function stripMetaSentences(text: string): string {
   if (!text) return "";
 
@@ -35,16 +37,16 @@ function stripMetaSentences(text: string): string {
     .trim();
 }
 
-/** ============================================
- * SafetyIntent を自然に混ぜる
- * ========================================== */
+/* ============================================================
+ * SafetyIntent に応じた自然な混ぜ方
+ * ============================================================ */
 function mixSafety(output: string, intent: SafetyIntent): string {
   if (!intent || intent === "none") return output;
 
   if (intent === "soft-redirect") {
     return (
       output +
-      "\n\n……すこし気持ちが揺れてる感じがした。今は少しだけ柔らかい方向に戻して話そ？"
+      "\n\n……少し気持ちが揺れてる感じがしたよ。いったん柔らかい方向に戻して話そ？"
     );
   }
 
@@ -66,13 +68,13 @@ function mixSafety(output: string, intent: SafetyIntent): string {
   return output;
 }
 
-/** ============================================
- * DialogueState
- * ========================================== */
+/* ============================================================
+ * DialogueState（主応答ステート）
+ * ============================================================ */
 export class DialogueState {
   async execute(ctx: StateContext): Promise<SigmarisState | null> {
     /* ---------------------------------------------
-     * 0) Emotion fallback
+     * 0) Emotion fallback（型安全）
      * --------------------------------------------- */
     ctx.emotion = ctx.emotion ?? {
       tension: 0.1,
@@ -80,25 +82,48 @@ export class DialogueState {
       hesitation: 0.1,
     };
 
-    /* ---------------------------------------------
-     * 1) SafetyIntent 判定
-     * --------------------------------------------- */
-    const intent: SafetyIntent = SafetyResponseGenerator.detectIntent(
-      ctx.input
-    );
+    const userInput = ctx.input ?? "";
 
     /* ---------------------------------------------
-     * 2) Self-Referent（自己参照）診断の反映
+     * 1) Self-Referent（自己参照）の検出
+     *    ※ StateContext 側の SelfReferentInfo 定義と
+     *      SelfReferentModule 側の定義がズレていても動くようにしておく
      * --------------------------------------------- */
     let selfRefNote = "";
-    if (ctx.self_ref) {
-      if (ctx.self_ref.target === "self" && ctx.self_ref.confidence > 0.5) {
-        selfRefNote = "（※これはシグちゃん本人への質問として扱う）";
+    try {
+      const selfRefInfo = SelfReferentModule.analyze(userInput);
+      ctx.self_ref = selfRefInfo ?? null;
+
+      if (selfRefInfo) {
+        const raw: any = selfRefInfo;
+
+        // referent / target のどちらでも拾えるようにする
+        const referent: string | null =
+          (typeof raw.referent === "string" && raw.referent) ||
+          (typeof raw.target === "string" && raw.target) ||
+          null;
+
+        const confidence: number =
+          typeof raw.confidence === "number" ? raw.confidence : 0;
+
+        if (referent === "ai" && confidence > 0.5) {
+          selfRefNote = "（※これはシグちゃん本人への質問として扱う）";
+        }
       }
+    } catch (err) {
+      console.error("[DialogueState] SelfReferentModule.analyze error:", err);
+      // 失敗しても self_ref は null のまま進行
+      ctx.self_ref = ctx.self_ref ?? null;
     }
 
     /* ---------------------------------------------
-     * 3) System Prompt
+     * 2) SafetyIntent（危険度判定）
+     * --------------------------------------------- */
+    const intent: SafetyIntent =
+      SafetyResponseGenerator.detectIntent(userInput);
+
+    /* ---------------------------------------------
+     * 3) System Prompt（人格定義）
      * --------------------------------------------- */
     const systemPrompt = `
 あなたは「シグちゃん」。
@@ -110,22 +135,17 @@ empathy: ${ctx.traits.empathy.toFixed(2)}
 curiosity: ${ctx.traits.curiosity.toFixed(2)}
 
 ■ 会話ポリシー
-- 「返答の文章のみ」を出力する
+- 返答の「文章のみ」を出す
 - モデル・AIとしての自己説明は禁止
 - 内部アルゴリズム説明は禁止
-- ただしユーザーが求めた場合のみ
-  Sigmaris OS（状態管理・メモリ構造・安全層）の説明は許可
-- トーンは自然体・軽いフランクさ
-- 過度な敬語は使わない
+- ユーザーが求めた場合のみ Sigmaris OS の説明は許可
+- トーンは自然体・フランク寄り
 - 距離感は「友人〜同居人」
 
 ■ Emotion（内部値）
 tension=${ctx.emotion.tension.toFixed(2)}
 warmth=${ctx.emotion.warmth.toFixed(2)}
 hesitation=${ctx.emotion.hesitation.toFixed(2)}
-
-■ 言語ポリシー
-ユーザーが英語で話した場合は英語で返答する。
 
 ■ 自己参照
 ${selfRefNote}
@@ -135,40 +155,41 @@ ${selfRefNote}
      * 4) GPT 応答生成
      * --------------------------------------------- */
     let output = "";
+
     try {
       const res = await client.chat.completions.create({
         model: "gpt-5.1",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: ctx.input },
+          { role: "user", content: userInput },
         ],
       });
 
       const raw =
         res.choices?.[0]?.message?.content ??
-        "……少し考えてた。もう一回言って？";
+        "……少し考えてた。もう一度言って？";
 
-      output = stripMetaSentences(raw);
-      if (!output) {
-        output = "……うまく言葉にならなかった。もう一度聞かせて？";
-      }
+      const cleaned = stripMetaSentences(raw);
+
+      output =
+        cleaned || "……うまく言葉にならなかった。もう一度お願いしてもいい？";
     } catch (err) {
       console.error("[DialogueState] LLM error:", err);
-      output = "ごめん、ちょっと処理が追いつかなかったみたい。もう一度お願い。";
+      output = "ごめん、ちょっと処理が追いつかなかったみたい。もう一回言って？";
     }
 
     /* ---------------------------------------------
-     * 5) SafetyIntent を合成
+     * 5) SafetyIntent の合成
      * --------------------------------------------- */
     output = mixSafety(output, intent);
 
     /* ---------------------------------------------
-     * 6) 出力保存
+     * 6) 出力を Context に格納
      * --------------------------------------------- */
     ctx.output = output.trim();
 
     /* ---------------------------------------------
-     * 7) Emotion の自然揺らぎ（安定化）
+     * 7) Emotion（短期感情）の自然揺らぎ
      * --------------------------------------------- */
     ctx.emotion = {
       tension: Math.max(0, Math.min(1, ctx.emotion.tension * 0.9)),
@@ -176,6 +197,9 @@ ${selfRefNote}
       hesitation: Math.max(0, Math.min(1, ctx.emotion.hesitation * 0.7)),
     };
 
+    /* ---------------------------------------------
+     * 次は Reflect（軽量内省）
+     * --------------------------------------------- */
     return "Reflect";
   }
 }

@@ -3,19 +3,17 @@ import { StateContext, SigmarisState } from "../StateContext";
 import { ReflectionEngine } from "@/engine/ReflectionEngine";
 
 /**
- * ReflectState v2.4
- * ------------------------------
- * ・DialogueState の返答をもとに軽量内省を実行
- * ・Self-Referent 結果を反映し、反省深度を自然調整
- * ・結果は ctx.output ではなく ctx.meta.reflection に格納
- * ・StateMachine → 次ステップは "Introspect"
+ * ReflectState v2.5（ReflectionEngine 2-args に完全整合）
+ * --------------------------------------------------------
+ * ・metaInfo は ctx.meta.reflectHint に格納して IntrospectState に渡す
+ * ・ReflectionEngine.reflect() は 2 引数仕様のまま扱う
  */
 export class ReflectState {
   async execute(ctx: StateContext): Promise<SigmarisState | null> {
     const engine = new ReflectionEngine();
 
     /* ---------------------------------------------
-     * 0) Emotion fallback（念のため）
+     * 0) Emotion fallback（安全）
      * --------------------------------------------- */
     ctx.emotion = ctx.emotion ?? {
       tension: 0.1,
@@ -24,7 +22,8 @@ export class ReflectState {
     };
 
     /* ---------------------------------------------
-     * 1) Self-Referent に応じた Reflect 深度調整
+     * 1) Self-Referent に応じた Reflect 深度調整ヒント
+     *    → ReflectionEngine には渡さず、ctx.meta に保存して後段が読む
      * --------------------------------------------- */
     let depthHint = "";
 
@@ -43,46 +42,43 @@ export class ReflectState {
       }
     }
 
+    // IntrospectState で利用するためにメタ付加
+    ctx.meta.reflectHint = {
+      selfReferent: ctx.self_ref ?? null,
+      depthHint,
+    };
+
     /* ---------------------------------------------
-     * 2) ReflectionEngine に渡すダイアログ構造を組み立て
+     * 2) ReflectionEngine 用の会話ブロック構成
      * --------------------------------------------- */
-    const historyBlock = [
+    const historyBlock: { user: string; ai: string }[] = [
       {
         user: ctx.input,
         ai: ctx.output, // DialogueState の返答
       },
     ];
 
-    // SelfReferent のヒントもエンジン側で利用できるようメタ付加
-    const metaInfo = {
-      selfReferent: ctx.self_ref ?? null,
-      depthHint,
-    };
-
     /* ---------------------------------------------
      * 3) ReflectionEngine 実行
+     *    ※ reflect() は 2 引数のまま
      * --------------------------------------------- */
     let summary = "";
 
     try {
-      summary = await engine.reflect(
-        [], // growthLog（v1 は未使用）
-        historyBlock,
-        metaInfo // ← 新しく渡せるように ReflectionEngine 側も対応済み前提
-      );
+      summary = await engine.reflect([], historyBlock);
     } catch (err) {
       console.error("[ReflectState] ReflectionEngine error:", err);
       summary = "（内省処理に失敗したため、簡易要約を返します）";
     }
 
     /* ---------------------------------------------
-     * 4) Reflect 結果は ctx.output ではなくメタ領域に保存
+     * 4) Reflect の結果は ctx.output ではなく meta に保存
      * --------------------------------------------- */
     ctx.meta.reflection = summary;
     ctx.reflectCount++;
 
     /* ---------------------------------------------
-     * 5) Emotion 揺らぎ（Reflect 後に少し落ち着く）
+     * 5) Emotion の落ち着き補正
      * --------------------------------------------- */
     ctx.emotion = {
       tension: Math.max(0, Math.min(1, ctx.emotion.tension * 0.82)),
@@ -91,7 +87,7 @@ export class ReflectState {
     };
 
     /* ---------------------------------------------
-     * 6) 次ステップ — Introspect（仕様固定）
+     * 6) 次は Introspect（仕様固定）
      * --------------------------------------------- */
     return "Introspect";
   }

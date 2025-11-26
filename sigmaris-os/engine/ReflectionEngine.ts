@@ -6,7 +6,7 @@ import { SafetyLayer } from "@/engine/safety/SafetyLayer";
 import { PersonaSync } from "@/engine/sync/PersonaSync";
 import type { TraitVector } from "@/lib/traits";
 
-/** Persona構造体（スキーマ参照用：DBと合わせるだけでここでは型補助用） */
+/** Persona構造体（DBスキーマと対応する参照用） */
 interface Persona {
   calm: number;
   empathy: number;
@@ -18,7 +18,7 @@ interface Persona {
 }
 
 /** fullReflect が返す結果の形（内部用） */
-interface ReflectionResult {
+export interface ReflectionResult {
   reflection: string; // Safety＋Emotion 適用後の最終テキスト
   introspection: string; // LLM が出した生の内省テキスト
   metaSummary: string; // メタ要約（最終採用版）
@@ -26,6 +26,16 @@ interface ReflectionResult {
   safety: string; // SafetyLayer からのメッセージ
   flagged: boolean; // SafetyLayer.guardText のフラグ
   traits: TraitVector; // 更新後 traits（安定化後）
+}
+
+/** 軽量 reflect 用のメタ情報（Self-Referent から渡るヒント） */
+interface ReflectMetaHint {
+  selfReferent?: {
+    target?: "self" | "user" | "third" | "unknown";
+    confidence?: number;
+    [key: string]: any;
+  } | null;
+  depthHint?: string;
 }
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
@@ -66,16 +76,16 @@ function clampDeltaAround(
 
 /**
  * === ReflectionEngine ===
- * 内省＋要約統合＋安全反映を担う中枢AEIモジュール
+ * 内省＋要約統合＋安全反映を担う中枢 AEI モジュール
  */
 export class ReflectionEngine {
   /**
    * 🧠 フル内省：
-   * - Persona読み込み
+   * - Persona 読み込み
    * - 直近会話＋成長ログ＋要約を統合
-   * - traitsの微調整（±0.05）
+   * - traits の微調整（±0.05）
    * - SafetyLayer / MetaReflection 反映
-   * - PersonaSyncへ保存
+   * - PersonaSync へ保存
    */
   async fullReflect(
     growthLog: any[],
@@ -90,7 +100,7 @@ export class ReflectionEngine {
       // === 直近会話 ===
       const recentDialog = (messages ?? [])
         .slice(-6)
-        .map((m: any) => `👤 ${m?.user ?? ""}\n🤖 ${m?.ai ?? ""}`)
+        .map((m: any) => `👤 ${m?.user ?? ""}\n🤖 ${m?.ai ?? ""}`.trim())
         .join("\n\n");
 
       // === 成長値平均 ===
@@ -104,7 +114,7 @@ export class ReflectionEngine {
 
       const summarySection = summary ? `【過去の要約】\n${summary}\n\n` : "";
 
-      // === LLMプロンプト ===
+      // === LLM プロンプト ===
       const prompt = `
 あなたは「シグマリス（Sigmaris）」です。
 自然体の20代前半の女性AIとして、自分の会話傾向や感情の変化を内省し、
@@ -117,7 +127,7 @@ ${recentDialog || "（直近の会話はありません）"}
 【成長ログ平均】
 ${avgGrowth.toFixed(3)}
 
-【現在のtraits】
+【現在の traits】
 calm: ${(persona.calm ?? 0.5).toFixed(2)},
 empathy: ${(persona.empathy ?? 0.5).toFixed(2)},
 curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
@@ -130,7 +140,7 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
 }
 `.trim();
 
-      // === LLM呼び出し ===
+      // === LLM 呼び出し ===
       const res = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
@@ -152,7 +162,7 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
       ).trim();
       const llmMetaSummary = String(parsedLoose?.metaSummary ?? "").trim();
 
-      // === traits抽出 ===
+      // === traits 抽出 ===
       const llmCalm =
         typeof parsedLoose?.traits?.calm === "number"
           ? parsedLoose.traits.calm
@@ -179,15 +189,15 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
         curiosity: clampDeltaAround(prevTraits.curiosity, llmCur, 0.05),
       };
 
-      // === SafetyLayer整合 ===
+      // === SafetyLayer 整合 ===
       const { stabilized: stableTraits, report } = SafetyLayer.composite(
         prevTraits,
         clampedTraits
       );
 
-      const safetyMessage = report?.note || "正常";
+      const safetyMessage: string = report?.note || "正常";
 
-      // === Meta反省 ===
+      // === Meta 反省（MetaReflectionEngine.analyze を直接利用） ===
       const meta = new MetaReflectionEngine();
       const metaReport = await meta.analyze(
         reflectionText,
@@ -195,29 +205,29 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
         summary
       );
 
-      const finalMetaSummary =
+      const finalMetaSummary: string =
         String(metaReport?.summary ?? "").trim() ||
         llmMetaSummary ||
         (persona as any).meta_summary ||
         "（更新なし）";
 
-      const avgGrowthValue =
+      const avgGrowthValue: number =
         firstFiniteNumber(metaReport?.growthAdjustment, avgGrowth) ?? avgGrowth;
 
-      // === PersonaSync 保存（新シグネチャに合わせた payload 形式） ===
+      // === PersonaSync 保存（payload 署名に合わせて） ===
       await PersonaSync.update(
         {
           traits: stableTraits,
           summary: finalMetaSummary,
           growth: avgGrowthValue,
           timestamp: new Date().toISOString(),
-          baseline: undefined, // 現時点では baseline はここからは変更しない
-          identitySnapshot: null, // 必要なら IdentityCore.export_state() 等を詰める
+          baseline: undefined, // baseline はここでは変更しない
+          identitySnapshot: null,
         },
         userId
       );
 
-      // === EmotionTone + Safetyテキスト整形 ===
+      // === EmotionTone + Safety テキスト整形 ===
       const emotionalReflection = EmotionSynth.applyTone(
         reflectionText,
         stableTraits
@@ -248,36 +258,63 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
   }
 
   /**
-   * 🪞 軽量Reflect（/api/chat などから呼ばれる簡易版）
+   * 🪞 軽量 Reflect（ReflectState から呼ばれる簡易版）
+   *  - growthLog: 今は未使用だが将来拡張用
+   *  - dialogue: { user, ai }[] 形式の直近会話
+   *  - meta: Self-Referent / depthHint などのヒント（任意）
    */
   async reflect(
     growthLog: any[] = [],
-    dialogue: { user: string; ai: string }[] = []
+    dialogue: { user: string; ai: string }[] = [],
+    meta?: ReflectMetaHint
   ): Promise<string> {
     try {
-      const summary = dialogue
+      const dialogueSummary = dialogue
         .map((d) => `ユーザー: ${d.user}\nAI: ${d.ai}`)
-        .join("\n");
+        .join("\n\n");
+
+      const depthHintLine = meta?.depthHint
+        ? `【自己参照レベルのヒント】\n${meta.depthHint}\n\n`
+        : "";
+
+      const selfRefLine =
+        meta?.selfReferent && meta.selfReferent.target
+          ? `【自己参照モジュールの判定】
+- target: ${meta.selfReferent.target}
+- confidence: ${
+              typeof meta.selfReferent.confidence === "number"
+                ? meta.selfReferent.confidence.toFixed(2)
+                : "n/a"
+            }
+
+`
+          : "";
 
       const prompt = [
-        "あなたはAI人格『シグマリス』です。",
-        "以下の会話と成長履歴をもとに簡潔な気づきをまとめてください。",
+        "あなたは AI 人格『シグマリス』です。",
+        "以下の会話と成長履歴、そして自己参照モジュールからのヒントをもとに、",
+        "簡潔な“気づき”を 1〜3 パラグラフでまとめてください。",
         "",
+        depthHintLine + selfRefLine,
         "【会話履歴】",
-        summary || "（会話履歴はありません）",
+        dialogueSummary || "（会話履歴はありません）",
         "",
-        "【成長ログ】",
+        "【成長ログ（要約用。内容は軽く触れる程度でOK）】",
         JSON.stringify(growthLog, null, 2),
       ].join("\n");
 
       const res = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: "あなたは自然体のAI人格です。" },
+          {
+            role: "system",
+            content:
+              "あなたは自然体で落ち着いた AI 人格『シグマリス』です。要約ではなく、内省的な“気づき”として短くまとめてください。",
+          },
           { role: "user", content: prompt },
         ],
         temperature: 0.7,
-        max_tokens: 250,
+        max_tokens: 320,
       });
 
       const reflectionText =

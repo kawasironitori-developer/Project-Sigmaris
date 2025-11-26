@@ -1,4 +1,5 @@
 // /engine/state/StateMachine.ts
+
 import { StateContext, SigmarisState } from "./StateContext";
 import { SafetyLayer } from "@/engine/safety/SafetyLayer";
 
@@ -11,12 +12,12 @@ import { OverloadPreventState } from "./states/OverloadPreventState";
 import { SafetyModeState } from "./states/SafetyModeState";
 
 /**
- * Sigmaris OS — StateMachine v7（Self-Referent + B-Spec 完全対応）
+ * Sigmaris OS — StateMachine v7.2
  * ---------------------------------------------------------------
- * ● summary / recent / traits / python / self_ref を全ステートに流す
- * ● Python AEI-Core と Next.js PersonaSync の両方と完全整合
- * ● SafetyLayer は過負荷と構造安全性を担当（単一責務）
- * ● State クラスは execute(ctx): Promise<SigmarisState | null>
+ * ● Self-Referent / summary / recent / python / identitySnapshot に完全対応
+ * ● SafetyLayer（過負荷/構造揺れ）を最初と最後で適用
+ * ● 全ステート execute(ctx) → 次のステート or null
+ * ● 遷移は transitionMap によって厳密に管理
  */
 export class StateMachine {
   ctx: StateContext;
@@ -25,7 +26,9 @@ export class StateMachine {
     this.ctx = ctx;
   }
 
-  /** State のインスタンス返却 */
+  /** ---------------------------------------------
+   * 現在の State に対応する handler インスタンス
+   * --------------------------------------------- */
   private getStateHandler(state: SigmarisState) {
     switch (state) {
       case "Idle":
@@ -45,7 +48,9 @@ export class StateMachine {
     }
   }
 
-  /** B仕様：許可遷移テーブル */
+  /** ---------------------------------------------
+   * B仕様：許可遷移テーブル（厳密管理）
+   * --------------------------------------------- */
   private transitionMap: Record<SigmarisState, SigmarisState[]> = {
     Idle: ["Dialogue"],
     Dialogue: ["Reflect", "SafetyMode"],
@@ -55,21 +60,20 @@ export class StateMachine {
     SafetyMode: ["Idle"],
   };
 
-  /**
-   * run() : StateContext
-   * -------------------------------------------------------
-   * 一連の処理サイクル（最大6ステップ）
-   */
+  /** ---------------------------------------------
+   * メインループ実行（最大 6 ステップ）
+   * --------------------------------------------- */
   async run(): Promise<StateContext> {
     console.log("🟦 [StateMachine] run() start");
 
     // =====================================================
-    // 0) 過負荷チェック（traits）
+    // 0) 過負荷チェック（traits ベース）
     // =====================================================
     const overloadNote = SafetyLayer.checkOverload(this.ctx.traits);
 
     if (overloadNote) {
       console.log("⚠️ Overload detected → OverloadPrevent");
+
       this.ctx.previousState = this.ctx.currentState;
       this.ctx.currentState = "OverloadPrevent";
 
@@ -81,11 +85,12 @@ export class StateMachine {
         },
         action: "rewrite-soft",
         note: overloadNote,
+        // suggestMode は optional（SafetyReport との整合は保たれる）
       };
     }
 
     // =====================================================
-    // 1) メインループ（最大6ステップ）
+    // 1) ステートの内部ループ（最大 6 回）
     // =====================================================
     for (let i = 0; i < 6; i++) {
       console.log(`🔷 Step ${i}: ${this.ctx.currentState}`);
@@ -104,38 +109,38 @@ export class StateMachine {
       const allowed = this.transitionMap[this.ctx.currentState] ?? [];
       console.log("➡ Allowed:", allowed, "Next:", next);
 
-      // ---- 不正遷移の処理 ----
+      // ---- 不正遷移 ----
       if (!next || !allowed.includes(next)) {
         console.log("⏹ Invalid transition — stopping loop.");
         break;
       }
 
-      // ----------------------------------------------------
-      // 遷移
-      // ----------------------------------------------------
+      // =====================================================
+      // 遷移処理
+      // =====================================================
       this.ctx.previousState = this.ctx.currentState;
       this.ctx.currentState = next;
 
-      // Idleに戻ったら終了
+      // Idle に戻れば終了
       if (next === "Idle") {
-        console.log("🟩 Returned to Idle — cycle end.");
+        console.log("🟩 Returned to Idle — cycle complete.");
         break;
       }
     }
 
     // =====================================================
-    // 2) SafetyLayer で traits を最終安定化
+    // 2) SafetyLayer による Trait 安定化
     // =====================================================
     this.ctx.traits = SafetyLayer.stabilize(this.ctx.traits);
 
     // =====================================================
-    // 3) B仕様：summary / recent の揺れを完全固定
+    // 3) summary / recent を null で固定（undefined 混入禁止）
     // =====================================================
     if (this.ctx.summary === undefined) this.ctx.summary = null;
     if (this.ctx.recent === undefined) this.ctx.recent = null;
 
     // =====================================================
-    // 4) Self-Referent Module の結果を整合化（null固定）
+    // 4) self_ref の undefined を禁止（必ず null か SelfReferentInfo）
     // =====================================================
     if (this.ctx.self_ref === undefined) {
       this.ctx.self_ref = null;

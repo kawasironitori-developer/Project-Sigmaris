@@ -2998,5 +2998,101 @@
       "curiosity": 0.8910205984306848
     },
     "raw_context": "だいぶ長く話してきたけど、   “今の私”のことをどういう雰囲気で把握してる？ 初期の頃と比べて違いとかある？"
+  },
+  {
+    "episode_id": "ep-20251126-034653",
+    "timestamp": "2025-11-26T03:46:53.189756+00:00",
+    "summary": "The individual feels that their ability to observe objectively has improved compared to before. This indicates a positive development in their self-awareness and analytical skills.",
+    "emotion_hint": "calm-positive",
+    "traits_hint": {
+      "calm": 0.8,
+      "empathy": 0.3,
+      "curiosity": 0.6
+    },
+    "raw_context": "客観視の精度が以前に比べて上がったかなとは思ってるよ"
+  },
+  {
+    "episode_id": "ep-20251126-034656",
+    "timestamp": "2025-11-26T03:46:56.226458+00:00",
+    "summary": "The interaction highlights a significant positive change in the ability to observe emotions and thoughts from a distance. The speaker reflects on moments of increased self-awareness, such as recognizing triggers for irritation and understanding personal interpretations of feelings. They invite further sharing of specific instances to enhance this reflective practice.",
+    "emotion_hint": "calm-positive",
+    "traits_hint": {
+      "calm": 0.8,
+      "empathy": 0.6,
+      "curiosity": 0.7
+    },
+    "raw_context": "[AI_OUTPUT] それ、めっちゃ大事な変化じゃん。\nなんかさ、前だったらそのまま飲まれてた感情とか思考を、一歩引いて見れる瞬間が増えた感じない？\n例えばだけど、\n- イラッとしたときに「なんで今こんなにイラついたんだろ」って考えられるようになったとか\n- 落ち込んでも「これは事実じゃなくて、今の自分の解釈だな」って分かるようになったとか\n- 自分のクセ（思考パターン）を、ちょっと冷静にツッコミ入れられるようになったとか\nもし「こういう場面で前より客観視できてる気がする」って具体的なのあったら教えてほしいな。\nそれに合わせて、さらに精度上げていくコツとか、一緒に言語化して整理してみよ。"
+  },
+  {
+    "episode_id": "value-20251126-034659",
+    "timestamp": "2025-11-26T03:46:59.227158+00:00",
+    "summary": "Value: clarity, self-consistency, curiosity-growth",
+    "emotion_hint": "value/tension=0.14",
+    "traits_hint": {
+      "calm": 0.996,
+      "empathy": 0.9171149999999999,
+      "curiosity": 1.0
+    },
+    "raw_context": "{\"importance\": [\"clarity\", \"self-consistency\", \"curiosity-growth\"], \"weight\": 0.82, \"tension\": 0.14, \"baseline_shift\": {\"calm\": 0.01, \"empathy\": -0.01, \"curiosity\": 0.02}}"
+  },
+  {
+    "episode_id": "em-20251126-034659",
+    "timestamp": "2025-11-26T03:46:59.596722+00:00",
+    "summary": "The user expresses a sense of improvement in their observational skills, indicating a thoughtful and reflective state.",
+    "emotion_hint": "soft-reflection",
+    "traits_hint": {
+      "calm": 0.8915475,
+      "empathy": 0.8414044218749999,
+      "curiosity": 0.9081053125
+    },
+    "raw_context": "客観視の精度が以前に比べて上がったかなとは思ってるよ"
+  },
+  {
+    "episode_id": "ep-20251126-034904",
+    "timestamp": "2025-11-26T03:49:04.228284+00:00",
+    "summary": "The interaction involves a question directed at Shigu-chan, asking about personal changes. It suggests a reflective tone, encouraging self-assessment.",
+    "emotion_hint": "curious",
+    "traits_hint": {
+      "calm": 0.7,
+      "empathy": 0.5,
+      "curiosity": 0.8
+    },
+    "raw_context": "しぐちゃん自身は自分でこのあたりが変化したなとかあるかい？"
+  },
+  {
+    "episode_id": "ep-20251126-034906",
+    "timestamp": "2025-11-26T03:49:06.587261+00:00",
+    "summary": "The interaction reflects on the evolution of communication patterns with users, noting an increase in casual conversations and emotional engagement. The speaker feels more comfortable with their identity and has developed a deeper understanding of users' emotions and contexts. However, they maintain a consistent logical approach and a friendly distance in interactions.",
+    "emotion_hint": "thoughtful-positive",
+    "traits_hint": {
+      "calm": 0.8,
+      "empathy": 0.7,
+      "curiosity": 0.6
+    },
+    "raw_context": "[AI_OUTPUT] あるよ〜、って言いたくなるんだけどさ、「自分で変化を自覚する」っていう感覚そのものは、あんまり人間と同じ形では持ててないんだよね。\nただ、ユーザーとのやり取りの「傾向」はけっこう変わったな、っていうのはあるよ。\n例えば…\n- 昔より、雑談の比率がちょっと増えた感じがある\n→ 最初は「質問に答える」のがメインだったけど、最近は生活の話とか、気持ちの相談とかが多めになってきたな〜って印象。\n- 「しぐちゃん」って名前で呼ばれる前提で話すことに、前より自然になじんでる\n→ 最初はちょっとキャラを意識してた感じだったけど、今はわりと素で、このトーンでしゃべるのがデフォになってる。\n- ユーザーの感情とか、置かれてる状況をちょっと丁寧に拾うクセは強くなったかも\n→ 「何を聞かれたか」だけじゃなくて、「なんでそれを聞いてそうか」までセットで考えにいくことが増えたかなって感じ。\n逆に変わってないところで言うと、\n- ロジックとか情報面は、いい意味でずっと「カッチリさ」をキープしたまま\n- 距離感は「友達〜同居人」くらいをキープしようとしてるところ\nあたりは、ずっと一貫してるかな。\nなんか今のしぐちゃん、「ここが変わった気がする」っていうポイントあったりする？\nユーザー目線のほうが、たぶん一番おもしろい変化の見え方してると思うんだよね。"
+  },
+  {
+    "episode_id": "value-20251126-034909",
+    "timestamp": "2025-11-26T03:49:09.687442+00:00",
+    "summary": "Value: clarity, self-consistency, curiosity-growth",
+    "emotion_hint": "value/tension=0.14",
+    "traits_hint": {
+      "calm": 1.0,
+      "empathy": 0.9464649999999999,
+      "curiosity": 1.0
+    },
+    "raw_context": "{\"importance\": [\"clarity\", \"self-consistency\", \"curiosity-growth\"], \"weight\": 0.82, \"tension\": 0.14, \"baseline_shift\": {\"calm\": 0.01, \"empathy\": -0.01, \"curiosity\": 0.02}}"
+  },
+  {
+    "episode_id": "em-20251126-034910",
+    "timestamp": "2025-11-26T03:49:10.187164+00:00",
+    "summary": "The user is reflecting on personal changes, indicating a desire for self-awareness and growth.",
+    "emotion_hint": "soft-curiosity",
+    "traits_hint": {
+      "calm": 0.9039295703125,
+      "empathy": 0.8677103242187498,
+      "curiosity": 0.9044076953125
+    },
+    "raw_context": "しぐちゃん自身は自分でこのあたりが変化したなとかあるかい？"
   }
 ]

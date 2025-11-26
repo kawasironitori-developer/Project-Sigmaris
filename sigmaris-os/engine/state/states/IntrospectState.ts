@@ -5,13 +5,7 @@ import { MetaReflectionEngine } from "@/engine/meta/MetaReflectionEngine";
 import type { TraitVector } from "@/lib/traits";
 
 /**
- * IntrospectState v2.6
- * ----------------------------------------------
- * ・ReflectionState の summary をもとに deeper check（階層2）
- * ・Self-Referent の結果を利用して introspection 深度を動的変更
- * ・MetaReflectionEngine で人格軌道（identity continuity）に寄与
- * ・TraitVector を安全にマージ
- * ・最終的に "Idle" へ戻す
+ * IntrospectState v3.3（MetaReflectionEngine.run の型と完全整合）
  */
 export class IntrospectState {
   async execute(ctx: StateContext): Promise<SigmarisState | null> {
@@ -19,65 +13,90 @@ export class IntrospectState {
     const meta = new MetaReflectionEngine();
 
     /* ---------------------------------------------
-     * 0) Emotion fallback（念のため）
+     * 0) Emotion fallback
      * --------------------------------------------- */
-    ctx.emotion = ctx.emotion ?? {
+    ctx.emotion ??= {
       tension: 0.1,
       warmth: 0.2,
       hesitation: 0.1,
     };
 
     /* ---------------------------------------------
-     * 1) Self-Referent に基づく introspection depth 設定
+     * 1) ReflectState → IntrospectState の hint
      * --------------------------------------------- */
+    const reflectHint = (ctx.meta?.reflectHint ?? null) as {
+      selfReferent?: {
+        target?: "self" | "user" | "third" | "unknown";
+        confidence?: number;
+      } | null;
+      depthHint?: string;
+    } | null;
+
     let depthHint: "self" | "user" | "third" | "neutral" = "neutral";
 
-    if (ctx.self_ref) {
-      const r = ctx.self_ref;
-      if (r.target === "self" && r.confidence > 0.6) depthHint = "self";
-      else if (r.target === "user" && r.confidence > 0.4) depthHint = "user";
+    if (reflectHint?.selfReferent) {
+      const r = reflectHint.selfReferent;
+      if (r.target === "self" && r.confidence! > 0.6) depthHint = "self";
+      else if (r.target === "user" && r.confidence! > 0.4) depthHint = "user";
       else if (r.target === "third") depthHint = "third";
     }
 
     /* ---------------------------------------------
-     * 2) IntrospectionEngine 実行（階層2）
+     * 2) IntrospectionEngine（階層2）
      * --------------------------------------------- */
+    const baseInput =
+      (typeof ctx.meta?.reflection === "string" && ctx.meta.reflection) ||
+      ctx.output ||
+      ctx.input ||
+      "";
+
     let ires: { output: string; updatedTraits: TraitVector };
 
     try {
-      const res = await introspector.run(ctx.meta.reflection, ctx.traits, {
+      const res = await introspector.run(baseInput, ctx.traits, {
+        message: ctx.input ?? "",
+        reflection:
+          typeof ctx.meta?.reflection === "string"
+            ? ctx.meta.reflection
+            : undefined,
+        contextSummary:
+          typeof ctx.summary === "string" ? ctx.summary : undefined,
         depth: depthHint,
       });
 
       ires = {
-        output: res.output ?? ctx.meta.reflection ?? "",
+        output: res.output ?? baseInput,
         updatedTraits: res.updatedTraits ?? ctx.traits,
       };
     } catch (err) {
       console.error("[IntrospectState] introspection failed:", err);
       ires = {
-        output: ctx.meta.reflection ?? "",
+        output: baseInput,
         updatedTraits: ctx.traits,
       };
     }
 
     /* ---------------------------------------------
-     * 3) Meta-ReflectionEngine 実行（階層3）
+     * 3) MetaReflectionEngine（階層3）
+     *    run(introspected, traits, options?)
      * --------------------------------------------- */
     let mres: { output: string; updatedTraits: TraitVector };
 
     try {
+      const summary =
+        typeof ctx.meta?.reflection === "string"
+          ? ctx.meta.reflection
+          : undefined;
+
+      const metaOptions = summary !== undefined ? { summary } : undefined;
+
       const res = await meta.run(
         {
           output: ires.output,
           updatedTraits: ires.updatedTraits,
         },
         ctx.traits,
-        {
-          selfReferent: ctx.self_ref,
-          depth: depthHint,
-          reflectCount: ctx.reflectCount,
-        }
+        metaOptions // ← string ではなく { summary } に包んだ
       );
 
       mres = {
@@ -93,13 +112,13 @@ export class IntrospectState {
     }
 
     /* ---------------------------------------------
-     * 4) 内部サマリー保存（UI 向け）
+     * 4) 内部サマリー保存
      * --------------------------------------------- */
     ctx.meta.introspection = ires.output;
     ctx.meta.metaReflection = mres.output;
 
     /* ---------------------------------------------
-     * 5) Traits の安全マージ（人格変動）
+     * 5) Traits 更新
      * --------------------------------------------- */
     ctx.traits = {
       calm: Number(mres.updatedTraits.calm.toFixed(4)),
@@ -110,7 +129,7 @@ export class IntrospectState {
     ctx.reflectCount = 0;
 
     /* ---------------------------------------------
-     * 6) Emotion modulation（階層3後の安定）
+     * 6) Emotion 調整
      * --------------------------------------------- */
     ctx.emotion = {
       tension: Math.max(0, Math.min(1, ctx.emotion.tension * 0.72)),
@@ -118,9 +137,6 @@ export class IntrospectState {
       hesitation: Math.max(0, Math.min(1, ctx.emotion.hesitation * 0.9)),
     };
 
-    /* ---------------------------------------------
-     * 7) 次ステップ — Idle
-     * --------------------------------------------- */
     return "Idle";
   }
 }

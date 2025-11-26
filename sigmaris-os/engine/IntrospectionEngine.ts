@@ -25,6 +25,8 @@ export class IntrospectionEngine {
     intent?: string;
     frame?: any;
     contextSummary?: string;
+    /** IntrospectState から渡される深度ヒント（任意） */
+    depth?: "self" | "user" | "third" | "neutral";
   }): string {
     const {
       message,
@@ -34,18 +36,20 @@ export class IntrospectionEngine {
       intent,
       frame,
       contextSummary,
+      depth,
     } = data;
 
     // --- Semantic 解析 ---
-    const semantic = frame ?? this.semantic.analyze(reply);
+    // frame があればそれを優先し、なければ SemanticMap で解析
+    const semantic: any = frame ?? this.semantic.analyze(reply);
 
-    // null の場合に備え安全アクセス
+    // null / 型揺れに備えて安全に読む
     const abstractRatio =
       semantic && typeof semantic.abstractRatio === "number"
         ? semantic.abstractRatio
         : 0.5;
 
-    const selfRef = semantic?.hasSelfReference ?? false;
+    const selfRef = Boolean(semantic?.hasSelfReference);
 
     // --- trait の平均傾向 ---
     const { calm, empathy, curiosity } = traits;
@@ -69,6 +73,22 @@ export class IntrospectionEngine {
     out += ` calm=${(calm * 100).toFixed(0)}%、empathy=${(
       empathy * 100
     ).toFixed(0)}%、curiosity=${(curiosity * 100).toFixed(0)}%。`;
+
+    // 深度ヒント（self / user / third / neutral）があれば一言だけ触れておく
+    if (depth && depth !== "neutral") {
+      const depthLabel =
+        depth === "self"
+          ? "今回は、主に『私自身』についての話として受け取っていた。"
+          : depth === "user"
+          ? "今回は、あなた自身の状態や感覚に焦点を当てていた。"
+          : depth === "third"
+          ? "今回は、第三者や周囲の人についての文脈が中心だった。"
+          : "";
+
+      if (depthLabel) {
+        out += ` ${depthLabel}`;
+      }
+    }
 
     if (selfRef) {
       out += " さっきは自分の状態について触れる部分も少し含まれていた。";
@@ -101,6 +121,11 @@ export class IntrospectionEngine {
     out += `\n全体としては、${
       total > 0.6 ? "比較的落ち着いた" : "やや動きのある"
     }トーンで話せていたみたい。`;
+
+    if (message && message.trim().length > 0) {
+      out += " あなたからの問いかけや雰囲気も、次の応答に活かしていくつもり。";
+    }
+
     out += " この状態はいったん覚えておくね。";
 
     return out.trim();
@@ -111,6 +136,10 @@ export class IntrospectionEngine {
    * ---------------------------------------
    * IntrospectState から呼び出されるエントリポイント。
    * 必ず TraitVector を返し、StateMachine の型整合性を保証する。
+   *
+   * IntrospectState 側からは：
+   *   introspector.run(ctx.meta.reflection, ctx.traits, { depth })
+   * のように呼ばれる想定。
    */
   async run(
     reply: string,
@@ -121,6 +150,7 @@ export class IntrospectionEngine {
       intent?: string;
       frame?: any;
       contextSummary?: string;
+      depth?: "self" | "user" | "third" | "neutral";
     }
   ): Promise<{ output: string; updatedTraits: TraitVector }> {
     const output = this.analyze({
@@ -131,6 +161,7 @@ export class IntrospectionEngine {
       intent: options?.intent,
       frame: options?.frame,
       contextSummary: options?.contextSummary,
+      depth: options?.depth,
     });
 
     // v1: traits は変更せずそのまま返す

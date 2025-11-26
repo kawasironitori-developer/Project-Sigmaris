@@ -1,61 +1,77 @@
 // /engine/state/states/OverloadPreventState.ts
 import { StateContext, SigmarisState } from "../StateContext";
 
+/**
+ * OverloadPreventState v3.0（完全整合版）
+ * -------------------------------------------------------
+ * ・SafetyLayer の過負荷判定後に入る回復ステート
+ * ・Emotion / Traits を緩やかに安定化
+ * ・reflectHint / meta 情報を安全にリセット
+ * ・回復条件成立で Dialogue 復帰
+ * ・reflectCount による無限ループ防止
+ */
 export class OverloadPreventState {
   async execute(ctx: StateContext): Promise<SigmarisState | null> {
-    /* ---------------------------------------------
-     * 0) Emotion フォールバック
-     * --------------------------------------------- */
-    ctx.emotion = ctx.emotion ?? {
-      tension: 0.2,
-      warmth: 0.4,
-      hesitation: 0.2,
-    };
-
-    /* ---------------------------------------------
-     * 1) オーバーロード抑制メッセージ
-     * --------------------------------------------- */
-    ctx.output =
-      "（負荷調整モード）\nちょっと処理を落としてるよ。軽めに話しながら整えていくね。";
-
-    /* ---------------------------------------------
-     * 2) Traits（性格ベクトル）の回復
-     * --------------------------------------------- */
-    ctx.traits = {
-      calm: Math.min(1, ctx.traits.calm + 0.05), // 冷静さ回復
-      empathy: Math.min(1, ctx.traits.empathy + 0.01), // 少しだけ共感力上昇
-      curiosity: Math.max(0, ctx.traits.curiosity - 0.02), // 過剰探索 → 抑制
-    };
-
-    /* ---------------------------------------------
-     * 3) Emotion（短期感情）の調整
-     * --------------------------------------------- */
-    ctx.emotion = {
-      tension: Math.max(0, ctx.emotion.tension * 0.5), // 緊張が半減
-      warmth: Math.max(0, ctx.emotion.warmth * 0.95), // 温かさは少し沈静
-      hesitation: Math.min(1, ctx.emotion.hesitation + 0.05), // 迷いは少し増える
-    };
-
-    /* ---------------------------------------------
-     * 4) 回復判定 → Dialogue に戻す
-     * calm が 0.45 を超えれば「安全ライン」
-     * --------------------------------------------- */
-    if (ctx.traits.calm > 0.45) {
-      return "Dialogue";
+    /* ----------------------------------------------------
+     * 0) Emotion fallback（型安全）
+     * ---------------------------------------------------- */
+    if (!ctx.emotion) {
+      ctx.emotion = {
+        tension: 0.25,
+        warmth: 0.35,
+        hesitation: 0.2,
+      };
     }
 
-    /* ---------------------------------------------
-     * 5) 無限ループ防止（安全ガード）
-     *    reflectCount を利用して 5 回以上続いたら強制解除
-     * --------------------------------------------- */
-    if (ctx.reflectCount > 5) {
+    /* ----------------------------------------------------
+     * 1) Safety モード出力
+     * ---------------------------------------------------- */
+    ctx.output =
+      "（負荷調整モード）\n処理を少し落としてるよ。軽いペースで整えていくね。";
+
+    /* ----------------------------------------------------
+     * 2) reflect 周辺のヒントは必ずリセット
+     * ---------------------------------------------------- */
+    if (!ctx.meta) ctx.meta = {};
+    ctx.meta.reflectHint = null;
+
+    /* ----------------------------------------------------
+     * 3) Traits（人格軌道）の安定化
+     * ---------------------------------------------------- */
+    ctx.traits = {
+      calm: Math.min(1, ctx.traits.calm + 0.06),
+      empathy: Math.min(1, ctx.traits.empathy + 0.02),
+      curiosity: Math.max(0, ctx.traits.curiosity - 0.03),
+    };
+
+    /* ----------------------------------------------------
+     * 4) Emotion の安定化（tension を大きく減衰）
+     * ---------------------------------------------------- */
+    ctx.emotion = {
+      tension: Math.max(0, ctx.emotion.tension * 0.45),
+      warmth: Math.max(0, Math.min(1, ctx.emotion.warmth * 0.96)),
+      hesitation: Math.max(0, Math.min(1, ctx.emotion.hesitation + 0.04)),
+    };
+
+    /* ----------------------------------------------------
+     * 5) 回復判定：calm > 0.48 → Dialogue に復帰
+     * ---------------------------------------------------- */
+    if (ctx.traits.calm > 0.48) {
       ctx.reflectCount = 0;
       return "Dialogue";
     }
 
-    /* ---------------------------------------------
-     * 6) 継続
-     * --------------------------------------------- */
+    /* ----------------------------------------------------
+     * 6) 無限ループ防止
+     * ---------------------------------------------------- */
+    if (ctx.reflectCount > 4) {
+      ctx.reflectCount = 0;
+      return "Dialogue";
+    }
+
+    /* ----------------------------------------------------
+     * 7) 継続（次の OverloadPrevent サイクルへ）
+     * ---------------------------------------------------- */
     ctx.reflectCount++;
     return "OverloadPrevent";
   }

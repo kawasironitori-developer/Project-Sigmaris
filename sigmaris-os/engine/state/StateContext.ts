@@ -7,16 +7,16 @@ import { SafetyReport } from "@/types/safety";
  * --------------------------------------------- */
 export interface SelfReferentInfo {
   /** 今回の発話が「誰について語られているか」 */
-  target: "self" | "user" | "third" | "unknown";
+  target: "self" | "ai" | "user" | "third" | "unknown";
 
   /** 自己参照性の強度（0.0〜1.0） */
   confidence: number;
 
-  /** 検知した根拠（キーフレーズ等） */
+  /** 検知した根拠（トークン/語彙/構文） */
   cues: string[];
 
-  /** モジュール内部での分類理由（任意） */
-  note?: string;
+  /** モジュール内部での補足理由（必ず存在） */
+  note: string;
 }
 
 /* ---------------------------------------------
@@ -40,55 +40,63 @@ export interface EmotionState {
 }
 
 /* ---------------------------------------------
- * StateContext（全ステート共通の中核データ）
+ * StateContext（ステートマシン共通データ）
  * --------------------------------------------- */
 export interface StateContext {
+  /** 入力テキスト */
   input: string;
+
+  /** DialogueState が出した応答 */
   output: string;
 
+  /** 現在のステート */
   currentState: SigmarisState;
+
+  /** ひとつ前のステート */
   previousState: SigmarisState | null;
 
-  /** Trait（Sigmaris-Persona 標準仕様） */
+  /** Trait（AI人格の性質ベクトル） */
   traits: TraitVector;
 
-  /** Emotion（optional） */
+  /** Emotion（短期揺らぎ） */
   emotion?: EmotionState;
 
-  /** Reflect / Dialogue の回数等 */
+  /** 内省回数（Reflect / Introspect で使用） */
   reflectCount: number;
+
+  /** API / LLM 使用トークン */
   tokenUsage: number;
 
-  /** Safety Report（optional） */
+  /** Safety 層の最新レポート */
   safety?: SafetyReport;
 
-  /** ループ時間 */
+  /** ステート遷移時間（ミリ秒） */
   timestamp: number;
 
-  /** session ID（route.ts で付与） */
+  /** sessionId（route.ts にて割当） */
   sessionId: string;
 
-  /** 旧会話要約（route.ts → StateMachine） */
+  /** 旧会話要約（Meta層が利用） */
   summary: string | null;
 
-  /** 直近の会話ログ（useSigmarisChat → route.ts） */
+  /** 直近会話ログ（Next.js → Nodeルートから受取） */
   recent: any[] | null;
 
-  /** Python AEI-Core 側の Identity Snapshot */
+  /** Python AEI-Core 側 Identity Snapshot */
   identitySnapshot?: any;
 
-  /** Python AEI-Core のレスポンス格納 */
+  /** Python AEI-Core の直接レスポンス */
   python?: Record<string, any>;
 
-  /** その他 StateMachine 内部用メタ情報 */
+  /** 各ステート内部メタ情報 */
   meta: Record<string, any>;
 
-  /** Self-Referent Module（自己参照モジュール）の診断情報 */
+  /** Self-Referent Module（自己参照推論）結果 */
   self_ref: SelfReferentInfo | null;
 }
 
 /* ---------------------------------------------
- * 初期化コンテキスト
+ * 初期化コンテキスト（Sigmaris OS 統一仕様）
  * --------------------------------------------- */
 export function createInitialContext(): StateContext {
   return {

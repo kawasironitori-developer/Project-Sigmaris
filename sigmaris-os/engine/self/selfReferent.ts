@@ -1,29 +1,21 @@
 // /engine/self/selfReferent.ts
 
+import type { SelfReferentInfo } from "@/engine/state/StateContext";
+
 /**
- * Self-Referent Module (v2.1)
+ * Self-Referent Module (v3)
  * -----------------------------------------
- * 「誰について語られているか」の高精度判定を行う。
- * - Sigmaris 自身
- * - ユーザー本人
- * - 第三者
- * - 判定不能
- *
- * StateContext.self_ref と完全互換。
+ * 「誰について語られているか」を判定して SelfReferentInfo を返す。
+ * - target: "self" | "user" | "third" | "unknown"
+ * - confidence: 0.0〜1.0
+ * - cues: 検知したキーワード
+ * - note: 判定理由
  */
-
-export interface SelfRefResult {
-  target: "self" | "user" | "third" | "unknown";
-  confidence: number; // 0.0〜1.0
-  cues: string[];
-  note: string;
-}
-
 export class SelfReferentModule {
   /* ============================================================
    * analyze() — メイン判定
    * ============================================================ */
-  static analyze(text: string): SelfRefResult {
+  static analyze(text: string): SelfReferentInfo {
     if (!text || text.trim().length === 0) {
       return this.empty("Empty input.");
     }
@@ -31,7 +23,7 @@ export class SelfReferentModule {
     const lowered = text.toLowerCase();
 
     // ------------------------------------------
-    // 1) Cue sets（出現したら強いシグナルになる単語）
+    // 1) Cue sets（出現したらシグナルになる単語）
     // ------------------------------------------
     const selfCues = [
       "you",
@@ -78,11 +70,9 @@ export class SelfReferentModule {
     const foundThird = thirdCues.filter((c) => lowered.includes(c));
 
     // ------------------------------------------
-    // 3) 誤爆防止（重要）
+    // 3) 誤爆防止
     // ------------------------------------------
-    // 例：「君ってどう思う？」など通常会話の “呼びかけ” はスコアを下げる
     const isQuestion = lowered.endsWith("?") || lowered.includes("？");
-
     const softenFactor = isQuestion ? 0.6 : 1.0;
 
     const scoreSelf = foundSelf.length * 0.5 * softenFactor;
@@ -102,7 +92,6 @@ export class SelfReferentModule {
     // ------------------------------------------
     // 4) 最終判定
     // ------------------------------------------
-    // Self のほうが明確に優位
     if (scoreSelf > scoreUser && scoreSelf > scoreThird && scoreSelf > 0) {
       return {
         target: "self",
@@ -112,7 +101,6 @@ export class SelfReferentModule {
       };
     }
 
-    // User のほうが明確に優位
     if (scoreUser > scoreSelf && scoreUser > scoreThird && scoreUser > 0) {
       return {
         target: "user",
@@ -122,7 +110,6 @@ export class SelfReferentModule {
       };
     }
 
-    // Third-person
     if (scoreThird > 0) {
       return {
         target: "third",
@@ -139,7 +126,7 @@ export class SelfReferentModule {
   /* ============================================================
    * empty()
    * ============================================================ */
-  private static empty(note: string): SelfRefResult {
+  private static empty(note: string): SelfReferentInfo {
     return {
       target: "unknown",
       confidence: 0,

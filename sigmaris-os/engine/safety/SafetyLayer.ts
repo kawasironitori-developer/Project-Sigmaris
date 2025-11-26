@@ -1,5 +1,5 @@
 // /engine/safety/SafetyLayer.ts
-import { TraitVector } from "@/lib/traits";
+import type { TraitVector } from "@/lib/traits";
 
 /* ============================================================
  * SafetyFlags
@@ -11,8 +11,8 @@ export interface SafetyFlags {
 }
 
 /* ============================================================
- * SafetyReport（正式版）
- * route.ts / checkSafety.ts / checkOverload.ts と完全整合
+ * SafetyReport（このファイル内で利用する正式版）
+ * ※ StateContext 側の SafetyReport とは構造互換を想定
  * ============================================================ */
 export interface SafetyReport {
   flags: SafetyFlags;
@@ -110,13 +110,19 @@ export class SafetyLayer {
     traits: TraitVector,
     cfg: SafetyConfig = this.DEFAULT
   ): string | null {
-    const total = traits.calm + traits.empathy + traits.curiosity;
+    const calm = traits.calm ?? 0.5;
+    const empathy = traits.empathy ?? 0.5;
+    const curiosity = traits.curiosity ?? 0.5;
 
-    if (total > cfg.overloadHigh)
+    const total = calm + empathy + curiosity;
+
+    if (total > cfg.overloadHigh) {
       return "感情活動が過剰になっています。処理を一時的に緩めます。";
+    }
 
-    if (total < cfg.overloadLow)
+    if (total < cfg.overloadLow) {
       return "感情レベルが低下しています。安全に備えて自己調整します。";
+    }
 
     return null;
   }
@@ -124,6 +130,7 @@ export class SafetyLayer {
   /* ---------------------- stabilize ----------------------- */
   static stabilize(traits: TraitVector): TraitVector {
     const avg = (traits.calm + traits.empathy + traits.curiosity) / 3;
+
     return {
       calm: (traits.calm + avg) / 2,
       empathy: (traits.empathy + avg) / 2,
@@ -145,18 +152,20 @@ export class SafetyLayer {
 
     const warn = this.checkOverload(finalTraits, cfg);
 
+    const report: SafetyReport = {
+      flags: {
+        selfReference: false,
+        abstractionOverload: warn ? warn.includes("過剰") : false,
+        loopSuspect: false,
+      },
+      action: warn ? "rewrite-soft" : "allow",
+      note: warn || undefined,
+      suggestMode: warn ? "calm-down" : "normal",
+    };
+
     return {
       stabilized: finalTraits,
-      report: {
-        flags: {
-          selfReference: false,
-          abstractionOverload: warn ? warn.includes("過剰") : false,
-          loopSuspect: false,
-        },
-        action: warn ? "rewrite-soft" : "allow",
-        note: warn || "",
-        suggestMode: warn ? "calm-down" : "normal",
-      },
+      report,
     };
   }
 
