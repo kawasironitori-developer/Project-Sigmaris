@@ -1,9 +1,8 @@
-# aei/episodic_memory/episode_store_sqlite.py
 from __future__ import annotations
 import sqlite3
 import json
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import datetime
+from typing import List, Optional, Any
 
 from .epmem import Episode
 
@@ -11,8 +10,7 @@ from .epmem import Episode
 class EpisodeStoreSQLite:
     """
     SQLite バックエンドの EpisodeStore。
-    - API は EpisodeStore（メモリ版）と完全互換
-    - データは data/episodes.db に永続化される
+    Persona Core v2 / MemoryOrchestrator / EpisodeMerger に完全対応。
     """
 
     def __init__(self, db_path: str = "data/episodes.db") -> None:
@@ -42,7 +40,7 @@ class EpisodeStoreSQLite:
         conn.close()
 
     # ---------------------------------------------------
-    # Episode → DB
+    # Episode を DB へ保存
     # ---------------------------------------------------
     def add(self, episode: Episode) -> None:
         conn = sqlite3.connect(self.db_path)
@@ -67,7 +65,7 @@ class EpisodeStoreSQLite:
         conn.close()
 
     # ---------------------------------------------------
-    # 最新 n 件を Episode として返す
+    # 既存 API: 最新 n 件を Episode として返す
     # ---------------------------------------------------
     def get_last(self, n: int) -> List[Episode]:
         conn = sqlite3.connect(self.db_path)
@@ -100,11 +98,10 @@ class EpisodeStoreSQLite:
                 )
             )
 
-        # 新しい順で取ってきたので反転して「古 → 新」に揃える
         return list(reversed(episodes))
 
     # ---------------------------------------------------
-    # 全取得
+    # 既存 API: 全取得
     # ---------------------------------------------------
     def get_all(self) -> List[Episode]:
         conn = sqlite3.connect(self.db_path)
@@ -136,3 +133,62 @@ class EpisodeStoreSQLite:
             )
 
         return episodes
+
+    # ===========================================================
+    # 🔥 Persona Core v2 必須メソッド（追加実装）
+    # ===========================================================
+
+    # ---------------------------------------------------
+    # MemoryOrchestrator → SelectiveRecall 用
+    # 最新 n 件を返す（get_last のラッパ）
+    # ---------------------------------------------------
+    def fetch_recent(self, n: int) -> List[Episode]:
+        return self.get_last(n)
+
+    # ---------------------------------------------------
+    # EpisodeMerger が使用
+    # episode_id リストで複数取得
+    # ---------------------------------------------------
+    def fetch_by_ids(self, ids: List[str]) -> List[Episode]:
+        if not ids:
+            return []
+
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+
+        q = f"""
+            SELECT episode_id, timestamp, summary, emotion_hint, traits_hint, raw_context
+            FROM episodes
+            WHERE episode_id IN ({",".join(['?'] * len(ids))})
+        """
+
+        cur.execute(q, ids)
+        rows = cur.fetchall()
+        conn.close()
+
+        episodes = []
+        for ep_id, ts, summary, emo, traits, raw in rows:
+            dt = datetime.fromisoformat(ts)
+            episodes.append(
+                Episode(
+                    episode_id=ep_id,
+                    timestamp=dt,
+                    summary=summary,
+                    emotion_hint=emo,
+                    traits_hint=json.loads(traits),
+                    raw_context=raw,
+                )
+            )
+
+        return episodes
+
+    # ---------------------------------------------------
+    # PersonaOS v2 設計的に必要な “embedding 検索”
+    # 今は簡易ダミーとして実装
+    # ---------------------------------------------------
+    def search_embedding(self, vector: List[float], limit: int = 5) -> List[Episode]:
+        """
+        本来はベクトル検索を行うが、
+        SQLite 版では簡易に「最新から limit 件返す」動作に置き換える。
+        """
+        return self.get_last(limit)
