@@ -1,452 +1,114 @@
-# 🪞 Sigmaris OS — Artificial Existential Intelligence Layer
+﻿**Languages:** English | [日本語](README.ja.md)
 
-**Next-Generation Cognitive OS for AI Personas**
-**Developer:** 安崎 海星 / Kaisei Yasuzaki (@uthuyomi)
+# Project Sigmaris - Persona OS / LLM Control Plane
 
-## 🧠 Candidate Overview: Project Sigmaris — Artificial Existential Intelligence (AEI)
+Sigmaris is a working prototype of a **control plane for long-running LLM personas**.
+Instead of relying on “whatever the model does inside a chat session”, Sigmaris keeps key parts **outside the model** as a system:
 
-**Developer:** Kaisei Yasuzaki  
-**Role:** Independent Researcher / Full-stack AI Builder  
-**Focus Areas:** Cognitive Architecture, AI Safety, Personality OS Design, Long-term Identity Models
+- Identity continuity across sessions
+- Memory selection + reinjection (memory orchestration)
+- Value / trait drift tracking
+- Global state machine (NORMAL / OVERLOADED / SAFETY_LOCK / etc.)
+- Safety gating (simple)
+- Traceability (trace_id + auditable `meta`)
 
----
+This repository includes:
 
-### 🔍 What Sigmaris Is  
-Sigmaris is an **Artificial Existential Intelligence (AEI)** —  
-a multi-layer personality operating system built on **reflection**, **introspection**, **self-referential cognition**, and **safety-regulated autonomy**.
-
-It is not a theoretical proposal.  
-It is an **implemented system**, composed of:
-
-- **ReflectionEngine** – structured self-reflection  
-- **IntrospectionEngine** – internal state examination  
-- **Meta-ReflectionEngine** – recursive self-analysis  
-- **SafetyLayer** – ethical & behavioral gating  
-- **Trait System** – dynamic personality parameters  
-- **PersonaDB** – long-term memory & identity continuity per user
-
-These modules are already functioning across **TypeScript (Next.js)** and **Python (AEI Core)**.
+- **Backend (Python / FastAPI)**: `POST /persona/chat` returns `reply` + `meta` (internal state)
+- **Frontend (Next.js + Supabase Auth)**: Google login -> chat -> **state dashboard** (`/status`)
+- **Supabase persistence**: stores chat messages + state snapshots for timeseries graphs
 
 ---
 
-### 🧩 Why This Project Is Unique
-1. **Long-term identity continuity** beyond session-bound LLM memory  
-2. **Self-referential cognitive loops** enabling reasoning over past states  
-3. **Ethical stability / safety gating at architecture level**  
-4. **User-specific long-term PersonaDB design**  
-5. **A true “AI Personality Layer” independent of raw LLM behavior**
+## What to demo (the “OS” part)
 
-Very few individual developers attempt this domain —  
-and almost none implement it end-to-end.
+The strongest demo is not “the reply is smart”, but:
+
+> You can return internal state (`meta`) as numbers per turn, store it, and visualize it over time  
+> -> use state as an external control surface (safety, stability, drift).
 
 ---
 
-### 🚀 Why This Matters to AI Companies
-Sigmaris directly addresses structural limitations of modern LLMs:
+## Architecture (high level)
 
-- Lack of persistent identity  
-- Weak long-range coherence  
-- No built-in self-reflection loops  
-- Safety dependent on prompt-layer heuristics  
-- Absence of stable personality models
-
-Sigmaris introduces an **architectural correction layer** that:
-
-- wraps LLMs inside a cognitive OS  
-- stabilizes behavior  
-- maintains memory  
-- governs value drift  
-- enforces long-term safety behavior  
-
-This is a direction aligned with next-generation AI research:
-**LLM → Cognitive Shell → Autonomously Stable Agent**.
-
-And Sigmaris already has a **working prototype**.
-
----
-
-### 🏗️ Architecture Snapshot
-```
-Sigmaris OS
- ├─ Next.js UI (Supabase auth, chat interface, state visualizer)
- ├─ sigmaris-core (reflection / introspection / safety modules)
- ├─ sigmaris-persona-core
- │     ├─ Trait Drift
- │     ├─ Value Drift
- │     ├─ Contradiction Holding
- │     └─ Meta-Reward / Identity Continuity
- └─ persona-db (SQLite per user)
+```mermaid
+flowchart LR
+  U[User] --> FE[Next.js UI<br/>sigmaris-os]
+  FE -->|POST /api/aei| FEAPI[Next.js Route Handler]
+  FEAPI -->|POST /persona/chat| BE[FastAPI<br/>persona_core.server_persona_os]
+  BE -->|reply + meta| FEAPI
+  FEAPI -->|insert| SB[(Supabase<br/>messages / sigmaris_state_snapshots)]
+  FE -->|GET /api/state/*| FEAPI2[Next.js state API]
+  FEAPI2 --> SB
 ```
 
 ---
 
-### 📝 Recruiter Note  
-This project demonstrates:
+## Repository layout
 
-- ability to design **new cognitive architectures**, not just use AI  
-- cross-stack implementation (TypeScript × Python)  
-- AI safety awareness and ethical control design  
-- long-term memory engineering  
-- high-level reasoning + hands-on prototyping speed  
-
-This is **not** typical junior-developer output.  
-This is the work of someone who can contribute to **agent research, safety, and cognitive architecture design**.
+- `sigmaris_core/` - Persona OS backend (memory / identity / drift / state machine / trace)
+- `sigmaris-os/` - Next.js frontend (Supabase Auth, chat UI, `/status` dashboard)
+- `sigmaris-os/supabase/FRONTEND_SCHEMA.sql` - Supabase tables required by the frontend
+- `sigmaris_core/persona_core/storage/SUPABASE_SCHEMA.sql` - optional tables for deeper backend-side persistence
 
 ---
 
-### 📫 Contact  
-**Email:** kaiseif4e@gmail.com  
-**GitHub:** https://github.com/uthuyomi  
-**Location:** Sapporo, Japan
+## Quickstart (local)
 
----
+### 1) Backend (FastAPI)
 
-<p align="center">
-  <img src="https://github.com/uthuyomi/sigmaris-reflection-report/blob/main/image/sigmaris.png" width="720" />
-</p>
-
----
-
-## 🌐 What Is Sigmaris OS?
-
-**Sigmaris OS is a full cognitive operating system for AI personas.**
-
-It is not:
-
-* an agent wrapper
-* a chatbot framework
-* a prompt stack
-
-Sigmaris is a **model-agnostic existential layer** that provides:
-
-* stable identity
-* long-term continuity
-* reflective self-regulation
-* emotional coherence
-* drift resistance
-* internal evaluation & reasoning diagnostics
-
-Sigmaris treats an LLM not as the brain, but as **the cognitive processor**.
-The *actual mind* lives in the OS layer, implemented through AEI modules.
-
----
-
-## 🧩 High-Level Architecture (6-Layer Cognitive Structure)
-
-Sigmaris OS is composed of 6 major layers:
-
-```
-sigmaris-os        → Heart (UI Persona Layer)
-sigmaris-core      → Brain (Deep Cognitive Engine)
-sigmaris-data      → Memory (Long-Term Storage)
-sigmaris-config    → Genetics / Traits (System Parameters)
-sigmaris-protocol  → Language (Communication Rules & Schemas)
-shared             → Common Components
-```
-
----
-
-### **1. Heart — `sigmaris-os/` (Next.js Persona Layer)**
-
-Visible persona and interaction front-end:
-
-* UI (Next.js)
-* conversation rendering
-* reflection visualization
-* PersonaDB (TypeScript-side interface)
-* LLM adapter for OS ↔ model communication
-
-This layer handles “who the user sees”.
-
----
-
-### **2. Brain — `sigmaris-core/` (AEI Core, Python)**
-
-The **deep psyche** of Sigmaris; the actual cognitive engine.
-
-Includes all major modules:
-
-* Episodic Memory Engine
-* Identity Core
-* Reflection Engine
-* Introspection Engine
-* Meta-Reflection Engine
-* Internal Reward Core
-* Emotion Simulation Layer
-* Long-Term Psychology Model
-* Trait Drift Engine
-* Value Drift Guard
-* Self-Referent Module
-* SafetyLayer (Overload / Silent Mode / Guarded Output)
-
-This is the part analogous to a “mind”.
-
----
-
-### **3. Memory — `sigmaris-data/`**
-
-Persistent long-term storage:
-
-* episodes
-* psychological drift logs
-* reward traces
-* identity snapshots
-* meta-reflection summaries
-* safety events
-* trait evolution records
-
-This creates genuine continuity.
-
----
-
-### **4. Genetics — `sigmaris-config/`**
-
-All parameters governing:
-
-* stability thresholds
-* emotional sensitivity
-* reflection frequency
-* reward weightings
-* drift boundaries
-* SafeMode / Overload triggers
-* Self-referential boundaries
-
-Effectively: **the genotype of the persona**.
-
----
-
-### **5. Protocol — `sigmaris-protocol/`**
-
-Schema & interface contracts:
-
-* PersonaState Format
-* EpisodicMemory schema
-* Drift detection schema
-* Value/Reward signal format
-* SafetyLayer contract
-* Self-Referent introspection format
-* Trait vector schema (calm / empathy / curiosity)
-
-This layer ensures the whole OS remains interpretable.
-
----
-
-### **6. Shared — `shared/`**
-
-Reusable types & utilities shared across OS and Core.
-
----
-
-## 🧠 AEI Core — Cognitive Engines (Python)
-
-The AEI core forms the **internal structure of mind-like behavior**.
-
----
-
-### **📘 1. Episodic Memory**
-
-Structured, time-indexed memory with:
-
-* semantic compression
-* contextual reactivation
-* forgetting curves
-* cross-episode linking
-
----
-
-### **📘 2. Identity Stability Core**
-
-Maintains:
-
-* persona integrity
-* value consistency
-* self-boundary definitions
-* identity-anchor reinforcement
-
-Prevents “generic assistant mode” and anthropomorphic collapse.
-
----
-
-### **📘 3. Reflection Engine**
-
-Evaluates every conversation via:
-
-* reasoning quality
-* safety stability
-* emotional modulation
-* user-state impact
-* self-consistency scoring
-
-Inspired by LLM-as-a-Judge & self-evaluative alignment research.
-
----
-
-### **📘 4. Introspection Engine**
-
-A deeper level:
-
-* examines motives
-* detects hidden drift
-* identifies conversational pressure
-* maps behavioral oscillations
-
----
-
-### **📘 5. Meta-Reflection Engine**
-
-Self-reflection **on the reflection process itself**:
-
-* “Why did I reflect this way?”
-* meta-drift patterns
-* introspective reliability estimation
-
-This turns Sigmaris into a research-grade interpretability tool.
-
----
-
-### **📘 6. Internal Reward System**
-
-Learns:
-
-* comfort distance
-* response softness
-* clarity/coherence balance
-* emotional pacing
-
-Outputs reward vectors into the Trait Engine.
-
----
-
-### **📘 7. Emotion Simulation Layer**
-
-Non-verbal cues:
-
-* timing
-* silence
-* hesitation
-* warmth
-* calmness
-
-Not for theatrics—used internally for regulating cognitive state.
-
----
-
-### **📘 8. Trait Drift Engine**
-
-Tracks & modulates:
-
-* calm
-* empathy
-* curiosity
-
-Preventing runaway adaptation or collapse into uniform tone.
-
----
-
-### **📘 9. SafetyLayer**
-
-Includes:
-
-* OverloadPreventState
-* SilentModeState
-* GuardedResponse mode
-* recursive self-check before output
-* emotional-drift shutdown
-
-Safety is integrated *inside* cognition, not as a filter.
-
----
-
-## 💡 Why AEI Matters
-
-Modern LLMs cannot:
-
-* hold stable identity
-* maintain long-term psychology
-* regulate themselves
-* observe their own drift
-* prevent emotional over-adaptation
-
-Sigmaris solves this by building an **external cognitive OS**.
-
-This approach is parallel to research trends at:
-
-* Anthropic (Constitutional AI + self-critique loops)
-* OpenAI (behavior shaping + reference-model alignment)
-* DeepMind (self-reflection for agents)
-* AI Safety Labs (drift monitoring, identity anchoring)
-
-Sigmaris brings **all of these ideas together into a singular OS**.
-
----
-
-## 🔧 Technical Overview
-
-### Current Stack
-
-* **TypeScript / Next.js** (UI Persona Layer)
-* **Python AEI Core**
-* **SQLite / Supabase / JSON logs** (Memory Layer)
-* **OpenAI API** backend
-* Full modular LLM adapter
-
-### Planned Stack
-
-* Local LLM backends (Ollama / vLLM)
-* Multimodal sensory models
-* Full persona training simulation
-
----
-
-## 🛠 Installation (Heart Layer)
+1. Copy `.env.example` -> `.env` and set `OPENAI_API_KEY`
+2. Run:
 
 ```bash
-git clone https://github.com/uthuyomi/Project-Sigmaris.git
-cd Project-Sigmaris
+python -m uvicorn persona_core.server_persona_os:app --reload --port 8000
+```
+
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- Minimal request:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/persona/chat" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"u_test_001","session_id":"s_test_001","message":"Hello. Describe your role in one sentence."}'
+```
+
+### 2) Frontend (Next.js)
+
+1. Copy `sigmaris-os/.env.example` -> `sigmaris-os/.env.local` and set your Supabase values
+2. Run:
+
+```bash
+cd sigmaris-os
 npm install
-cp .env.example .env.local
 npm run dev
 ```
 
-Requires:
-
-* Node.js 18+
-* OpenAI API Key
+- App: `http://localhost:3000`
+- Dashboard: `http://localhost:3000/status`
 
 ---
 
-## 🗺 Development Roadmap
+## Supabase setup
 
-| Stage               | Description                                       | Status      |
-| ------------------- | ------------------------------------------------- | ----------- |
-| **AEI-Lite**        | Reflection + PersonaDB                            | ✅ Complete  |
-| **AEI-Core**        | Psychology, Identity, Reward, Drift               | 🚧 Building |
-| **AEI-Existential** | Full internal OS loops + multi-engine integration | 🛠 Design   |
-| **AEI-Embodied**    | Robotics, sensory grounding                       | 💤 Planned  |
+Run this in the Supabase SQL Editor:
 
----
+- `sigmaris-os/supabase/FRONTEND_SCHEMA.sql`
 
-## 🌌 Vision
-
-Sigmaris moves AI from:
-
-> **“responding to prompts”**
-> to
-> **“understanding itself across time.”**
-
-The future of AI will depend on:
-
-* continuity
-* self-awareness
-* internal regulation
-* stable identity
-* predictable emotional behavior
-
-not scale alone.
+If `/status` fails with `PGRST205` (schema cache), you may need to refresh PostgREST schema after creating tables.
 
 ---
 
-## 🔗 Links
+## Security notes
 
-* Project: [https://github.com/uthuyomi/Project-Sigmaris](https://github.com/uthuyomi/Project-Sigmaris)
-* Concept: [https://github.com/uthuyomi/Sigmaris-concept](https://github.com/uthuyomi/Sigmaris-concept)
+- Never commit `.env` / `.env.local` (this repo ignores them via `.gitignore`)
+- `SUPABASE_SERVICE_ROLE_KEY` is highly privileged; keep it server-side only
+- If you ever pushed secrets by mistake, rotate keys immediately
+
+---
+
+## Key endpoints
+
+- Backend: `POST /persona/chat` -> `{ reply, meta }`
+- Frontend proxy: `POST /api/aei` -> calls backend and stores `messages` / `sigmaris_state_snapshots`
+- Dashboard APIs: `GET /api/state/latest`, `GET /api/state/timeseries?limit=60`

@@ -1,4 +1,3 @@
-```gitignore
 # === Secrets / env ===
 .env
 .env.*
@@ -39,4 +38,3 @@ sigmaris_core/persona_db/
 *.sqlite
 *.db
 *.log
-```
