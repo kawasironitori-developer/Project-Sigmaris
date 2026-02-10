@@ -4,7 +4,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 
-import { applyEunoiaTone } from "@/lib/eunoia";
 import { summarize } from "@/lib/summary";
 import type { SafetyReport } from "@/types/safety";
 
@@ -350,15 +349,8 @@ export function useSigmarisChat() {
 
       if (finalMeta?.safety) setSafetyReport(finalMeta.safety as SafetyReport);
 
-      const aiText = applyEunoiaTone(rawText, {
-        tone:
-          nextTraits.empathy > 0.7
-            ? "friendly"
-            : nextTraits.calm > 0.7
-              ? "gentle"
-              : "neutral",
-        empathyLevel: nextTraits.empathy,
-      });
+      // sigmaris-os は Sigmaris Core の応答をそのまま表示する（ローカル側で口調/キャラ付けしない）
+      const aiText = rawText;
 
       const [userEn, aiEn] = await Promise.all([
         translateToEnglish(userMessage),
@@ -475,4 +467,3 @@ export function useSigmarisChat() {
     handleRenameChat,
   };
 }
-
