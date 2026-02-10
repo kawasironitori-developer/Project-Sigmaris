@@ -175,6 +175,48 @@ Supabase の SQL Editor で実行:
 
 - `supabase/RESET_TO_COMMON.sql`（**破壊的リセット**。統一 `common_*` テーブルを作成）
 
+---
+
+## Deploy（Fly.io）— Backend のみ
+
+Backend は同梱の `Dockerfile` + `fly.toml` で Fly.io にデプロイできます。
+
+1) インストール＆ログイン:
+
+```bash
+flyctl auth login
+```
+
+2) アプリ作成（もしくは先に `fly.toml` の `app = "..."` を変更）:
+
+```bash
+flyctl apps create
+```
+
+3) secrets 設定（最小）:
+
+```bash
+flyctl secrets set OPENAI_API_KEY="..." SUPABASE_URL="..." SUPABASE_SERVICE_ROLE_KEY="..."
+```
+
+任意:
+
+- `SUPABASE_SCHEMA`（既定 `public`）
+- `SIGMARIS_ENGINE_VERSION`
+- `SIGMARIS_BUILD_SHA`
+- `SIGMARIS_OPERATOR_KEY`, `SIGMARIS_OPERATOR_USER_IDS`（operator overrides）
+
+4) デプロイ:
+
+```bash
+flyctl deploy
+```
+
+デプロイ後:
+
+- Swagger: `https://<your-app>.fly.dev/docs`
+- ヘルスチェックは `GET /docs`（`fly.toml` 参照）
+
 ## Operator overrides（任意）
 
 Sigmaris は運用者による上書き（監査ログ付き）を `POST /persona/operator/override` で受け付けます。

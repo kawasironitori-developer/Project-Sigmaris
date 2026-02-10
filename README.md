@@ -173,6 +173,48 @@ Run this in the Supabase SQL Editor:
 
 - `supabase/RESET_TO_COMMON.sql` (**destructive reset**, recreates unified `common_*` tables)
 
+---
+
+## Deploy (Fly.io) — Backend only
+
+The backend can be deployed to Fly.io using the included `Dockerfile` + `fly.toml`.
+
+1) Install and login:
+
+```bash
+flyctl auth login
+```
+
+2) Create an app (or edit `fly.toml` `app = "..."` first):
+
+```bash
+flyctl apps create
+```
+
+3) Set secrets (minimum):
+
+```bash
+flyctl secrets set OPENAI_API_KEY="..." SUPABASE_URL="..." SUPABASE_SERVICE_ROLE_KEY="..."
+```
+
+Optional:
+
+- `SUPABASE_SCHEMA` (default `public`)
+- `SIGMARIS_ENGINE_VERSION`
+- `SIGMARIS_BUILD_SHA`
+- `SIGMARIS_OPERATOR_KEY`, `SIGMARIS_OPERATOR_USER_IDS` (operator overrides)
+
+4) Deploy:
+
+```bash
+flyctl deploy
+```
+
+After deploy:
+
+- Swagger: `https://<your-app>.fly.dev/docs`
+- Health check uses `GET /docs` (see `fly.toml`).
+
 ## Operator overrides (optional)
 
 Sigmaris supports audited operator overrides via `POST /persona/operator/override`.
