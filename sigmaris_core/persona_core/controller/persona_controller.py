@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import threading
 import uuid
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 from datetime import datetime, timezone
@@ -56,6 +57,9 @@ from persona_core.ego.ego_engine import EgoEngine
 from persona_core.ego.ego_state import EgoContinuityState
 from persona_core.integration.integration_controller import IntegrationController
 from persona_core.temporal_identity.temporal_identity_state import TemporalIdentityState
+from persona_core.phase03.intent_layers import IntentLayers, IntentVectorEMA
+from persona_core.phase03.dialogue_state_machine import DialogueState, DialogueStateMachine
+from persona_core.phase03.safety_override import SafetyOverrideLayer
 
 
 # --------------------------------------------------------------
@@ -156,6 +160,19 @@ class PersonaController:
         self._temporal_identity_state: Optional[TemporalIdentityState] = initial_temporal_identity_state
         self._freeze_updates: bool = False
 
+        # Phase03: Intent + Routing + Dialogue DSM + Safety Override
+        self._intent_layers = IntentLayers()
+        self._dsm = DialogueStateMachine()
+        self._safety_override = SafetyOverrideLayer()
+        self._intent_ema_by_session: Dict[str, IntentVectorEMA] = {}
+        self._dialogue_state_by_session: Dict[str, DialogueState] = {}
+        try:
+            self._phase03_session_cap = int(os.getenv("SIGMARIS_PHASE03_SESSION_CAP", "1024") or "1024")
+        except Exception:
+            self._phase03_session_cap = 1024
+        if self._phase03_session_cap < 16:
+            self._phase03_session_cap = 16
+
         # Backends
         self._episode_store = episode_store
         self._db = persona_db
@@ -212,6 +229,8 @@ class PersonaController:
         )
 
         meta: Dict[str, Any] = {}
+        t0 = time.perf_counter()
+        t_marks: Dict[str, float] = {"start": t0}
 
         # Carry last safe-mode freeze into this turn (Part06 emergency modes)
         try:
@@ -262,6 +281,7 @@ class PersonaController:
             req=req,
             memory=memory_result,
         )
+        t_marks["identity"] = time.perf_counter()
 
         _trace(
             "identity_built",
@@ -334,6 +354,7 @@ class PersonaController:
             prev_state=self._prev_global_state,
         )
         self._prev_global_state = global_state_ctx.state
+        t_marks["global_fsm"] = time.perf_counter()
 
         _trace(
             "global_state",
@@ -443,6 +464,7 @@ class PersonaController:
                     pass
         except Exception:
             pass
+        t_marks["telemetry"] = time.perf_counter()
 
         # ---- 5.6) Integration layer (Phase02 MD-07) ----
         try:
@@ -549,6 +571,124 @@ class PersonaController:
         except Exception:
             pass
 
+        # ---- 5.65) Phase03: Intent + DSM + Safety Override + Observability ----
+        try:
+            session_id = getattr(req, "session_id", None) or ""
+            if not isinstance(session_id, str):
+                session_id = str(session_id)
+
+            # Cap per-session state (best-effort eviction)
+            if session_id and session_id not in self._intent_ema_by_session:
+                if len(self._intent_ema_by_session) >= self._phase03_session_cap:
+                    try:
+                        k0 = next(iter(self._intent_ema_by_session.keys()))
+                        self._intent_ema_by_session.pop(k0, None)
+                        self._dialogue_state_by_session.pop(k0, None)
+                    except Exception:
+                        self._intent_ema_by_session.clear()
+                        self._dialogue_state_by_session.clear()
+
+            md = (getattr(req, "metadata", None) or {}) if isinstance(getattr(req, "metadata", None), dict) else {}
+            iv = self._intent_layers.compute(message=getattr(req, "message", "") or "", metadata=md)
+
+            ema = self._intent_ema_by_session.get(session_id)
+            if ema is None:
+                ema = IntentVectorEMA(alpha=float(os.getenv("SIGMARIS_PHASE03_INTENT_EMA_ALPHA", "0.18") or "0.18"))
+                self._intent_ema_by_session[session_id] = ema
+            intent_ema = ema.update(iv.raw)
+
+            safety_risk_score = md.get("_safety_risk_score")
+            safety_categories = md.get("_safety_categories") if isinstance(md.get("_safety_categories"), dict) else None
+
+            so = self._safety_override.decide(
+                safety_flag=safety_flag,
+                safety_risk_score=(float(safety_risk_score) if safety_risk_score is not None else None),
+                intent_safety_risk=float(intent_ema.get("safety_risk", 0.0)),
+                categories=safety_categories,
+            )
+            safety_forced = bool(so.active and so.level in ("hard", "terminate"))
+
+            subj_mode = None
+            try:
+                subj_mode = (meta.get("integration") or {}).get("subjectivity", {}).get("mode")
+            except Exception:
+                subj_mode = None
+
+            prev_ds = self._dialogue_state_by_session.get(session_id)
+            ds, transition = self._dsm.decide(
+                prev=prev_ds,
+                intent_ema=intent_ema,
+                intent_confidence=float(iv.confidence),
+                safety_forced=safety_forced,
+                safety_active=bool(so.active),
+                subjectivity_mode=(str(subj_mode) if subj_mode is not None else None),
+                transition_reasons=[],
+            )
+            if session_id:
+                self._dialogue_state_by_session[session_id] = ds
+
+            # Response policy (minimal): set generation defaults per dialogue state (unless client already set)
+            gen = md.get("gen") if isinstance(md.get("gen"), dict) else {}
+            if not isinstance(gen, dict):
+                gen = {}
+            if "temperature" not in gen or not isinstance(gen.get("temperature"), (int, float)):
+                temp_map = {
+                    "S1_CASUAL": 0.85,
+                    "S2_TASK": 0.45,
+                    "S3_EMOTIONAL": 0.60,
+                    "S4_META": 0.50,
+                    "S5_CREATIVE": 0.95,
+                    "S6_SAFETY": 0.25,
+                    "S0_NEUTRAL": 0.70,
+                }
+                gen["temperature"] = float(temp_map.get(ds.current_state, 0.70))
+            if "max_tokens" not in gen or not isinstance(gen.get("max_tokens"), (int, float)):
+                max_map = {
+                    "S1_CASUAL": 700,
+                    "S2_TASK": 1600,
+                    "S3_EMOTIONAL": 1200,
+                    "S4_META": 1400,
+                    "S5_CREATIVE": 1800,
+                    "S6_SAFETY": 700,
+                    "S0_NEUTRAL": 1400,
+                }
+                gen["max_tokens"] = int(max_map.get(ds.current_state, 1400))
+
+            if isinstance(getattr(req, "metadata", None), dict):
+                req.metadata["gen"] = gen
+                req.metadata["_phase03_dialogue_state"] = ds.current_state
+
+            meta["phase03"] = {
+                "timing_ms": {},  # filled at end
+                "intent": {
+                    "category": {
+                        "scores": iv.category_scores,
+                        "primary": iv.primary,
+                        "secondary": iv.secondary,
+                    },
+                    "vector": {"raw": iv.raw, "ema": intent_ema},
+                    "confidence": float(iv.confidence),
+                },
+                "routing": {
+                    "strategy": "hybrid",
+                    "target_state": ds.current_state,
+                    "transition_confidence": float(ds.confidence),
+                    "reasons": transition.get("reasons", []),
+                },
+                "dialogue": {
+                    "state": {
+                        "current": ds.current_state,
+                        "previous": ds.prev_state,
+                        "stability": float(getattr(ds, "stability_score", 0.0) or 0.0),
+                    },
+                    "transition": transition,
+                },
+                "safety": so.to_dict(),
+            }
+        except Exception:
+            pass
+        t_marks["phase03"] = time.perf_counter()
+
         # ---- 5.7) Guardrails (Phase01/07 + Phase02 freeze merge) ----
         try:
             guardrail = self._guardrail.decide(
@@ -567,6 +707,7 @@ class PersonaController:
             self._freeze_updates = bool(self._freeze_updates or guardrail.freeze_updates)
         except Exception:
             pass
+        t_marks["guardrail"] = time.perf_counter()
 
         # ---- 6) LLM generate ----
         reply_text = self._call_llm(
@@ -577,6 +718,7 @@ class PersonaController:
             trait_state=self._trait_state,
             global_state=global_state_ctx,
         )
+        t_marks["llm"] = time.perf_counter()
 
         # ---- 7) EpisodeStore / PersonaDB 保存 ----
         _trace(
@@ -595,6 +737,7 @@ class PersonaController:
             identity_result=identity_result,
             global_state=global_state_ctx,
         )
+        t_marks["store"] = time.perf_counter()
 
         _trace("stored", None)
 
@@ -616,6 +759,38 @@ class PersonaController:
                 "overload_score": overload_score,
             }
         )
+
+        # Fill Phase03 timing (best-effort, no hard dependency)
+        try:
+            t_end = time.perf_counter()
+            t_marks["end"] = t_end
+            phase03 = meta.get("phase03") if isinstance(meta.get("phase03"), dict) else None
+            if isinstance(phase03, dict) and isinstance(phase03.get("timing_ms"), dict):
+                order = [
+                    ("memory", "memory"),
+                    ("identity", "identity"),
+                    ("global_fsm", "global_fsm"),
+                    ("telemetry", "telemetry"),
+                    ("phase03", "phase03"),
+                    ("guardrail", "guardrail"),
+                    ("llm", "llm"),
+                    ("store", "store"),
+                    ("end", "end"),
+                ]
+                by_layer: Dict[str, int] = {}
+                prev_key = "start"
+                for key, label in order:
+                    if key not in t_marks:
+                        continue
+                    dt_ms = (float(t_marks[key]) - float(t_marks.get(prev_key, t0))) * 1000.0
+                    by_layer[label] = int(max(0.0, dt_ms))
+                    prev_key = key
+                phase03["timing_ms"] = {
+                    "total": int(max(0.0, (t_end - t0) * 1000.0)),
+                    "by_layer": by_layer,
+                }
+        except Exception:
+            pass
 
         return PersonaTurnResult(
             reply_text=reply_text,
@@ -665,6 +840,8 @@ class PersonaController:
         )
 
         meta: Dict[str, Any] = {}
+        t0 = time.perf_counter()
+        t_marks: Dict[str, float] = {"start": t0}
 
         _trace(
             "start",
@@ -682,6 +859,8 @@ class PersonaController:
 
         # ---- 1) Memory selection ----
         memory_result = self._select_memory(req=req, user_id=uid)
+        t_marks["memory"] = time.perf_counter()
+        t_marks["memory"] = time.perf_counter()
         meta["memory"] = {
             "pointer_count": len(memory_result.pointers),
             "has_merged_summary": memory_result.merged_summary is not None,
@@ -697,6 +876,7 @@ class PersonaController:
 
         # ---- 2) Identity continuity ----
         identity_result = self._identity.build_identity_context(req=req, memory=memory_result)
+        t_marks["identity"] = time.perf_counter()
         _trace(
             "identity_built",
             {
@@ -767,6 +947,7 @@ class PersonaController:
             prev_state=self._prev_global_state,
         )
         self._prev_global_state = global_state_ctx.state
+        t_marks["global_fsm"] = time.perf_counter()
         _trace("global_state", {"state": getattr(global_state_ctx, "state", None)})
 
         # ---- 5.25) Narrative / contradiction (Phase02 MD-03 health snapshot) ----
@@ -872,6 +1053,7 @@ class PersonaController:
                     pass
         except Exception:
             telemetry = None
+        t_marks["telemetry"] = time.perf_counter()
 
         # ---- 5.6) Integration layer (Phase02 MD-07) ----
         try:
@@ -978,6 +1160,122 @@ class PersonaController:
         except Exception:
             pass
 
+        # ---- 5.65) Phase03: Intent + DSM + Safety Override + Observability ----
+        try:
+            session_id = getattr(req, "session_id", None) or ""
+            if not isinstance(session_id, str):
+                session_id = str(session_id)
+
+            if session_id and session_id not in self._intent_ema_by_session:
+                if len(self._intent_ema_by_session) >= self._phase03_session_cap:
+                    try:
+                        k0 = next(iter(self._intent_ema_by_session.keys()))
+                        self._intent_ema_by_session.pop(k0, None)
+                        self._dialogue_state_by_session.pop(k0, None)
+                    except Exception:
+                        self._intent_ema_by_session.clear()
+                        self._dialogue_state_by_session.clear()
+
+            md = (getattr(req, "metadata", None) or {}) if isinstance(getattr(req, "metadata", None), dict) else {}
+            iv = self._intent_layers.compute(message=getattr(req, "message", "") or "", metadata=md)
+
+            ema = self._intent_ema_by_session.get(session_id)
+            if ema is None:
+                ema = IntentVectorEMA(alpha=float(os.getenv("SIGMARIS_PHASE03_INTENT_EMA_ALPHA", "0.18") or "0.18"))
+                self._intent_ema_by_session[session_id] = ema
+            intent_ema = ema.update(iv.raw)
+
+            safety_risk_score = md.get("_safety_risk_score")
+            safety_categories = md.get("_safety_categories") if isinstance(md.get("_safety_categories"), dict) else None
+
+            so = self._safety_override.decide(
+                safety_flag=safety_flag,
+                safety_risk_score=(float(safety_risk_score) if safety_risk_score is not None else None),
+                intent_safety_risk=float(intent_ema.get("safety_risk", 0.0)),
+                categories=safety_categories,
+            )
+            safety_forced = bool(so.active and so.level in ("hard", "terminate"))
+
+            subj_mode = None
+            try:
+                subj_mode = (meta.get("integration") or {}).get("subjectivity", {}).get("mode")
+            except Exception:
+                subj_mode = None
+
+            prev_ds = self._dialogue_state_by_session.get(session_id)
+            ds, transition = self._dsm.decide(
+                prev=prev_ds,
+                intent_ema=intent_ema,
+                intent_confidence=float(iv.confidence),
+                safety_forced=safety_forced,
+                safety_active=bool(so.active),
+                subjectivity_mode=(str(subj_mode) if subj_mode is not None else None),
+                transition_reasons=[],
+            )
+            if session_id:
+                self._dialogue_state_by_session[session_id] = ds
+
+            gen = md.get("gen") if isinstance(md.get("gen"), dict) else {}
+            if not isinstance(gen, dict):
+                gen = {}
+            if "temperature" not in gen or not isinstance(gen.get("temperature"), (int, float)):
+                temp_map = {
+                    "S1_CASUAL": 0.85,
+                    "S2_TASK": 0.45,
+                    "S3_EMOTIONAL": 0.60,
+                    "S4_META": 0.50,
+                    "S5_CREATIVE": 0.95,
+                    "S6_SAFETY": 0.25,
+                    "S0_NEUTRAL": 0.70,
+                }
+                gen["temperature"] = float(temp_map.get(ds.current_state, 0.70))
+            if "max_tokens" not in gen or not isinstance(gen.get("max_tokens"), (int, float)):
+                max_map = {
+                    "S1_CASUAL": 700,
+                    "S2_TASK": 1600,
+                    "S3_EMOTIONAL": 1200,
+                    "S4_META": 1400,
+                    "S5_CREATIVE": 1800,
+                    "S6_SAFETY": 700,
+                    "S0_NEUTRAL": 1400,
+                }
+                gen["max_tokens"] = int(max_map.get(ds.current_state, 1400))
+
+            if isinstance(getattr(req, "metadata", None), dict):
+                req.metadata["gen"] = gen
+                req.metadata["_phase03_dialogue_state"] = ds.current_state
+
+            meta["phase03"] = {
+                "timing_ms": {},  # filled at end
+                "intent": {
+                    "category": {
+                        "scores": iv.category_scores,
+                        "primary": iv.primary,
+                        "secondary": iv.secondary,
+                    },
+                    "vector": {"raw": iv.raw, "ema": intent_ema},
+                    "confidence": float(iv.confidence),
+                },
+                "routing": {
+                    "strategy": "hybrid",
+                    "target_state": ds.current_state,
+                    "transition_confidence": float(ds.confidence),
+                    "reasons": transition.get("reasons", []),
+                },
+                "dialogue": {
+                    "state": {
+                        "current": ds.current_state,
+                        "previous": ds.prev_state,
+                        "stability": float(getattr(ds, "stability_score", 0.0) or 0.0),
+                    },
+                    "transition": transition,
+                },
+                "safety": so.to_dict(),
+            }
+        except Exception:
+            pass
+        t_marks["phase03"] = time.perf_counter()
+
         # ---- 5.7) Guardrails ----
         try:
             guardrail = self._guardrail.decide(
@@ -996,6 +1294,7 @@ class PersonaController:
             self._freeze_updates = bool(self._freeze_updates or guardrail.freeze_updates)
         except Exception:
             pass
+        t_marks["guardrail"] = time.perf_counter()
 
         # ---- 6) LLM (stream) ----
         parts: list[str] = []
@@ -1027,6 +1326,8 @@ class PersonaController:
         except Exception as e:
             _trace("llm_error", {"error": str(e)})
             raise
+        finally:
+            t_marks["llm"] = time.perf_counter()
 
         reply_text = "".join(parts).strip()
 
@@ -1210,6 +1511,7 @@ class PersonaController:
                 global_state=global_state_ctx,
             )
             _trace("stored", None)
+        t_marks["store"] = time.perf_counter()
 
         try:
             gs_dict = global_state_ctx.to_dict()
@@ -1229,6 +1531,38 @@ class PersonaController:
                 "persistence": {"deferred": bool(defer_persistence)},
             }
         )
+
+        # Fill Phase03 timing (best-effort, no hard dependency)
+        try:
+            t_end = time.perf_counter()
+            t_marks["end"] = t_end
+            phase03 = meta.get("phase03") if isinstance(meta.get("phase03"), dict) else None
+            if isinstance(phase03, dict) and isinstance(phase03.get("timing_ms"), dict):
+                order = [
+                    ("memory", "memory"),
+                    ("identity", "identity"),
+                    ("global_fsm", "global_fsm"),
+                    ("telemetry", "telemetry"),
+                    ("phase03", "phase03"),
+                    ("guardrail", "guardrail"),
+                    ("llm", "llm"),
+                    ("store", "store"),
+                    ("end", "end"),
+                ]
+                by_layer: Dict[str, int] = {}
+                prev_key = "start"
+                for key, label in order:
+                    if key not in t_marks:
+                        continue
+                    dt_ms = (float(t_marks[key]) - float(t_marks.get(prev_key, t0))) * 1000.0
+                    by_layer[label] = int(max(0.0, dt_ms))
+                    prev_key = key
+                phase03["timing_ms"] = {
+                    "total": int(max(0.0, (t_end - t0) * 1000.0)),
+                    "by_layer": by_layer,
+                }
+        except Exception:
+            pass
 
         yield {
             "type": "done",

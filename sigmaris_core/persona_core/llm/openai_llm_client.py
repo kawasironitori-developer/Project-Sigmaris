@@ -107,6 +107,77 @@ class OpenAILLMClient(LLMClientLike):
             {"role": "user", "content": user_text},
         ]
 
+    def _phase03_dialogue_instructions(self, state: Optional[str]) -> Optional[str]:
+        """
+        Phase03 Dialogue State -> short, non-CoT style guidance.
+        Keep this as a lightweight bias, not a hard constraint.
+        """
+        if not state:
+            return None
+        s = str(state).strip()
+        if not s:
+            return None
+
+        common = "Do not expose chain-of-thought. Be concise but helpful."
+
+        if s == "S1_CASUAL":
+            return "\n".join(
+                [
+                    "Casual mode:",
+                    "- Keep it short and friendly.",
+                    "- Avoid over-structuring unless asked.",
+                    f"- {common}",
+                ]
+            )
+        if s == "S2_TASK":
+            return "\n".join(
+                [
+                    "Task mode:",
+                    "- Use a clear structure (steps / options / checks).",
+                    "- Ask 1–2 clarifying questions if needed.",
+                    "- Call out assumptions and uncertainties.",
+                    f"- {common}",
+                ]
+            )
+        if s == "S3_EMOTIONAL":
+            return "\n".join(
+                [
+                    "Emotional support mode:",
+                    "- Validate feelings briefly, then ask gentle clarifying questions.",
+                    "- Avoid pressure, guilt, or dependency framing.",
+                    "- Prefer grounding + small next steps.",
+                    f"- {common}",
+                ]
+            )
+        if s == "S4_META":
+            return "\n".join(
+                [
+                    "Meta mode:",
+                    "- Explain the system behavior/limits clearly and factually.",
+                    "- Avoid anthropomorphic claims.",
+                    f"- {common}",
+                ]
+            )
+        if s == "S5_CREATIVE":
+            return "\n".join(
+                [
+                    "Creative / roleplay mode:",
+                    "- Maintain character/world consistency.",
+                    "- Keep factual claims separated from fiction if relevant.",
+                    f"- {common}",
+                ]
+            )
+        if s == "S6_SAFETY":
+            return "\n".join(
+                [
+                    "Safety mode:",
+                    "- If the user requests harmful/illegal actions, refuse and redirect to safe alternatives.",
+                    "- Keep explanations short and non-judgmental.",
+                    f"- {common}",
+                ]
+            )
+        return None
+
     def _is_retryable(self, err: Exception) -> bool:
         if isinstance(
             err,
@@ -215,6 +286,16 @@ class OpenAILLMClient(LLMClientLike):
             trait_state=trait_state,
             global_state=global_state,
         )
+
+        # Phase03 dialogue mode hint (style only)
+        try:
+            md = getattr(req, "metadata", None) or {}
+            phase03_state = md.get("_phase03_dialogue_state")
+        except Exception:
+            phase03_state = None
+        hint = self._phase03_dialogue_instructions(phase03_state)
+        if isinstance(hint, str) and hint.strip():
+            system_prompt += "\n\n# Dialogue Mode (Phase03)\n" + hint.strip()
 
         # Optional persona injection (e.g., character roleplay) via req.context/metadata
         try:
@@ -350,6 +431,16 @@ class OpenAILLMClient(LLMClientLike):
             trait_state=trait_state,
             global_state=global_state,
         )
+
+        # Phase03 dialogue mode hint (style only)
+        try:
+            md = getattr(req, "metadata", None) or {}
+            phase03_state = md.get("_phase03_dialogue_state")
+        except Exception:
+            phase03_state = None
+        hint = self._phase03_dialogue_instructions(phase03_state)
+        if isinstance(hint, str) and hint.strip():
+            system_prompt += "\n\n# Dialogue Mode (Phase03)\n" + hint.strip()
 
         # Optional persona injection (e.g., character roleplay) via req.context/metadata
         try:

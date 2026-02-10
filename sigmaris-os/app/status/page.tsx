@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Header from "@/components/Header";
 import { SigmarisLangProvider } from "@/lib/sigmarisLangContext";
+import Link from "next/link";
 import {
   CartesianGrid,
   Line,
@@ -348,6 +349,15 @@ function StatusContent() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-[#0e141b] to-[#1a2230] text-[#e6eef4] px-6 md:px-16 py-24">
       <Header />
+
+      <div className="max-w-6xl mx-auto mt-6">
+        <Link
+          href="/logs"
+          className="inline-flex items-center gap-2 rounded-full border border-[#4c7cf7]/60 px-3 py-1 text-xs text-[#e6eef4] hover:bg-[#4c7cf7]/15 transition"
+        >
+          Logs Export（JSON）
+        </Link>
+      </div>
 
       <div className="max-w-6xl mx-auto mt-16 space-y-8">
         <div>

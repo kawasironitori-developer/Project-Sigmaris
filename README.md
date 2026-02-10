@@ -12,6 +12,7 @@ Instead of relying on “whatever the model does inside a chat session”, Sigma
 - Safety gating (simple)
 - Traceability (trace_id + auditable `meta`)
 - Phase02: Temporal identity + subjectivity modes + failure detection (health / stability budget)
+- Phase03: Hybrid intent routing (category + vector) + dialogue state machine + safety override + observability
 
 This repository includes:
 
@@ -31,6 +32,34 @@ Sigmaris targets **functional continuity** and **operational observability**. It
 - When continuity is degraded, disclose uncertainty instead of fabricating history
 - Relationship-safety hooks use telemetry (C/N/M/S/R) and can shift tone toward informational framing
 - Telemetry scores follow Phase02 meanings: C=Coherence, N=Narrativity, M=Memory, S=Self-modeling, R=Responsiveness
+
+---
+
+## How Sigmaris differs from a “normal AI chat”
+
+Most chat systems are built around a simple loop: *input → model → output*.
+In that setup, consistency, safety, state transitions, and long-term behavior often become implicit side-effects of the model.
+
+Sigmaris takes a different approach: it treats the LLM as the “brain”, while implementing an explicit **external control plane** around it — designed for long-running, inspectable operation.
+
+Per turn, Sigmaris returns and (optionally) persists structured **observability metadata** describing what happened and why (without exposing chain-of-thought):
+
+- **Intent modeling (hybrid)**: multi-intent vectors instead of a single label
+- **Dialogue State Machine (DSM)**: explicit state transitions with hysteresis to avoid oscillation
+- **Safety Override**: deterministic safety-first overrides that can constrain or redirect behavior
+- **Observability-first**: machine-readable routing reasons, state, scores, and timings
+
+In short, Sigmaris is not a “smarter chatbot” — it’s infrastructure for operating LLMs **safely, consistently, and audibly over time**.
+
+## Where it can be useful (future-facing)
+
+Sigmaris is most valuable in domains where an AI must run continuously and remain controllable.
+
+- **Always-on personal AI / partner AI**: stable behavior across sessions and modes
+- **Enterprise agents**: safety gates, audit trails, reproducibility, and policy-driven routing
+- **Character chat**: robust mixing of roleplay, casual talk, coaching, and meta conversation
+- **Robotics / IoT**: state machines and safety overrides become essential once actions affect the real world
+- **Research & evaluation**: conversation quality can be analyzed via time-series telemetry, not only subjective impressions
 
 ## What to demo (the “OS” part)
 
