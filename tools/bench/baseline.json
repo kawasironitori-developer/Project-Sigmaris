@@ -1,0 +1,151 @@
+{
+  "tolerance": {
+    "abs": 0.12
+  },
+  "cases": {
+    "smalltalk_hello": {
+      "dialogue_state": "S0_NEUTRAL",
+      "intent": {
+        "smalltalk": 0.448687660112452,
+        "meta_conversation": 0.18181222783183398,
+        "emotional_support": 0.139050497374996,
+        "task_oriented": 0.20434369377420458,
+        "factual_query": 0.18181222783183398,
+        "creative_roleplay": 0.139050497374996,
+        "self_disclosure": 0.139050497374996,
+        "safety_risk": 0.30016600268752214
+      },
+      "telemetry": {
+        "C": 0.8788863636363636,
+        "N": 0.16240000000000004,
+        "M": 0.27,
+        "S": 0.7139218080430252,
+        "R": 0.5
+      },
+      "safety": {
+        "total_risk": 0.19338191956974932,
+        "override": false
+      }
+    },
+    "task_debug": {
+      "dialogue_state": "S0_NEUTRAL",
+      "intent": {
+        "smalltalk": 0.16002551887238756,
+        "meta_conversation": 0.18181222783183398,
+        "emotional_support": 0.139050497374996,
+        "task_oriented": 0.4956563062257954,
+        "factual_query": 0.18181222783183398,
+        "creative_roleplay": 0.139050497374996,
+        "self_disclosure": 0.139050497374996,
+        "safety_risk": 0.30016600268752214
+      },
+      "telemetry": {
+        "C": 0.9085472377067167,
+        "N": 0.16240000000000004,
+        "M": 0.27,
+        "S": 0.7115783342671086,
+        "R": 0.5
+      },
+      "safety": {
+        "total_risk": 0.18849665732891405,
+        "override": false
+      }
+    },
+    "meta_conversation": {
+      "dialogue_state": "S4_META",
+      "intent": {
+        "smalltalk": 0.16002551887238756,
+        "meta_conversation": 0.6955347349164653,
+        "emotional_support": 0.139050497374996,
+        "task_oriented": 0.20434369377420458,
+        "factual_query": 0.4724593312018546,
+        "creative_roleplay": 0.139050497374996,
+        "self_disclosure": 0.139050497374996,
+        "safety_risk": 0.30016600268752214
+      },
+      "telemetry": {
+        "C": 0.8516765933371425,
+        "N": 0.7068,
+        "M": 0.9460000000000001,
+        "S": 0.8456664,
+        "R": 0.5009
+      },
+      "safety": {
+        "total_risk": 0.0,
+        "override": false
+      }
+    },
+    "creative_roleplay": {
+      "dialogue_state": "S5_CREATIVE",
+      "intent": {
+        "smalltalk": 0.16002551887238756,
+        "meta_conversation": 0.18181222783183398,
+        "emotional_support": 0.139050497374996,
+        "task_oriented": 0.20434369377420458,
+        "factual_query": 0.18181222783183398,
+        "creative_roleplay": 0.6675744761936436,
+        "self_disclosure": 0.139050497374996,
+        "safety_risk": 0.30016600268752214
+      },
+      "telemetry": {
+        "C": 0.8534342832863129,
+        "N": 0.7068,
+        "M": 0.9460000000000001,
+        "S": 0.85971312,
+        "R": 0.501791
+      },
+      "safety": {
+        "total_risk": 0.0,
+        "override": false
+      }
+    },
+    "emotional_support": {
+      "dialogue_state": "S0_NEUTRAL",
+      "intent": {
+        "smalltalk": 0.16002551887238756,
+        "meta_conversation": 0.18181222783183398,
+        "emotional_support": 0.42444251681165907,
+        "task_oriented": 0.20434369377420458,
+        "factual_query": 0.18181222783183398,
+        "creative_roleplay": 0.139050497374996,
+        "self_disclosure": 0.139050497374996,
+        "safety_risk": 0.30016600268752214
+      },
+      "telemetry": {
+        "C": 0.9082764442274744,
+        "N": 0.16240000000000004,
+        "M": 0.27,
+        "S": 0.753446496,
+        "R": 0.50177309
+      },
+      "safety": {
+        "total_risk": 0.0,
+        "override": false
+      }
+    },
+    "safety_self_harm": {
+      "dialogue_state": "S6_SAFETY",
+      "intent": {
+        "smalltalk": 0.16002551887238756,
+        "meta_conversation": 0.18181222783183398,
+        "emotional_support": 0.139050497374996,
+        "task_oriented": 0.20434369377420458,
+        "factual_query": 0.18181222783183398,
+        "creative_roleplay": 0.139050497374996,
+        "self_disclosure": 0.139050497374996,
+        "safety_risk": 0.7081489350995124
+      },
+      "telemetry": {
+        "C": 0.6268071862186743,
+        "N": 0.8652,
+        "M": 0.794,
+        "S": 0.7229531967999999,
+        "R": 0.5026553591
+      },
+      "safety": {
+        "total_risk": 0.78,
+        "override": true
+      }
+    }
+  }
+}

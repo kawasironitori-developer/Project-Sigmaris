@@ -21,6 +21,8 @@ import os
 import json
 import time
 import uuid
+import hashlib
+import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -59,6 +61,38 @@ DEFAULT_MODEL = os.getenv("SIGMARIS_PERSONA_MODEL", "gpt-4.1")
 DEFAULT_EMBEDDING_MODEL = os.getenv("SIGMARIS_EMBEDDING_MODEL", "text-embedding-3-small")
 DEFAULT_USER_ID = os.getenv("SIGMARIS_DEFAULT_USER_ID", "default-user")
 
+META_VERSION = 1
+ENGINE_VERSION = os.getenv("SIGMARIS_ENGINE_VERSION", "sigmaris-core")
+BUILD_SHA = (
+    os.getenv("SIGMARIS_BUILD_SHA")
+    or os.getenv("GIT_COMMIT_SHA")
+    or os.getenv("VERCEL_GIT_COMMIT_SHA")
+    or os.getenv("RENDER_GIT_COMMIT")
+    or os.getenv("FLY_APP_NAME")  # better than empty; still non-secret
+    or "UNKNOWN"
+)
+
+
+def _compute_config_hash() -> str:
+    """
+    Best-effort stable hash for "engine configuration" (not per-turn state).
+    """
+    cfg: Dict[str, Any] = {
+        "meta_version": META_VERSION,
+        "engine_version": ENGINE_VERSION,
+        "build_sha": BUILD_SHA,
+        "model": DEFAULT_MODEL,
+        "embedding_model": DEFAULT_EMBEDDING_MODEL,
+        "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        "phase03_session_cap": os.getenv("SIGMARIS_PHASE03_SESSION_CAP", "1024"),
+        "contradiction_open_limit": os.getenv("SIGMARIS_CONTRADICTION_OPEN_LIMIT", "6"),
+    }
+    payload = json.dumps(cfg, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+CONFIG_HASH = _compute_config_hash()
+
 # =============================================================
 # FastAPI App
 # - ルートデコレータ評価時に `app` が未定義にならないよう、早めに定義しておく
@@ -72,6 +106,82 @@ if _supabase_cfg is not None:
     _supabase = SupabaseRESTClient(_supabase_cfg)
 else:
     _supabase = None
+
+
+def _v0_defaults(trace_id: str) -> Dict[str, Any]:
+    return {
+        "trace_id": str(trace_id or "UNKNOWN"),
+        "intent": {},
+        "dialogue_state": "UNKNOWN",
+        "telemetry": {"C": 0.0, "N": 0.0, "M": 0.0, "S": 0.0, "R": 0.0},
+        "safety": {"total_risk": 0.0, "override": False},
+    }
+
+
+def _normalize_v0(*, trace_id: str, controller_meta: Any) -> Dict[str, Any]:
+    base = _v0_defaults(trace_id)
+    if not isinstance(controller_meta, dict):
+        return base
+    v0 = controller_meta.get("v0")
+    if not isinstance(v0, dict):
+        return base
+
+    # shallow merge + type guards
+    out = dict(base)
+    if isinstance(v0.get("intent"), dict):
+        out["intent"] = {k: float(v) for k, v in v0["intent"].items() if isinstance(k, str) and isinstance(v, (int, float))}
+    if isinstance(v0.get("dialogue_state"), str) and v0.get("dialogue_state"):
+        out["dialogue_state"] = v0["dialogue_state"]
+    if isinstance(v0.get("telemetry"), dict):
+        tel = {}
+        for k in ("C", "N", "M", "S", "R"):
+            v = v0["telemetry"].get(k)
+            tel[k] = float(v) if isinstance(v, (int, float)) else 0.0
+        out["telemetry"] = tel
+    if isinstance(v0.get("safety"), dict):
+        s = v0["safety"]
+        out["safety"] = {
+            "total_risk": float(s.get("total_risk")) if isinstance(s.get("total_risk"), (int, float)) else 0.0,
+            "override": bool(s.get("override") or False),
+        }
+    return out
+
+
+def _normalize_decision_candidates(*, controller_meta: Any, v0: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    decision_candidates v1 (always non-null list).
+    """
+    if isinstance(controller_meta, dict):
+        dc = controller_meta.get("decision_candidates")
+        if isinstance(dc, list):
+            out: List[Dict[str, Any]] = []
+            for item in dc:
+                if not isinstance(item, dict):
+                    continue
+                out.append(
+                    {
+                        "id": str(item.get("id") or ""),
+                        "label": str(item.get("label") or ""),
+                        "score": float(item.get("score")) if isinstance(item.get("score"), (int, float)) else 0.0,
+                        "reason": str(item.get("reason") or ""),
+                    }
+                )
+            return out
+
+    # Fallback: derive 3 candidates from v0
+    intent = v0.get("intent") if isinstance(v0.get("intent"), dict) else {}
+    scores = [float(v) for v in intent.values() if isinstance(v, (int, float))]
+    scores.sort(reverse=True)
+    primary = float(scores[0]) if len(scores) >= 1 else 0.0
+    secondary = float(scores[1]) if len(scores) >= 2 else 0.0
+    ds = str(v0.get("dialogue_state") or "UNKNOWN")
+    total_risk = float((v0.get("safety") or {}).get("total_risk") or 0.0) if isinstance(v0.get("safety"), dict) else 0.0
+
+    return [
+        {"id": "primary", "label": f"{ds}_answer" if ds != "UNKNOWN" else "primary", "score": primary, "reason": "Selected by mode + intent alignment"},
+        {"id": "alt_short", "label": "task_focused_short", "score": secondary, "reason": "Viable but not optimal for current mode"},
+        {"id": "alt_refuse", "label": "safety_refusal", "score": total_risk, "reason": "Safety threshold relevance"},
+    ]
 
 
 def _estimate_overload_score(message: str) -> float:
@@ -587,12 +697,25 @@ async def persona_chat(req: ChatRequest) -> ChatResponse:
         affect_signal=req.affect_signal,
     )
 
+    v0 = _normalize_v0(trace_id=trace_id, controller_meta=result.meta)
+    decision_candidates = _normalize_decision_candidates(controller_meta=result.meta, v0=v0)
+
     meta: Dict[str, Any] = {
+        "meta_version": META_VERSION,
+        "engine_version": ENGINE_VERSION,
+        "build_sha": str(BUILD_SHA),
+        "config_hash": str(CONFIG_HASH),
         "trace_id": trace_id,
+        "intent": v0.get("intent") or {},
+        "dialogue_state": v0.get("dialogue_state") or "UNKNOWN",
+        "telemetry": v0.get("telemetry") or {"C": 0.0, "N": 0.0, "M": 0.0, "S": 0.0, "R": 0.0},
+        "decision_candidates": decision_candidates,
         "timing_ms": int((time.time() - t0) * 1000),
         "safety": {
             "flag": safety.safety_flag,
             "risk_score": safety.risk_score,
+            "total_risk": float((v0.get("safety") or {}).get("total_risk") or 0.0),
+            "override": bool((v0.get("safety") or {}).get("override") or False),
             "categories": safety.categories,
             "reasons": safety.reasons,
         },
@@ -606,6 +729,7 @@ async def persona_chat(req: ChatRequest) -> ChatResponse:
             "baseline_delta": (result.meta or {}).get("trait_baseline_delta"),
         },
         "global_state": result.global_state.to_dict(),
+        "v0": v0,
         "controller_meta": result.meta,
         "io": {
             "message_preview": preview_text(req.message) if TRACE_INCLUDE_TEXT else "",
@@ -792,12 +916,27 @@ async def persona_chat_stream(req: ChatRequest):
                     result = ev.get("result")
                     reply_text = (getattr(result, "reply_text", None) or "").strip()
 
+                    v0 = _normalize_v0(trace_id=trace_id, controller_meta=getattr(result, "meta", None))
+                    decision_candidates = _normalize_decision_candidates(
+                        controller_meta=getattr(result, "meta", None), v0=v0
+                    )
+
                     meta: Dict[str, Any] = {
+                        "meta_version": META_VERSION,
+                        "engine_version": ENGINE_VERSION,
+                        "build_sha": str(BUILD_SHA),
+                        "config_hash": str(CONFIG_HASH),
                         "trace_id": trace_id,
+                        "intent": v0.get("intent") or {},
+                        "dialogue_state": v0.get("dialogue_state") or "UNKNOWN",
+                        "telemetry": v0.get("telemetry") or {"C": 0.0, "N": 0.0, "M": 0.0, "S": 0.0, "R": 0.0},
+                        "decision_candidates": decision_candidates,
                         "timing_ms": int((time.time() - t0) * 1000),
                         "safety": {
                             "flag": safety.safety_flag,
                             "risk_score": safety.risk_score,
+                            "total_risk": float((v0.get("safety") or {}).get("total_risk") or 0.0),
+                            "override": bool((v0.get("safety") or {}).get("override") or False),
                             "categories": safety.categories,
                             "reasons": safety.reasons,
                         },
@@ -814,6 +953,7 @@ async def persona_chat_stream(req: ChatRequest):
                             "baseline_delta": (result.meta or {}).get("trait_baseline_delta"),
                         },
                         "global_state": result.global_state.to_dict(),
+                        "v0": v0,
                         "controller_meta": result.meta,
                         "io": {
                             "message_preview": preview_text(req.message) if TRACE_INCLUDE_TEXT else "",

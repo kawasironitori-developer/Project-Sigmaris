@@ -49,6 +49,17 @@ Per turn, Sigmaris returns and (optionally) persists structured **observability 
 - **Safety Override**: deterministic safety-first overrides that can constrain or redirect behavior
 - **Observability-first**: machine-readable routing reasons, state, scores, and timings
 
+### v0 meta (always non-null)
+
+For integration and debugging, the API always includes a compact, non-null summary in `meta` (and it is stored in `common_state_snapshots.meta`):
+
+- `meta.intent` - current intent vector (best-effort)
+- `meta.dialogue_state` - current dialogue state
+- `meta.telemetry` - `{ C, N, M, S, R }` scores
+- `meta.safety.total_risk` and `meta.safety.override`
+- `meta.decision_candidates` - best-effort decision candidate list (v1)
+- `meta.meta_version`, `meta.engine_version`, `meta.build_sha`, `meta.config_hash` - versioning + reproducibility keys
+
 In short, Sigmaris is not a “smarter chatbot” — it’s infrastructure for operating LLMs **safely, consistently, and audibly over time**.
 
 ## Where it can be useful (future-facing)
@@ -162,6 +173,48 @@ Run this in the Supabase SQL Editor:
 
 - `supabase/RESET_TO_COMMON.sql` (**destructive reset**, recreates unified `common_*` tables)
 
+---
+
+## Deploy (Fly.io) — Backend only
+
+The backend can be deployed to Fly.io using the included `Dockerfile` + `fly.toml`.
+
+1) Install and login:
+
+```bash
+flyctl auth login
+```
+
+2) Create an app (or edit `fly.toml` `app = "..."` first):
+
+```bash
+flyctl apps create
+```
+
+3) Set secrets (minimum):
+
+```bash
+flyctl secrets set OPENAI_API_KEY="..." SUPABASE_URL="..." SUPABASE_SERVICE_ROLE_KEY="..."
+```
+
+Optional:
+
+- `SUPABASE_SCHEMA` (default `public`)
+- `SIGMARIS_ENGINE_VERSION`
+- `SIGMARIS_BUILD_SHA`
+- `SIGMARIS_OPERATOR_KEY`, `SIGMARIS_OPERATOR_USER_IDS` (operator overrides)
+
+4) Deploy:
+
+```bash
+flyctl deploy
+```
+
+After deploy:
+
+- Swagger: `https://<your-app>.fly.dev/docs`
+- Health check uses `GET /docs` (see `fly.toml`).
+
 ## Operator overrides (optional)
 
 Sigmaris supports audited operator overrides via `POST /persona/operator/override`.
@@ -191,3 +244,23 @@ If `/status` fails with `PGRST205` (schema cache), you may need to refresh Postg
 - Backend (stream): `POST /persona/chat/stream` -> SSE (`delta` / `done` events)
 - Frontend proxy (stream): `POST /api/aei/stream` -> proxies SSE + stores `common_messages` / `common_state_snapshots`
 - Dashboard APIs: `GET /api/state/latest`, `GET /api/state/timeseries?limit=60`
+
+---
+
+## Benchmark (regression)
+
+Sigmaris includes a small **deterministic benchmark** that runs in CI (no OpenAI/Supabase keys required).
+
+- Test cases: `tools/bench/cases_v1.json`
+- Baseline (golden): `tools/bench/baseline.json`
+- Runner:
+
+```bash
+python tools/bench/run_bench.py
+```
+
+If you intentionally change the control-plane behavior, update the baseline:
+
+```bash
+python tools/bench/run_bench.py --write-baseline
+```

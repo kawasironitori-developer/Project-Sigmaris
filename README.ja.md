@@ -49,6 +49,17 @@ Sigmaris はそこを逆転させ、LLMを“頭脳”として使いつつ、**
 - **Safety Override**: 危険度が一定以上なら、応答方針を強制的に安全側へ上書きする（決定は決定論的）
 - **Observability**: ルーティング理由・状態・スコア・処理時間を構造化して返す（監査・改善が可能）
 
+### v0 meta（必ず non-null）
+
+統合・デバッグのため、API の `meta` には常に「最小限の要約（v0）」が入り、`common_state_snapshots.meta` にも保存されます。
+
+- `meta.intent` - 現在の意図ベクトル（best-effort）
+- `meta.dialogue_state` - 現在の会話状態
+- `meta.telemetry` - `{ C, N, M, S, R }` のスコア
+- `meta.safety.total_risk` と `meta.safety.override`
+- `meta.decision_candidates` - 判断候補リスト（best-effort / v1）
+- `meta.meta_version`, `meta.engine_version`, `meta.build_sha`, `meta.config_hash` - バージョン管理と再現性のためのキー
+
 要するに Sigmaris は、**モデルの賢さを競うプロジェクトではなく、長期稼働AIを“運用できる形”にするための基盤**です。
 
 ## どんな分野で役立つか（将来像）
@@ -164,6 +175,48 @@ Supabase の SQL Editor で実行:
 
 - `supabase/RESET_TO_COMMON.sql`（**破壊的リセット**。統一 `common_*` テーブルを作成）
 
+---
+
+## Deploy（Fly.io）— Backend のみ
+
+Backend は同梱の `Dockerfile` + `fly.toml` で Fly.io にデプロイできます。
+
+1) インストール＆ログイン:
+
+```bash
+flyctl auth login
+```
+
+2) アプリ作成（もしくは先に `fly.toml` の `app = "..."` を変更）:
+
+```bash
+flyctl apps create
+```
+
+3) secrets 設定（最小）:
+
+```bash
+flyctl secrets set OPENAI_API_KEY="..." SUPABASE_URL="..." SUPABASE_SERVICE_ROLE_KEY="..."
+```
+
+任意:
+
+- `SUPABASE_SCHEMA`（既定 `public`）
+- `SIGMARIS_ENGINE_VERSION`
+- `SIGMARIS_BUILD_SHA`
+- `SIGMARIS_OPERATOR_KEY`, `SIGMARIS_OPERATOR_USER_IDS`（operator overrides）
+
+4) デプロイ:
+
+```bash
+flyctl deploy
+```
+
+デプロイ後:
+
+- Swagger: `https://<your-app>.fly.dev/docs`
+- ヘルスチェックは `GET /docs`（`fly.toml` 参照）
+
 ## Operator overrides（任意）
 
 Sigmaris は運用者による上書き（監査ログ付き）を `POST /persona/operator/override` で受け付けます。
@@ -193,3 +246,23 @@ Sigmaris は運用者による上書き（監査ログ付き）を `POST /person
 - Backend（stream）: `POST /persona/chat/stream` -> SSE（`delta` / `done`）
 - Frontend proxy（stream）: `POST /api/aei/stream` -> SSE中継 + `common_messages` / `common_state_snapshots` に保存
 - Dashboard APIs: `GET /api/state/latest`, `GET /api/state/timeseries?limit=60`
+
+---
+
+## Benchmark（回帰検知）
+
+Sigmaris には、CI 上で動く **決定論的ベンチ** を同梱しています（OpenAI / Supabase のキー不要）。
+
+- テストケース: `tools/bench/cases_v1.json`
+- ベースライン（golden）: `tools/bench/baseline.json`
+- 実行:
+
+```bash
+python tools/bench/run_bench.py
+```
+
+Control Plane の挙動を意図的に変更した場合は、ベースラインを更新します:
+
+```bash
+python tools/bench/run_bench.py --write-baseline
+```
