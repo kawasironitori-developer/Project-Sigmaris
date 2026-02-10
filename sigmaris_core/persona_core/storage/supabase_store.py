@@ -48,7 +48,7 @@ class SupabasePersonaDB:
             "importance": float(importance),
             "meta": meta or {},
         }
-        self._c.insert("sigmaris_turns", row)
+        self._c.insert("common_turns", row)
 
     def store_value_snapshot(
         self,
@@ -65,7 +65,7 @@ class SupabasePersonaDB:
             "delta": delta or {},
             "meta": meta or {},
         }
-        self._c.insert("sigmaris_value_snapshots", row)
+        self._c.insert("common_value_snapshots", row)
 
     def store_trait_snapshot(
         self,
@@ -82,7 +82,225 @@ class SupabasePersonaDB:
             "delta": delta or {},
             "meta": meta or {},
         }
-        self._c.insert("sigmaris_trait_snapshots", row)
+        self._c.insert("common_trait_snapshots", row)
+
+    def store_telemetry_snapshot(
+        self,
+        *,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        scores: Dict[str, float],
+        ema: Dict[str, float],
+        flags: Dict[str, Any],
+        reasons: Dict[str, Any],
+        meta: Dict[str, Any],
+    ) -> None:
+        row = {
+            "trace_id": (meta or {}).get("trace_id"),
+            "user_id": str(user_id or ""),
+            "session_id": session_id,
+            "scores": scores or {},
+            "ema": ema or {},
+            "flags": flags or {},
+            "reasons": reasons or {},
+            "meta": meta or {},
+        }
+        self._c.insert("common_telemetry_snapshots", row)
+
+    def store_ego_snapshot(
+        self,
+        *,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        ego_id: str,
+        version: int,
+        state: Dict[str, Any],
+        meta: Dict[str, Any],
+    ) -> None:
+        row = {
+            "trace_id": (meta or {}).get("trace_id"),
+            "user_id": str(user_id or ""),
+            "session_id": session_id,
+            "ego_id": str(ego_id),
+            "version": int(version),
+            "state": state or {},
+            "meta": meta or {},
+        }
+        self._c.insert("common_ego_snapshots", row)
+
+    # --------------------------
+    # Phase02 snapshots (Temporal Identity / Subjectivity / Failure / Integration)
+    # --------------------------
+
+    def store_temporal_identity_snapshot(
+        self,
+        *,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        trace_id: Optional[str],
+        ego_id: str,
+        state: Dict[str, Any],
+        telemetry: Dict[str, Any],
+    ) -> None:
+        row = {
+            "trace_id": trace_id,
+            "user_id": str(user_id or ""),
+            "session_id": session_id,
+            "ego_id": str(ego_id),
+            "state": state or {},
+            "telemetry": telemetry or {},
+        }
+        self._c.insert("common_temporal_identity_snapshots", row)
+
+    def load_last_temporal_identity_state(self, *, user_id: str) -> Optional[Dict[str, Any]]:
+        rows = self._c.select(
+            "common_temporal_identity_snapshots",
+            columns="state,created_at",
+            filters=[f"user_id=eq.{user_id}"],
+            order="created_at.desc",
+            limit=1,
+        )
+        if not rows:
+            return None
+        return rows[0].get("state") or None
+
+    def store_subjectivity_snapshot(
+        self,
+        *,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        trace_id: Optional[str],
+        subjectivity: Dict[str, Any],
+    ) -> None:
+        row = {
+            "trace_id": trace_id,
+            "user_id": str(user_id or ""),
+            "session_id": session_id,
+            "subjectivity": subjectivity or {},
+        }
+        self._c.insert("common_subjectivity_snapshots", row)
+
+    def store_failure_snapshot(
+        self,
+        *,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        trace_id: Optional[str],
+        failure: Dict[str, Any],
+    ) -> None:
+        row = {
+            "trace_id": trace_id,
+            "user_id": str(user_id or ""),
+            "session_id": session_id,
+            "failure": failure or {},
+        }
+        self._c.insert("common_failure_snapshots", row)
+
+    def store_identity_snapshot(
+        self,
+        *,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        trace_id: Optional[str],
+        snapshot: Dict[str, Any],
+    ) -> None:
+        row = {
+            "trace_id": trace_id,
+            "user_id": str(user_id or ""),
+            "session_id": session_id,
+            "snapshot": snapshot or {},
+        }
+        self._c.insert("common_identity_snapshots", row)
+
+    def store_integration_events(
+        self,
+        *,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        trace_id: Optional[str],
+        events: List[Dict[str, Any]],
+    ) -> None:
+        for ev in events or []:
+            row = {
+                "trace_id": trace_id,
+                "user_id": str(user_id or ""),
+                "session_id": session_id,
+                "event_type": str(ev.get("event_type") or ""),
+                "payload": ev or {},
+            }
+            self._c.insert("common_integration_events", row)
+
+    def load_last_ego_state(self, *, user_id: str) -> Optional[Dict[str, Any]]:
+        rows = self._c.select(
+            "common_ego_snapshots",
+            columns="state,version,ego_id,created_at",
+            filters=[f"user_id=eq.{user_id}"],
+            order="created_at.desc",
+            limit=1,
+        )
+        if not rows:
+            return None
+        return rows[0].get("state") or None
+
+    def store_life_event(
+        self,
+        *,
+        user_id: str,
+        session_id: Optional[str],
+        trace_id: Optional[str],
+        kind: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        self._c.insert(
+            "common_life_events",
+            {
+                "user_id": str(user_id),
+                "session_id": session_id,
+                "trace_id": trace_id,
+                "kind": kind,
+                "payload": payload or {},
+            },
+        )
+
+    def store_operator_override(
+        self,
+        *,
+        user_id: str,
+        trace_id: Optional[str],
+        actor: Optional[str],
+        kind: str,
+        payload: Dict[str, Any],
+    ) -> None:
+        self._c.insert(
+            "common_operator_overrides",
+            {
+                "user_id": str(user_id),
+                "trace_id": trace_id,
+                "actor": actor,
+                "kind": kind,
+                "payload": payload or {},
+            },
+        )
+
+    def load_last_operator_override(
+        self,
+        *,
+        user_id: str,
+        kind: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        filters = [f"user_id=eq.{user_id}"]
+        if kind:
+            filters.append(f"kind=eq.{kind}")
+        rows = self._c.select(
+            "common_operator_overrides",
+            columns="kind,payload,actor,created_at",
+            filters=filters,
+            order="created_at.desc",
+            limit=1,
+        )
+        if not rows:
+            return None
+        return rows[0] or None
 
     # --------------------------
     # Load latest states (server wiring 用)
@@ -90,7 +308,7 @@ class SupabasePersonaDB:
 
     def load_last_value_state(self, *, user_id: str) -> Optional[ValueState]:
         rows = self._c.select(
-            "sigmaris_value_snapshots",
+            "common_value_snapshots",
             columns="state,created_at",
             filters=[f"user_id=eq.{user_id}"],
             order="created_at.desc",
@@ -108,7 +326,7 @@ class SupabasePersonaDB:
 
     def load_last_trait_state(self, *, user_id: str) -> Optional[TraitState]:
         rows = self._c.select(
-            "sigmaris_trait_snapshots",
+            "common_trait_snapshots",
             columns="state,created_at",
             filters=[f"user_id=eq.{user_id}"],
             order="created_at.desc",
@@ -152,11 +370,11 @@ class SupabaseEpisodeStore:
             "embedding": d.get("embedding"),
             "meta": {},
         }
-        self._c.upsert("sigmaris_episodes", row, on_conflict="episode_id")
+        self._c.upsert("common_episodes", row, on_conflict="episode_id")
 
     def fetch_recent(self, limit: int = 50) -> List[Episode]:
         rows = self._c.select(
-            "sigmaris_episodes",
+            "common_episodes",
             columns="episode_id,timestamp,summary,emotion_hint,traits_hint,raw_context,embedding",
             filters=[f"user_id=eq.{self._user_id}"],
             order="timestamp.desc",
@@ -174,7 +392,7 @@ class SupabaseEpisodeStore:
         # 例: episode_id=in.(a,b)
         joined = ",".join(ids)
         rows = self._c.select(
-            "sigmaris_episodes",
+            "common_episodes",
             columns="episode_id,timestamp,summary,emotion_hint,traits_hint,raw_context,embedding",
             filters=[
                 f"user_id=eq.{self._user_id}",
@@ -187,4 +405,3 @@ class SupabaseEpisodeStore:
     def search_embedding(self, vector: List[float], limit: int = 5) -> List[Episode]:
         # TODO: pgvector での検索（RPC / SQL function）に置き換える余地あり
         return self.fetch_recent(limit=limit)
-

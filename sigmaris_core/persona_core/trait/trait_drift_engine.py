@@ -1,52 +1,55 @@
 # sigmaris-core/persona_core/trait/trait_drift_engine.py
 # -------------------------------------------------------------
-# Persona OS 完全版 Trait Drift Engine
+# Persona OS: Trait Drift Engine
 #
-# calm / empathy / curiosity の 3軸 TraitState を、
-# Identity / Memory / Value / Affect から微小更新する。
-#
-# ValueDriftEngine と構造を完全同期し、
-# PersonaDB の snapshot 機能にも対応した完全版。
+# calm / empathy / curiosity の 3軸を「内面状態（state）」として更新する。
+# ここでは以下を設計上の前提とする:
+# - state は 0..1
+# - 0.5 をニュートラル（基準）とする
+# - baseline（ユーザー固有の体質）へ戻る力（mean reversion）を入れる
 # -------------------------------------------------------------
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from persona_core.types.core_types import PersonaRequest
-from persona_core.memory.memory_orchestrator import MemorySelectionResult
 from persona_core.identity.identity_continuity import IdentityContinuityResult
+from persona_core.memory.memory_orchestrator import MemorySelectionResult
+from persona_core.types.core_types import PersonaRequest
 from persona_core.value.value_drift_engine import ValueState
 
 
 # ======================================================
-# Trait State
+# Trait State (0..1)
 # ======================================================
+
 
 @dataclass
 class TraitState:
     """
-    calm      : 落ち着き。高いほど反応が穏やかで衝突しにくい
-    empathy   : 共感性。高いほど相手の心情を汲む傾向が強い
-    curiosity : 探索性。新しい話題・深掘りへの姿勢
+    calm      : 落ち着き（高いほど平静/安定）
+    empathy   : 共感（高いほど相手への配慮が強い）
+    curiosity : 好奇心（高いほど探索/質問/広げる傾向）
     """
 
-    calm: float = 0.0
-    empathy: float = 0.0
-    curiosity: float = 0.0
+    # state は 0..1 を想定。0.5 を「ニュートラル（基準）」として扱う。
+    calm: float = 0.5
+    empathy: float = 0.5
+    curiosity: float = 0.5
 
     def to_dict(self) -> Dict[str, float]:
         return {
-            "calm": self.calm,
-            "empathy": self.empathy,
-            "curiosity": self.curiosity,
+            "calm": float(self.calm),
+            "empathy": float(self.empathy),
+            "curiosity": float(self.curiosity),
         }
 
 
 # ======================================================
 # Drift Result
 # ======================================================
+
 
 @dataclass
 class TraitDriftResult:
@@ -56,17 +59,17 @@ class TraitDriftResult:
 
 
 # ======================================================
-# Trait Drift Engine（完全版）
+# Trait Drift Engine
 # ======================================================
+
 
 class TraitDriftEngine:
     """
-    Persona OS 完全版 Trait Drift Engine
+    Trait Drift Engine
 
-    - Value Drift よりさらに遅い変化速度
-    - 1ターンの変動は極めて小さく、長期会話でのみ偏りが形成
-    - ValueState（openness / safety_bias）と強調連動
-    - Affect（緊張／暖かさ／興味）の直接影響も扱う
+    - baseline への戻り（mean reversion）で state を安定化
+    - Identity / Memory / Value / Affect の影響で微小に揺らす
+    - PersonaDB が対応していればスナップショットを保存
     """
 
     def __init__(
@@ -74,11 +77,12 @@ class TraitDriftEngine:
         *,
         learning_rate: float = 0.01,
         max_abs_value: float = 1.0,
-        decay_rate: float = 0.0005,
+        # 0..1 の baseline へ戻す rate（大きいほど早く戻る）
+        reversion_rate: float = 0.01,
     ) -> None:
         self._lr = float(learning_rate)
         self._limit = float(max_abs_value)
-        self._decay = float(decay_rate)
+        self._rev = float(reversion_rate)
 
     # ======================================================
     # Public API
@@ -88,6 +92,7 @@ class TraitDriftEngine:
         self,
         *,
         current: TraitState,
+        baseline: Optional[TraitState] = None,
         req: PersonaRequest,
         memory: MemorySelectionResult,
         identity: IdentityContinuityResult,
@@ -97,17 +102,31 @@ class TraitDriftEngine:
         user_id: Optional[str] = None,
     ) -> TraitDriftResult:
 
-        # deep copy（破壊防止）
+        # Guardrail: freeze major updates (Phase01 Part06 safe modes)
+        try:
+            if isinstance(getattr(req, "metadata", None), dict) and req.metadata.get("_freeze_updates"):
+                return TraitDriftResult(
+                    new_state=TraitState(
+                        calm=float(current.calm),
+                        empathy=float(current.empathy),
+                        curiosity=float(current.curiosity),
+                    ),
+                    delta={k: 0.0 for k in current.to_dict().keys()},
+                    notes={"frozen": True, "reason": "guardrail_freeze"},
+                )
+        except Exception:
+            pass
+
         new_state = TraitState(
-            calm=current.calm,
-            empathy=current.empathy,
-            curiosity=current.curiosity,
+            calm=float(current.calm),
+            empathy=float(current.empathy),
+            curiosity=float(current.curiosity),
         )
 
         deltas: Dict[str, float] = {k: 0.0 for k in new_state.to_dict().keys()}
 
-        # ---- 1) 自然減衰（中央 0.0 に戻す）----
-        self._apply_decay(new_state, deltas)
+        # ---- 1) baseline への戻り ----
+        self._apply_reversion(new_state, deltas, baseline)
 
         # ---- 2) Identity influence ----
         self._apply_identity_influence(new_state, deltas, identity)
@@ -118,7 +137,7 @@ class TraitDriftEngine:
         # ---- 4) Value influence ----
         self._apply_value_influence(new_state, deltas, value_state)
 
-        # ---- 5) Affect (tension / warmth / curiosity 信号) ----
+        # ---- 5) Affect influence ----
         self._apply_affect_influence(new_state, deltas, affect_signal)
 
         # ---- 6) clip ----
@@ -133,26 +152,31 @@ class TraitDriftEngine:
             req=req,
             memory=memory,
             identity=identity,
+            baseline=baseline,
         )
 
         notes = {
+            "baseline": (baseline.to_dict() if baseline is not None else None),
             "value_state": value_state.to_dict(),
             "affect_signal": affect_signal,
             "memory_pointer_count": len(memory.pointers),
-            "identity_topic_label": identity.identity_context.get("topic_label"),
+            "identity_topic_label": (identity.identity_context or {}).get("topic_label"),
         }
 
         return TraitDriftResult(new_state=new_state, delta=deltas, notes=notes)
 
     # ======================================================
-    # Influence functions（内部ロジック）
+    # Influence functions
     # ======================================================
 
-    def _apply_decay(self, state: TraitState, deltas: Dict[str, float]) -> None:
-        """Trait が 0 に戻る微小減衰。"""
+    def _apply_reversion(
+        self, state: TraitState, deltas: Dict[str, float], baseline: Optional[TraitState]
+    ) -> None:
+        target = baseline or TraitState()
         for k in deltas.keys():
-            v = getattr(state, k)
-            dv = -v * self._decay
+            v = float(getattr(state, k))
+            b = float(getattr(target, k))
+            dv = (b - v) * self._rev
             setattr(state, k, v + dv)
             deltas[k] += dv
 
@@ -169,14 +193,14 @@ class TraitDriftEngine:
         topic = (ctx.get("topic_label") or "").lower()
         base = self._lr
 
-        # 過去文脈が続く → calm↑
+        # 既視感/継続性があるほど calm を少し上げる
         if has_past:
             dv = base * 0.3
             state.calm += dv
             deltas["calm"] += dv
 
-        # ネガティブテーマ → calm↓
-        negative_terms = ["衝突", "トラブル", "喧嘩", "conflict", "fight", "problem"]
+        # ネガティブ/衝突っぽいラベルがあるなら calm を少し下げる
+        negative_terms = ["不安", "トラブル", "衝突", "conflict", "fight", "problem"]
         if any(term in topic for term in negative_terms):
             dv = -base * 0.4
             state.calm += dv
@@ -193,7 +217,7 @@ class TraitDriftEngine:
         count = len(memory.pointers)
         base = self._lr
 
-        # 記憶 pointer が多い → empathy↑（文脈理解強化）
+        # memory pointer が多いほど「相手の文脈を保持できる」= empathy を少し上げる
         if count >= 3:
             dv = base * 0.4
             state.empathy += dv
@@ -213,20 +237,18 @@ class TraitDriftEngine:
     ) -> None:
         base = self._lr
 
-        # openness → curiosity↑
+        # openness -> curiosity
         if value_state.openness > 0:
-            dv = base * 0.5 * value_state.openness
+            dv = base * 0.5 * float(value_state.openness)
             state.curiosity += dv
             deltas["curiosity"] += dv
 
-        # safety_bias → calm↑ かつ curiosity↓（慎重寄り）
+        # safety_bias -> calm up, curiosity down
         if value_state.safety_bias > 0:
-            dc = base * 0.4 * value_state.safety_bias
-            dcu = -base * 0.3 * value_state.safety_bias
-
+            dc = base * 0.4 * float(value_state.safety_bias)
+            dcu = -base * 0.3 * float(value_state.safety_bias)
             state.calm += dc
             state.curiosity += dcu
-
             deltas["calm"] += dc
             deltas["curiosity"] += dcu
 
@@ -247,19 +269,19 @@ class TraitDriftEngine:
         warmth = float(affect_signal.get("warmth", 0.0) or 0.0)
         curious = float(affect_signal.get("curiosity", 0.0) or 0.0)
 
-        # tension → calm↓
+        # tension -> calm down
         if tension != 0.0:
             dv = -base * 0.5 * tension
             state.calm += dv
             deltas["calm"] += dv
 
-        # warmth → empathy↑
+        # warmth -> empathy up
         if warmth != 0.0:
             dv = base * 0.6 * warmth
             state.empathy += dv
             deltas["empathy"] += dv
 
-        # curiosity signal → curiosity↑
+        # curiosity signal -> curiosity up
         if curious != 0.0:
             dv = base * 0.7 * curious
             state.curiosity += dv
@@ -268,12 +290,14 @@ class TraitDriftEngine:
     # ------------------------------------------------------
 
     def _clip_state(self, state: TraitState) -> None:
-        """Trait を [-limit, +limit] に収める"""
+        """Trait state は 0..1 にクリップする。"""
+        hi = float(self._limit)
+        lo = 0.0
         for k, v in state.to_dict().items():
-            if v > self._limit:
-                setattr(state, k, self._limit)
-            elif v < -self._limit:
-                setattr(state, k, -self._limit)
+            if v > hi:
+                setattr(state, k, hi)
+            elif v < lo:
+                setattr(state, k, lo)
 
     # ------------------------------------------------------
 
@@ -287,10 +311,8 @@ class TraitDriftEngine:
         req: PersonaRequest,
         memory: MemorySelectionResult,
         identity: IdentityContinuityResult,
+        baseline: Optional[TraitState],
     ) -> None:
-        """
-        PersonaDB が store_trait_snapshot を実装している場合のみ保存。
-        """
         if db is None or not hasattr(db, "store_trait_snapshot"):
             return
 
@@ -298,7 +320,8 @@ class TraitDriftEngine:
             "trace_id": (getattr(req, "metadata", None) or {}).get("_trace_id"),
             "request_preview": (req.message or "")[:80],
             "memory_pointer_count": len(memory.pointers),
-            "identity_topic_label": identity.identity_context.get("topic_label"),
+            "identity_topic_label": (identity.identity_context or {}).get("topic_label"),
+            "baseline": (baseline.to_dict() if baseline is not None else None),
         }
 
         payload = {
@@ -311,5 +334,5 @@ class TraitDriftEngine:
         try:
             db.store_trait_snapshot(**payload)
         except Exception:
-            # OS 全体の動作に影響させない
+            # OS 側を落とさない
             pass

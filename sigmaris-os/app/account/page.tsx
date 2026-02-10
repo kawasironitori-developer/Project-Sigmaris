@@ -50,7 +50,7 @@ function AccountPage() {
       // reflection列が存在しない場合に備え二重フェッチ
       let reflectData: any[] = [];
       const { data: tryReflection, error } = await supabase
-        .from("reflections")
+        .from("common_reflections")
         .select("reflection, created_at")
         .eq("user_id", data.user.id)
         .order("created_at", { ascending: false })
@@ -59,7 +59,7 @@ function AccountPage() {
       if (error) {
         // reflectionが存在しないDB構造へのフォールバック
         const { data: alt } = await supabase
-          .from("reflections")
+          .from("common_reflections")
           .select("reflection_text, created_at")
           .eq("user_id", data.user.id)
           .order("created_at", { ascending: false })

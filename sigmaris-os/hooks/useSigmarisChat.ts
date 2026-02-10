@@ -91,6 +91,17 @@ async function translateToEnglish(text: string): Promise<string> {
   }
 }
 
+function parseSseBlock(block: string): { event: string; dataRaw: string } {
+  const lines = block.split("\n");
+  let event = "message";
+  const dataLines: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+  }
+  return { event, dataRaw: dataLines.join("\n") };
+}
+
 export function useSigmarisChat() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -234,50 +245,110 @@ export function useSigmarisChat() {
   );
 
   const handleSend = useCallback(async () => {
+    if (loading) return;
     if (!input.trim() || !currentChatId) return;
 
     const userMessage = input.trim();
-    const tempMessages = [...messages, { user: userMessage, ai: "..." }];
-    setMessages(tempMessages);
     setInput("");
     setLoading(true);
+    setMessages((prev) => [...prev, { user: userMessage, ai: "..." }]);
+
+    let replyAcc = "";
+    let finalMeta: any = null;
 
     try {
-      let recentMessages = messages;
-      let summary = "";
-      if (messages.length > 30) {
-        recentMessages = messages.slice(-10);
-        summary = await summarize(messages.slice(0, -10));
-      }
-
-      const data = await fetchJSON<{
-        output: string;
-        traits?: Trait;
-        safety?: SafetyReport;
-        model?: string;
-        python?: any;
-      }>("/api/aei", {
+      const res = await fetchWithAuth("/api/aei/stream", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-session-id": currentChatId,
         },
-        body: JSON.stringify({
-          text: userMessage,
-          recent: recentMessages,
-          summary,
-        }),
+        body: JSON.stringify({ text: userMessage }),
       });
 
-      const rawText: string = data.output || "（応答生成に失敗しました）";
+      if (!res.ok || !res.body) {
+        const detail = await res.text().catch(() => "");
+        throw new Error(
+          detail || `Stream failed: HTTP ${res.status} (${res.statusText})`
+        );
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let doneReceived = false;
+
+      const pushDelta = (text: string) => {
+        if (!text) return;
+        replyAcc += text;
+        setMessages((prev) => {
+          if (prev.length === 0) return prev;
+          const next = [...prev];
+          const last = next[next.length - 1];
+          const prevAi = typeof last.ai === "string" ? last.ai : "";
+          const nextAi = prevAi === "..." ? text : prevAi + text;
+          next[next.length - 1] = { ...last, ai: nextAi };
+          return next;
+        });
+      };
+
+      while (!doneReceived) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+
+        while (true) {
+          const idx = buf.indexOf("\n\n");
+          if (idx === -1) break;
+          const block = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          if (!block.trim()) continue;
+
+          const { event, dataRaw } = parseSseBlock(block);
+          if (event === "delta") {
+            try {
+              const parsed = JSON.parse(dataRaw);
+              pushDelta(typeof parsed?.text === "string" ? parsed.text : "");
+            } catch {
+              pushDelta(dataRaw);
+            }
+          } else if (event === "done") {
+            try {
+              const parsed = JSON.parse(dataRaw);
+              finalMeta = parsed?.meta ?? null;
+              replyAcc =
+                typeof parsed?.reply === "string" ? parsed.reply : replyAcc;
+            } catch {
+              // ignore
+            }
+            doneReceived = true;
+            break;
+          } else if (event === "error") {
+            console.warn("Stream error:", dataRaw);
+          }
+        }
+      }
+
+      const rawText =
+        typeof replyAcc === "string" && replyAcc.trim().length > 0
+          ? replyAcc
+          : "（応答生成が一時的に利用できません。）";
+
+      const traitState = finalMeta?.trait?.state;
       const nextTraits: Trait = {
-        calm: data.traits?.calm ?? traits.calm,
-        empathy: data.traits?.empathy ?? traits.empathy,
-        curiosity: data.traits?.curiosity ?? traits.curiosity,
+        calm: typeof traitState?.calm === "number" ? traitState.calm : traits.calm,
+        empathy:
+          typeof traitState?.empathy === "number"
+            ? traitState.empathy
+            : traits.empathy,
+        curiosity:
+          typeof traitState?.curiosity === "number"
+            ? traitState.curiosity
+            : traits.curiosity,
       };
       setTraits(nextTraits);
 
-      if (data.safety) setSafetyReport(data.safety);
+      if (finalMeta?.safety) setSafetyReport(finalMeta.safety as SafetyReport);
 
       const aiText = applyEunoiaTone(rawText, {
         tone:
@@ -299,28 +370,39 @@ export function useSigmarisChat() {
         {
           ...nextTraits,
           source: "sigmaris-core",
-          server_meta: data.python ?? null,
+          server_meta: finalMeta ?? null,
           timestamp: new Date().toISOString(),
         },
       ]);
 
-      setMessages([
-        ...tempMessages.slice(-30, -1),
-        { user: userMessage, ai: aiText, user_en: userEn, ai_en: aiEn },
-      ]);
+      setMessages((prev) => {
+        const next = [...prev];
+        if (next.length > 0) {
+          next[next.length - 1] = {
+            user: userMessage,
+            ai: aiText,
+            user_en: userEn,
+            ai_en: aiEn,
+          };
+        }
+        return next.slice(-30);
+      });
 
-      setModelUsed(data.model || "sigmaris-core");
+      setModelUsed(
+        (typeof finalMeta?.io?.model === "string" && finalMeta.io.model) ||
+          "sigmaris-core"
+      );
 
-      if (data.python) {
+      if (finalMeta) {
         const topic =
-          data.python?.identity?.topic_label ??
-          data.python?.controller_meta?.global_state?.meta?.identity_topic_label;
+          finalMeta?.identity?.topic_label ??
+          finalMeta?.controller_meta?.global_state?.meta?.identity_topic_label;
         const state =
-          data.python?.global_state?.state ??
-          data.python?.controller_meta?.global_state?.state;
+          finalMeta?.global_state?.state ??
+          finalMeta?.controller_meta?.global_state?.state;
         const mem =
-          data.python?.memory?.initial_pointer_count ??
-          data.python?.controller_meta?.memory?.pointer_count;
+          finalMeta?.memory?.initial_pointer_count ??
+          finalMeta?.controller_meta?.memory?.pointer_count;
 
         setMetaSummary(
           [
@@ -336,10 +418,22 @@ export function useSigmarisChat() {
       await loadSessions();
     } catch (err) {
       console.error("Send failed:", err);
+      setMessages((prev) => {
+        if (prev.length === 0) return prev;
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last && last.ai === "...") {
+          next[next.length - 1] = {
+            ...last,
+            ai: "（ストリーミングに失敗しました。しばらくしてから再試行してください。）",
+          };
+        }
+        return next;
+      });
     } finally {
       setLoading(false);
     }
-  }, [currentChatId, input, loadSessions, messages, traits.calm, traits.curiosity, traits.empathy]);
+  }, [currentChatId, input, loadSessions, loading, traits.calm, traits.curiosity, traits.empathy]);
 
   const handleReflect = useCallback(async () => {
     if (!currentChatId) return;

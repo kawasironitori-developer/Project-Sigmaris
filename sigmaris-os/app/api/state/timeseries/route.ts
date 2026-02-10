@@ -25,9 +25,9 @@ export async function GET(req: Request) {
 
     const supabase = getSupabaseServer();
     const { data, error } = await supabase
-      .from("sigmaris_state_snapshots")
+      .from("common_state_snapshots")
       .select(
-        "id, global_state, overload_score, reflective_score, memory_pointer_count, safety_risk_score, safety_flag, value_state, trait_state, created_at"
+        "id, global_state, overload_score, reflective_score, memory_pointer_count, safety_risk_score, safety_flag, value_state, trait_state, meta, created_at"
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
@@ -43,4 +43,3 @@ export async function GET(req: Request) {
     );
   }
 }
-

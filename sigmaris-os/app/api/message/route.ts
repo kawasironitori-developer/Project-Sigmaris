@@ -35,8 +35,9 @@ export async function GET(req: Request) {
 
     // === 対象セッションのメッセージを取得 ===
     const { data, error } = await supabase
-      .from("messages")
+      .from("common_messages")
       .select("role, content, created_at")
+      .eq("app", "sigmaris")
       .eq("user_id", userId)
       .eq("session_id", sessionId)
       .order("created_at", { ascending: true });
@@ -113,8 +114,9 @@ export async function DELETE(req: Request) {
     if (targetCreatedAt) {
       // ✅ 単一メッセージ削除
       const { error } = await supabase
-        .from("messages")
+        .from("common_messages")
         .delete()
+        .eq("app", "sigmaris")
         .eq("user_id", userId)
         .eq("session_id", sessionId)
         .eq("created_at", targetCreatedAt);
@@ -127,8 +129,9 @@ export async function DELETE(req: Request) {
     } else {
       // ✅ セッション全削除
       const { error } = await supabase
-        .from("messages")
+        .from("common_messages")
         .delete()
+        .eq("app", "sigmaris")
         .eq("user_id", userId)
         .eq("session_id", sessionId);
 

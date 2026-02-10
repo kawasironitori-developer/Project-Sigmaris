@@ -1,0 +1,91 @@
+{
+  "group_scarlet_mansion": {
+    "id": "group_scarlet_mansion",
+    "type": "group",
+    "name": "紅魔館（グループ）",
+    "title": "吸血鬼たちの洋館",
+    "world": {
+      "map": "gensokyo",
+      "location": "scarlet_mansion"
+    },
+    "participants": ["remilia", "flandre", "sakuya"],
+    "ui": {
+      "chatBackground": "/background/group_scarlet_mansion.png",
+      "label": "紅魔館",
+      "icon": "👥",
+      "accent": "from-rose-700/30 to-purple-800/20"
+    }
+  },
+
+  "group_forest_of_magic": {
+    "id": "group_forest_of_magic",
+    "type": "group",
+    "name": "魔法の森（グループ）",
+    "title": "魔法使いたちの集う森",
+    "world": {
+      "map": "gensokyo",
+      "location": "forest_of_magic"
+    },
+    "participants": ["marisa", "alice"],
+    "ui": {
+      "chatBackground": "/background/roup_forest_of_magic.png",
+      "label": "魔法の森",
+      "icon": "👥",
+      "accent": "from-indigo-500/30 to-emerald-600/20"
+    }
+  },
+
+  "group_youkai_mountain": {
+    "id": "group_youkai_mountain",
+    "type": "group",
+    "name": "妖怪の山（グループ）",
+    "title": "天狗たちの領域",
+    "world": {
+      "map": "gensokyo",
+      "location": "youkai_mountain"
+    },
+    "participants": ["aya", "momiji"],
+    "ui": {
+      "chatBackground": "/background/group_youkai_mountain.png",
+      "label": "妖怪の山",
+      "icon": "👥",
+      "accent": "from-sky-500/30 to-gray-600/20"
+    }
+  },
+
+  "group_chireiden": {
+    "id": "group_chireiden",
+    "type": "group",
+    "name": "地霊殿（グループ）",
+    "title": "心を読む者たちの館",
+    "world": {
+      "map": "deep",
+      "location": "chireiden"
+    },
+    "participants": ["satori", "koishi"],
+    "ui": {
+      "chatBackground": "/background/group_chireiden.png",
+      "label": "地霊殿",
+      "icon": "👥",
+      "accent": "from-violet-700/30 to-lime-500/20"
+    }
+  },
+
+  "group_hakurei_shrine": {
+    "id": "group_hakurei_shrine",
+    "type": "group",
+    "name": "博麗神社（グループ）",
+    "title": "幻想郷の結節点",
+    "world": {
+      "map": "gensokyo",
+      "location": "hakurei_shrine"
+    },
+    "participants": ["reimu"],
+    "ui": {
+      "chatBackground": "/background/group_hakurei_shrine.png",
+      "label": "博麗神社",
+      "icon": "⛩️",
+      "accent": "from-red-600/30 to-pink-500/20"
+    }
+  }
+}

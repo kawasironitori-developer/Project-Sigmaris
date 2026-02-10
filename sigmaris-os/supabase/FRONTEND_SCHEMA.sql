@@ -67,3 +67,96 @@ create table if not exists public.sigmaris_state_snapshots (
 
 create index if not exists sigmaris_state_snapshots_user_created_idx
   on public.sigmaris_state_snapshots (user_id, created_at desc);
+
+-- ============================================================
+-- Sigmaris Telemetry snapshots (Phase01 Part05: C/N/M/S/R)
+-- - /api/aei が /persona/chat の meta.controller_meta.telemetry を抽出して保存する
+-- ============================================================
+create table if not exists public.sigmaris_telemetry_snapshots (
+  id bigserial primary key,
+  user_id uuid not null,
+  session_id text null,
+  trace_id text null,
+
+  scores jsonb null,
+  ema jsonb null,
+  flags jsonb null,
+  reasons jsonb null,
+
+  meta jsonb null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists sigmaris_telemetry_snapshots_user_created_idx
+  on public.sigmaris_telemetry_snapshots (user_id, created_at desc);
+
+-- ============================================================
+-- Phase02: Temporal Identity / Subjectivity / Failure / Integration
+-- - /api/aei が /persona/chat の meta.controller_meta.integration を抽出して保存する
+-- ============================================================
+
+create table if not exists public.sigmaris_temporal_identity_snapshots (
+  id bigserial primary key,
+  user_id uuid not null,
+  session_id text null,
+  trace_id text null,
+  ego_id text null,
+  state jsonb null,
+  telemetry jsonb null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists sigmaris_temporal_identity_user_created_idx
+  on public.sigmaris_temporal_identity_snapshots (user_id, created_at desc);
+
+create table if not exists public.sigmaris_subjectivity_snapshots (
+  id bigserial primary key,
+  user_id uuid not null,
+  session_id text null,
+  trace_id text null,
+  subjectivity jsonb null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists sigmaris_subjectivity_user_created_idx
+  on public.sigmaris_subjectivity_snapshots (user_id, created_at desc);
+
+create table if not exists public.sigmaris_failure_snapshots (
+  id bigserial primary key,
+  user_id uuid not null,
+  session_id text null,
+  trace_id text null,
+  failure jsonb null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists sigmaris_failure_user_created_idx
+  on public.sigmaris_failure_snapshots (user_id, created_at desc);
+
+create table if not exists public.sigmaris_identity_snapshots (
+  id bigserial primary key,
+  user_id uuid not null,
+  session_id text null,
+  trace_id text null,
+  snapshot jsonb null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists sigmaris_identity_snapshots_user_created_idx
+  on public.sigmaris_identity_snapshots (user_id, created_at desc);
+
+create table if not exists public.sigmaris_integration_events (
+  id bigserial primary key,
+  user_id uuid not null,
+  session_id text null,
+  trace_id text null,
+  event_type text not null,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists sigmaris_integration_events_user_created_idx
+  on public.sigmaris_integration_events (user_id, created_at desc);
+-- DEPRECATED
+-- This file is kept for reference only.
+-- Use `supabase/RESET_TO_COMMON.sql` as the authoritative schema (unified `common_*` tables).

@@ -31,14 +31,14 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # === Env files ===
-# ignore ONLY local secrets
-.env.local
-
 # allow other env files (shared, example, dev, etc.)
 !.env
 !.env.*
 !*.env
 !*.env.*
+
+# ignore ONLY local secrets (keep this AFTER the allow rules)
+.env.local
 
 # vercel
 .vercel

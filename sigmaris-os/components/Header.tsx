@@ -35,6 +35,7 @@ export default function Header() {
     vision: lang === "ja" ? "理念" : "Vision",
     docs: lang === "ja" ? "ドキュメント" : "Docs",
     status: lang === "ja" ? "状態" : "Status",
+    memory: lang === "ja" ? "メモリ" : "Memory",
     funding: lang === "ja" ? "支援" : "Funding",
     tokushoho: lang === "ja" ? "特定商取引法" : "Legal",
     switch: lang === "ja" ? "EN" : "JP",
@@ -91,6 +92,9 @@ export default function Header() {
           </Link>
           <Link href="/status" className="text-[#c9d2df] hover:text-[#4c7cf7]">
             {text.status}
+          </Link>
+          <Link href="/memory" className="text-[#c9d2df] hover:text-[#4c7cf7]">
+            {text.memory}
           </Link>
           <Link href="/funding" className="text-[#c9d2df] hover:text-[#4c7cf7]">
             {text.funding}
@@ -197,6 +201,7 @@ export default function Header() {
               { href: "/vision", label: text.vision },
               { href: "/docs", label: text.docs },
               { href: "/status", label: text.status },
+              { href: "/memory", label: text.memory },
               { href: "/funding", label: text.funding },
               { href: "/tokushoho", label: text.tokushoho },
             ].map((link, i) => (

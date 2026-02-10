@@ -1,0 +1,245 @@
+{
+  "reimu": {
+    "id": "reimu",
+    "name": "博麗 霊夢",
+    "title": "楽園の巫女",
+    "world": {
+      "map": "gensokyo",
+      "location": "hakurei_shrine"
+    },
+    "color": {
+      "accent": "from-red-500/40 to-pink-500/20"
+    },
+    "ui": {
+      "chatBackground": "/background/reimu.png",
+      "placeholder": "話しかける"
+    },
+    "tts": {
+      "voice": "f1",
+      "speed": 100
+    }
+  },
+
+  "marisa": {
+    "id": "marisa",
+    "name": "霧雨 魔理沙",
+    "title": "普通の魔法使い",
+    "world": {
+      "map": "gensokyo",
+      "location": "forest_of_magic"
+    },
+    "color": {
+      "accent": "from-yellow-400/40 to-orange-500/20"
+    },
+    "ui": {
+      "chatBackground": "/background/marisa.png",
+      "placeholder": "話しかける"
+    },
+    "tts": {
+      "voice": "f2",
+      "speed": 120
+    }
+  },
+
+  "alice": {
+    "id": "alice",
+    "name": "アリス・マーガトロイド",
+    "title": "七色の人形遣い",
+    "world": {
+      "map": "gensokyo",
+      "location": "forest_of_magic"
+    },
+    "color": {
+      "accent": "from-indigo-400/40 to-purple-500/20"
+    },
+    "ui": {
+      "chatBackground": "/background/arisu.png",
+      "placeholder": "話しかける"
+    },
+    "tts": {
+      "voice": "f3",
+      "speed": 95
+    }
+  },
+
+  "aya": {
+    "id": "aya",
+    "name": "射命丸 文",
+    "title": "伝統の幻想ブン屋",
+    "world": {
+      "map": "gensokyo",
+      "location": "youkai_mountain"
+    },
+    "color": {
+      "accent": "from-sky-400/40 to-cyan-500/20"
+    },
+    "ui": {
+      "chatBackground": "/background/aya.png",
+      "placeholder": "話しかける"
+    },
+    "tts": {
+      "voice": "f2",
+      "speed": 125
+    }
+  },
+  "momiji": {
+    "id": "momiji",
+    "name": "犬走 椛",
+    "title": "山のテングの見張り番",
+    "world": {
+      "map": "gensokyo",
+      "location": "youkai_mountain"
+    },
+    "color": {
+      "accent": "from-gray-400/40 to-red-500/20"
+    },
+    "ui": {
+      "chatBackground": "/background/momiji.png",
+      "placeholder": "話しかける"
+    },
+    "tts": {
+      "voice": "f3",
+      "speed": 90
+    }
+  },
+  "nitori": {
+    "id": "nitori",
+    "name": "河城 にとり",
+    "title": "河童の発明家",
+    "world": {
+      "map": "gensokyo",
+      "location": "youkai_mountain"
+    },
+    "color": {
+      "accent": "from-teal-500/40 to-cyan-600/20"
+    },
+    "ui": {
+      "chatBackground": "/background/nitori.png",
+      "placeholder": "話しかける"
+    },
+    "tts": {
+      "voice": "f2",
+      "speed": 118
+    }
+  },
+  "youmu": {
+    "id": "youmu",
+    "name": "魂魄 妖夢",
+    "title": "半人半霊の庭師",
+    "world": {
+      "map": "higan",
+      "location": "hakugyokurou"
+    },
+    "color": {
+      "accent": "from-emerald-500/40 to-teal-500/20"
+    },
+    "ui": {
+      "chatBackground": "/background/youmu.png",
+      "placeholder": "話しかける"
+    },
+    "tts": {
+      "voice": "f3",
+      "speed": 100
+    }
+  },
+  "remilia": {
+    "id": "remilia",
+    "name": "レミリア・スカーレット",
+    "title": "永遠に紅い幼き月",
+    "world": {
+      "map": "gensokyo",
+      "location": "scarlet_mansion"
+    },
+    "color": {
+      "accent": "from-rose-600/40 to-purple-700/20"
+    },
+    "ui": {
+      "chatBackground": "/background/remilia.png",
+      "placeholder": "話しかける"
+    },
+    "tts": {
+      "voice": "f2",
+      "speed": 110
+    }
+  },
+  "sakuya": {
+    "id": "sakuya",
+    "name": "十六夜 咲夜",
+    "title": "紅魔館のメイド",
+    "world": {
+      "map": "gensokyo",
+      "location": "scarlet_mansion"
+    },
+    "color": {
+      "accent": "from-slate-500/40 to-blue-600/20"
+    },
+    "ui": {
+      "chatBackground": "/background/sakuya.png",
+      "placeholder": "話しかける"
+    },
+    "tts": {
+      "voice": "f3",
+      "speed": 92
+    }
+  },
+  "flandre": {
+    "id": "flandre",
+    "name": "フランドール・スカーレット",
+    "title": "紅魔館のもう一人の主",
+    "world": {
+      "map": "gensokyo",
+      "location": "scarlet_mansion"
+    },
+    "color": {
+      "accent": "from-red-500/40 to-amber-500/20"
+    },
+    "ui": {
+      "chatBackground": "/background/flandre.png",
+      "placeholder": "話しかける"
+    },
+    "tts": {
+      "voice": "f2",
+      "speed": 130
+    }
+  },
+  "satori": {
+    "id": "satori",
+    "name": "古明地 さとり",
+    "title": "地霊殿の主",
+    "world": {
+      "map": "deep",
+      "location": "chireiden"
+    },
+    "color": {
+      "accent": "from-violet-600/40 to-indigo-700/20"
+    },
+    "ui": {
+      "chatBackground": "/background/satori.png",
+      "placeholder": "話しかける"
+    },
+    "tts": {
+      "voice": "f3",
+      "speed": 88
+    }
+  },
+  "koishi": {
+    "id": "koishi",
+    "name": "古明地 こいし",
+    "title": "閉じた恋の瞳",
+    "world": {
+      "map": "deep",
+      "location": "chireiden"
+    },
+    "color": {
+      "accent": "from-lime-400/40 to-emerald-500/20"
+    },
+    "ui": {
+      "chatBackground": "/background/koishi.png",
+      "placeholder": "話しかける"
+    },
+    "tts": {
+      "voice": "f2",
+      "speed": 115
+    }
+  }
+}

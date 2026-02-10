@@ -14,6 +14,16 @@ type TraitTriplet = {
   curiosity: number;
 };
 
+function isTraitTriplet(v: any): v is TraitTriplet {
+  return (
+    v &&
+    typeof v === "object" &&
+    typeof v.calm === "number" &&
+    typeof v.empathy === "number" &&
+    typeof v.curiosity === "number"
+  );
+}
+
 function coreBaseUrl() {
   const raw =
     process.env.SIGMARIS_CORE_URL ||
@@ -40,8 +50,9 @@ export async function GET(req: Request) {
 
     const supabase = getSupabaseServer();
     const { data } = await supabase
-      .from("messages")
+      .from("common_messages")
       .select("role, content, created_at")
+      .eq("app", "sigmaris")
       .eq("user_id", user.id)
       .eq("session_id", sessionId)
       .order("created_at", { ascending: true });
@@ -96,6 +107,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized", step }, { status: 401 });
     }
 
+    const supabase = getSupabaseServer();
+
+    // --- load last trait baseline (stored in snapshot meta) ---
+    let traitBaseline: TraitTriplet | null = null;
+    try {
+      const { data } = await supabase
+        .from("common_state_snapshots")
+        .select("meta, created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      const meta = (data ?? [])[0]?.meta ?? null;
+      const b = meta?.trait?.baseline ?? null;
+      traitBaseline = isTraitTriplet(b) ? b : null;
+    } catch {
+      traitBaseline = null;
+    }
+
     const coreUrl = coreBaseUrl();
     step.coreUrl = coreUrl;
 
@@ -106,6 +136,7 @@ export async function POST(req: Request) {
         user_id: user.id,
         session_id: sessionId,
         message: rawUserText,
+        trait_baseline: traitBaseline,
         meta: {
           client: "sigmaris-os",
           lang: body?.lang ?? null,
@@ -131,14 +162,20 @@ export async function POST(req: Request) {
         : "（応答の取得に失敗しました）";
 
     const meta = coreJson?.meta ?? null;
+
+    // reply が空（content=null 等）になるケースがあるため、UIでの「不発」を避ける
+    const replySafe =
+      typeof reply === "string" && reply.trim().length > 0
+        ? reply
+        : "（応答生成が一時的に利用できません。）";
     const traitState: TraitTriplet | null = meta?.trait?.state ?? null;
 
-    const supabase = getSupabaseServer();
     const now = new Date().toISOString();
-    await supabase.from("messages").insert([
+    await supabase.from("common_messages").insert([
       {
         user_id: user.id,
         session_id: sessionId,
+        app: "sigmaris",
         role: "user",
         content: rawUserText,
         created_at: now,
@@ -146,8 +183,9 @@ export async function POST(req: Request) {
       {
         user_id: user.id,
         session_id: sessionId,
+        app: "sigmaris",
         role: "ai",
-        content: reply,
+        content: replySafe,
         created_at: now,
       },
     ]);
@@ -191,7 +229,7 @@ export async function POST(req: Request) {
       const safetyRiskScore: number | null =
         typeof meta?.safety?.risk_score === "number" ? meta.safety.risk_score : null;
 
-      await supabase.from("sigmaris_state_snapshots").insert([
+      await supabase.from("common_state_snapshots").insert([
         {
           user_id: user.id,
           session_id: sessionId,
@@ -208,6 +246,105 @@ export async function POST(req: Request) {
           created_at: now,
         },
       ]);
+
+      // Phase01 Telemetry (C/N/M/S/R) - optional
+      try {
+        const tel = meta?.controller_meta?.telemetry ?? null;
+        if (tel && typeof tel === "object") {
+          await supabase.from("common_telemetry_snapshots").insert([
+            {
+              user_id: user.id,
+              session_id: sessionId,
+              trace_id: traceId,
+              scores: tel?.scores ?? null,
+              ema: tel?.ema ?? null,
+              flags: tel?.flags ?? null,
+              reasons: tel?.reasons ?? null,
+              meta: tel,
+              created_at: now,
+            },
+          ]);
+        }
+      } catch (e) {
+        console.warn("[/api/aei] telemetry snapshot insert failed:", e);
+      }
+
+      // Phase02 Integration snapshots - optional
+      try {
+        const integ = meta?.controller_meta?.integration ?? null;
+        if (integ && typeof integ === "object") {
+          const temporal = (integ as any)?.temporal_identity ?? null;
+          const subjectivity = (integ as any)?.subjectivity ?? null;
+          const failure = (integ as any)?.failure ?? null;
+          const identitySnapshot = (integ as any)?.identity_snapshot ?? null;
+          const events = (integ as any)?.events ?? null;
+
+          if (temporal && typeof temporal === "object") {
+            await supabase.from("common_temporal_identity_snapshots").insert([
+              {
+                user_id: user.id,
+                session_id: sessionId,
+                trace_id: traceId,
+                ego_id: typeof (temporal as any)?.ego_id === "string" ? (temporal as any).ego_id : null,
+                state: temporal,
+                telemetry: temporal,
+                created_at: now,
+              },
+            ]);
+          }
+
+          if (subjectivity && typeof subjectivity === "object") {
+            await supabase.from("common_subjectivity_snapshots").insert([
+              {
+                user_id: user.id,
+                session_id: sessionId,
+                trace_id: traceId,
+                subjectivity,
+                created_at: now,
+              },
+            ]);
+          }
+
+          if (failure && typeof failure === "object") {
+            await supabase.from("common_failure_snapshots").insert([
+              {
+                user_id: user.id,
+                session_id: sessionId,
+                trace_id: traceId,
+                failure,
+                created_at: now,
+              },
+            ]);
+          }
+
+          if (identitySnapshot && typeof identitySnapshot === "object") {
+            await supabase.from("common_identity_snapshots").insert([
+              {
+                user_id: user.id,
+                session_id: sessionId,
+                trace_id: traceId,
+                snapshot: identitySnapshot,
+                created_at: now,
+              },
+            ]);
+          }
+
+          if (Array.isArray(events) && events.length > 0) {
+            await supabase.from("common_integration_events").insert(
+              events.map((ev: any) => ({
+                user_id: user.id,
+                session_id: sessionId,
+                trace_id: traceId,
+                event_type: typeof ev?.event_type === "string" ? ev.event_type : "UNKNOWN",
+                payload: ev ?? {},
+                created_at: now,
+              }))
+            );
+          }
+        }
+      } catch (e) {
+        console.warn("[/api/aei] integration snapshot insert failed:", e);
+      }
     } catch (e) {
       console.warn("[/api/aei] state snapshot insert failed:", e);
     }
@@ -215,7 +352,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       sessionId,
-      output: reply,
+      output: replySafe,
       traits: traitState ?? undefined,
       safety: meta?.safety ?? undefined,
       model: meta?.io?.model ?? process.env.SIGMARIS_PERSONA_MODEL ?? "sigmaris-core",

@@ -25,8 +25,9 @@ export async function GET() {
     const supabase = getSupabaseServer();
 
     const { data, error } = await supabase
-      .from("messages")
+      .from("common_messages")
       .select("session_id, content, role, created_at, session_title")
+      .eq("app", "sigmaris")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
@@ -106,8 +107,9 @@ export async function PATCH(req: Request) {
 
     const supabase = getSupabaseServer();
     const { error } = await supabase
-      .from("messages")
+      .from("common_messages")
       .update({ session_title: newTitle })
+      .eq("app", "sigmaris")
       .eq("user_id", user.id)
       .eq("session_id", sessionId);
 
@@ -153,7 +155,17 @@ export async function DELETE(req: Request) {
     }
 
     const supabase = getSupabaseServer();
-    const tables = ["messages", "reflections", "growth_logs", "safety_logs"];
+    const tables = [
+      "common_messages",
+      "common_reflections",
+      "common_state_snapshots",
+      "common_telemetry_snapshots",
+      "common_temporal_identity_snapshots",
+      "common_subjectivity_snapshots",
+      "common_failure_snapshots",
+      "common_identity_snapshots",
+      "common_integration_events",
+    ];
 
     for (const table of tables) {
       const { error } = await supabase
@@ -164,6 +176,18 @@ export async function DELETE(req: Request) {
 
       if (error)
         console.warn(`⚠️ [${table}] delete failed:`, error.message ?? error);
+    }
+
+    // common_sessions (optional; sigmaris-os may or may not create session rows)
+    try {
+      await supabase
+        .from("common_sessions")
+        .delete()
+        .eq("app", "sigmaris")
+        .eq("user_id", user.id)
+        .eq("id", sessionId);
+    } catch {
+      // ignore
     }
 
     console.log(`🗑️ [${user.id}] deleted session ${sessionId}`);

@@ -1,0 +1,251 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* =========================
+   Tailwind v4 / shadcn 基本
+========================= */
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  /* フォント（layout.tsx で注入した変数を使う） */
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-gensou: var(--font-gensou);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+}
+
+/* =========================
+   Light / Dark Variables
+========================= */
+
+:root {
+  --radius: 0.75rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+
+  --card: oklch(1 0 0 / 0.75);
+  --card-foreground: oklch(0.145 0 0);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+
+  --destructive: oklch(0.577 0.245 27.325);
+
+  --border: oklch(0.9 0 0 / 40%);
+  --input: oklch(0.9 0 0 / 40%);
+  --ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.12 0 0);
+  --foreground: oklch(0.985 0 0);
+
+  --card: oklch(0.18 0 0 / 0.75);
+  --card-foreground: oklch(0.985 0 0);
+
+  --popover: oklch(0.18 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+
+  --primary: oklch(0.92 0 0);
+  --primary-foreground: oklch(0.18 0 0);
+
+  --secondary: oklch(0.26 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+
+  --muted: oklch(0.26 0 0);
+  --muted-foreground: oklch(0.7 0 0);
+
+  --accent: oklch(0.26 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.6 0 0);
+}
+
+/* =========================
+   Base Reset
+========================= */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+  }
+}
+
+/* =========================
+   幻想感UI 専用スタイル
+========================= */
+
+/* 背景（神社・森などに使用） */
+.gensou-background {
+  position: fixed;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  filter: blur(6px) brightness(0.55) saturate(1.15);
+  z-index: 0;
+}
+
+/* 幻想オーバーレイ（光・霧） */
+.gensou-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,0.08), transparent 45%),
+    radial-gradient(circle at 70% 80%, rgba(180,120,255,0.06), transparent 50%);
+  z-index: 1;
+}
+
+/* 左パネル（キャラ選択・結界） */
+.gensou-sidebar {
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(18px);
+  border-right: 1px solid rgba(255,255,255,0.15);
+}
+
+/* 結界カード（チャットUI） */
+.gensou-card {
+  background: rgba(255,255,255,0.7);
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(255,255,255,0.25);
+  box-shadow:
+    0 0 40px rgba(140, 100, 220, 0.25),
+    inset 0 0 20px rgba(255,255,255,0.15);
+}
+
+/* 幻想フォント用 */
+.font-gensou {
+  font-family: var(--font-gensou);
+}
+
+/* メッセージ装飾 */
+.chat-ai {
+  background: rgba(240,240,240,0.85);
+  color: black;
+  backdrop-filter: blur(8px);
+}
+
+.chat-user {
+  background: rgba(30,30,30,0.85);
+  color: white;
+}
+
+/* スクロールバーを静かに */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.2);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* =========================
+   Fog Overlay Animation
+   （雲の中を進む演出）
+========================= */
+
+@keyframes fogSlow {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate3d(-6%, -8%, 0) scale(1.12);
+    opacity: 0.75;
+  }
+}
+
+@keyframes fogFast {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1.05);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translate3d(8%, -6%, 0) scale(1.18);
+    opacity: 0.9;
+  }
+}
+
+/* Tailwind utility として使う */
+.animate-fog-slow {
+  animation: fogSlow 1.4s ease-in-out forwards;
+}
+
+.animate-fog-fast {
+  animation: fogFast 0.9s ease-in-out forwards;
+}
+
+/* =========================
+   陰陽玉 回転アニメーション
+========================= */
+
+@keyframes yinyang-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-yinyang-spin {
+  animation: yinyang-spin 2.8s linear infinite;
+}

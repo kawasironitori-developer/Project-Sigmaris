@@ -38,3 +38,6 @@ sigmaris_core/persona_db/
 *.sqlite
 *.db
 *.log
+
+# === Third-party SDKs (local only) ===
+aquestalk/
