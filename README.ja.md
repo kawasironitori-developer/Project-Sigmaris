@@ -57,6 +57,7 @@ Sigmaris はそこを逆転させ、LLMを“頭脳”として使いつつ、**
 - `meta.dialogue_state` - 現在の会話状態
 - `meta.telemetry` - `{ C, N, M, S, R }` のスコア
 - `meta.safety.total_risk` と `meta.safety.override`
+- `meta.decision_candidates` - 判断候補リスト（best-effort / v1）
 
 要するに Sigmaris は、**モデルの賢さを競うプロジェクトではなく、長期稼働AIを“運用できる形”にするための基盤**です。
 

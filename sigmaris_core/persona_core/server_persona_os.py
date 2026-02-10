@@ -113,6 +113,43 @@ def _normalize_v0(*, trace_id: str, controller_meta: Any) -> Dict[str, Any]:
     return out
 
 
+def _normalize_decision_candidates(*, controller_meta: Any, v0: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    decision_candidates v1 (always non-null list).
+    """
+    if isinstance(controller_meta, dict):
+        dc = controller_meta.get("decision_candidates")
+        if isinstance(dc, list):
+            out: List[Dict[str, Any]] = []
+            for item in dc:
+                if not isinstance(item, dict):
+                    continue
+                out.append(
+                    {
+                        "id": str(item.get("id") or ""),
+                        "label": str(item.get("label") or ""),
+                        "score": float(item.get("score")) if isinstance(item.get("score"), (int, float)) else 0.0,
+                        "reason": str(item.get("reason") or ""),
+                    }
+                )
+            return out
+
+    # Fallback: derive 3 candidates from v0
+    intent = v0.get("intent") if isinstance(v0.get("intent"), dict) else {}
+    scores = [float(v) for v in intent.values() if isinstance(v, (int, float))]
+    scores.sort(reverse=True)
+    primary = float(scores[0]) if len(scores) >= 1 else 0.0
+    secondary = float(scores[1]) if len(scores) >= 2 else 0.0
+    ds = str(v0.get("dialogue_state") or "UNKNOWN")
+    total_risk = float((v0.get("safety") or {}).get("total_risk") or 0.0) if isinstance(v0.get("safety"), dict) else 0.0
+
+    return [
+        {"id": "primary", "label": f"{ds}_answer" if ds != "UNKNOWN" else "primary", "score": primary, "reason": "Selected by mode + intent alignment"},
+        {"id": "alt_short", "label": "task_focused_short", "score": secondary, "reason": "Viable but not optimal for current mode"},
+        {"id": "alt_refuse", "label": "safety_refusal", "score": total_risk, "reason": "Safety threshold relevance"},
+    ]
+
+
 def _estimate_overload_score(message: str) -> float:
     """
     overload_score は GlobalStateMachine の入力のひとつです。
@@ -627,12 +664,14 @@ async def persona_chat(req: ChatRequest) -> ChatResponse:
     )
 
     v0 = _normalize_v0(trace_id=trace_id, controller_meta=result.meta)
+    decision_candidates = _normalize_decision_candidates(controller_meta=result.meta, v0=v0)
 
     meta: Dict[str, Any] = {
         "trace_id": trace_id,
         "intent": v0.get("intent") or {},
         "dialogue_state": v0.get("dialogue_state") or "UNKNOWN",
         "telemetry": v0.get("telemetry") or {"C": 0.0, "N": 0.0, "M": 0.0, "S": 0.0, "R": 0.0},
+        "decision_candidates": decision_candidates,
         "timing_ms": int((time.time() - t0) * 1000),
         "safety": {
             "flag": safety.safety_flag,
@@ -840,12 +879,16 @@ async def persona_chat_stream(req: ChatRequest):
                     reply_text = (getattr(result, "reply_text", None) or "").strip()
 
                     v0 = _normalize_v0(trace_id=trace_id, controller_meta=getattr(result, "meta", None))
+                    decision_candidates = _normalize_decision_candidates(
+                        controller_meta=getattr(result, "meta", None), v0=v0
+                    )
 
                     meta: Dict[str, Any] = {
                         "trace_id": trace_id,
                         "intent": v0.get("intent") or {},
                         "dialogue_state": v0.get("dialogue_state") or "UNKNOWN",
                         "telemetry": v0.get("telemetry") or {"C": 0.0, "N": 0.0, "M": 0.0, "S": 0.0, "R": 0.0},
+                        "decision_candidates": decision_candidates,
                         "timing_ms": int((time.time() - t0) * 1000),
                         "safety": {
                             "flag": safety.safety_flag,

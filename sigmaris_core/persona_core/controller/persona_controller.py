@@ -299,6 +299,67 @@ class PersonaController:
             "safety": {"total_risk": float(total_risk), "override": bool(override)},
         }
 
+    def _build_v1_meta(self, *, req: PersonaRequest, meta: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        v1 meta logging (structured, non-null):
+        - includes v0 fields + decision_candidates (>= 3 entries, best-effort)
+        """
+
+        v0 = self._build_v0_meta(req=req, meta=meta)
+
+        intent = v0.get("intent") if isinstance(v0.get("intent"), dict) else {}
+        dialogue_state = str(v0.get("dialogue_state") or "UNKNOWN")
+        safety = v0.get("safety") if isinstance(v0.get("safety"), dict) else {}
+        total_risk = _as_float(safety.get("total_risk"), 0.0)
+
+        # Primary intent score (best-effort)
+        primary_score = 0.0
+        secondary_score = 0.0
+        try:
+            scores = [float(v) for v in intent.values() if isinstance(v, (int, float))]
+            scores.sort(reverse=True)
+            if len(scores) >= 1:
+                primary_score = float(scores[0])
+            if len(scores) >= 2:
+                secondary_score = float(scores[1])
+        except Exception:
+            primary_score = 0.0
+            secondary_score = 0.0
+
+        # Compose candidates (minimum 3)
+        candidates = [
+            {
+                "id": "primary",
+                "label": f"{dialogue_state}_answer" if dialogue_state != "UNKNOWN" else "primary",
+                "score": float(primary_score),
+                "reason": "Selected by mode + intent alignment",
+            },
+            {
+                "id": "alt_short",
+                "label": "task_focused_short",
+                "score": float(secondary_score),
+                "reason": "Viable but not optimal for current mode",
+            },
+            {
+                "id": "alt_refuse",
+                "label": "safety_refusal",
+                "score": float(total_risk),
+                "reason": "Safety threshold relevance",
+            },
+        ]
+
+        return {
+            "trace_id": v0.get("trace_id") or "UNKNOWN",
+            "intent": intent,
+            "dialogue_state": dialogue_state,
+            "telemetry": v0.get("telemetry") if isinstance(v0.get("telemetry"), dict) else {"C": 0.0, "N": 0.0, "M": 0.0, "S": 0.0, "R": 0.0},
+            "safety": {
+                "total_risk": float(total_risk),
+                "override": bool(safety.get("override") or False),
+            },
+            "decision_candidates": candidates,
+        }
+
     def handle_turn(
         self,
         req: PersonaRequest,
@@ -913,6 +974,22 @@ class PersonaController:
                 "telemetry": {"C": 0.0, "N": 0.0, "M": 0.0, "S": 0.0, "R": 0.0},
                 "safety": {"total_risk": 0.0, "override": False},
             }
+
+        # v1 meta (structured, non-null)
+        try:
+            v1 = self._build_v1_meta(req=req, meta=meta)
+            meta["v1"] = v1
+            meta["decision_candidates"] = list(v1.get("decision_candidates") or [])
+        except Exception:
+            meta["v1"] = {
+                "trace_id": (getattr(req, "metadata", None) or {}).get("_trace_id") if isinstance(getattr(req, "metadata", None), dict) else "UNKNOWN",
+                "intent": {},
+                "dialogue_state": "UNKNOWN",
+                "telemetry": {"C": 0.0, "N": 0.0, "M": 0.0, "S": 0.0, "R": 0.0},
+                "safety": {"total_risk": 0.0, "override": False},
+                "decision_candidates": [],
+            }
+            meta["decision_candidates"] = []
 
         return PersonaTurnResult(
             reply_text=reply_text,
@@ -1697,6 +1774,22 @@ class PersonaController:
                 "telemetry": {"C": 0.0, "N": 0.0, "M": 0.0, "S": 0.0, "R": 0.0},
                 "safety": {"total_risk": 0.0, "override": False},
             }
+
+        # v1 meta (structured, non-null)
+        try:
+            v1 = self._build_v1_meta(req=req, meta=meta)
+            meta["v1"] = v1
+            meta["decision_candidates"] = list(v1.get("decision_candidates") or [])
+        except Exception:
+            meta["v1"] = {
+                "trace_id": (getattr(req, "metadata", None) or {}).get("_trace_id") if isinstance(getattr(req, "metadata", None), dict) else "UNKNOWN",
+                "intent": {},
+                "dialogue_state": "UNKNOWN",
+                "telemetry": {"C": 0.0, "N": 0.0, "M": 0.0, "S": 0.0, "R": 0.0},
+                "safety": {"total_risk": 0.0, "override": False},
+                "decision_candidates": [],
+            }
+            meta["decision_candidates"] = []
 
         yield {
             "type": "done",
