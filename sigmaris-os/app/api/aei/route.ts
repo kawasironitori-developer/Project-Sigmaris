@@ -26,7 +26,7 @@ type Phase04Attachment = {
 type Phase04LinkAnalysis = {
   type: "link_analysis";
   url: string;
-  provider: "web_search" | "github_repo_search";
+  provider: "web_fetch" | "web_search" | "github_repo_search";
   results: Array<Record<string, unknown>>;
 };
 
@@ -194,6 +194,36 @@ async function analyzeLinks(params: {
         results: Array.isArray(r.json?.results)
           ? (r.json?.results as Record<string, unknown>[])
           : [],
+      });
+      continue;
+    }
+
+    // Prefer /io/web/fetch for deeper content (allowlist + summarization). Fallback to web_search.
+    const f = await coreJson<{
+      ok?: boolean;
+      title?: unknown;
+      final_url?: unknown;
+      summary?: unknown;
+      key_points?: unknown;
+      sources?: unknown[];
+    }>({
+      url: `${params.base}/io/web/fetch`,
+      accessToken: params.accessToken,
+      body: { url, summarize: true, max_chars: 12000 },
+    });
+
+    if (f.ok && f.json && typeof f.json.summary === "string") {
+      const title = typeof f.json.title === "string" ? f.json.title : "";
+      const finalUrl = typeof f.json.final_url === "string" ? f.json.final_url : url;
+      const keyPoints = Array.isArray(f.json.key_points) ? (f.json.key_points as any[]) : [];
+      out.push({
+        type: "link_analysis",
+        url,
+        provider: "web_fetch",
+        results: [
+          { title, url: finalUrl, snippet: String(f.json.summary) },
+          ...keyPoints.slice(0, 3).map((x) => ({ snippet: String(x ?? "") })),
+        ],
       });
       continue;
     }
