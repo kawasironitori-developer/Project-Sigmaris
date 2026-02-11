@@ -13,11 +13,6 @@ type TtsRequest = {
   speed?: number;
 };
 
-function canUseTts() {
-  if (process.env.NODE_ENV === "development") return true;
-  return process.env.TOUHOU_TTS_ENABLE === "1";
-}
-
 function clampInt(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n | 0));
 }
@@ -46,10 +41,6 @@ async function fileExists(p: string) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!canUseTts()) {
-    return NextResponse.json({ error: "TTS disabled" }, { status: 404 });
-  }
-
   let body: TtsRequest;
   try {
     body = (await req.json()) as TtsRequest;
@@ -69,6 +60,19 @@ export async function POST(req: NextRequest) {
   const speed = clampInt(typeof body.speed === "number" ? body.speed : 100, 50, 300);
 
   const exe = exePath();
+  const configured = (process.env.TOUHOU_TTS_ENABLE ?? "").trim();
+  if (configured) {
+    if (configured !== "1") {
+      return NextResponse.json({ error: "TTS disabled" }, { status: 404 });
+    }
+  } else {
+    // Auto-enable TTS only when running locally on Windows with the helper exe present.
+    // This avoids accidental enablement in hosted Linux environments.
+    if (process.platform !== "win32" || !(await fileExists(exe))) {
+      return NextResponse.json({ error: "TTS disabled" }, { status: 404 });
+    }
+  }
+
   if (!(await fileExists(exe))) {
     return NextResponse.json(
       {
