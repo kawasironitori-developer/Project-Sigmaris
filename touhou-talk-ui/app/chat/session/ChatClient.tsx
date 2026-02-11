@@ -555,6 +555,94 @@ export default function ChatClient() {
       if (!activeSessionId || !activeCharacterId) return;
 
       const { text, files, attachments } = payload;
+      const trimmed = String(text ?? "").trim();
+
+      // Slash commands (client-side). Do NOT send to Persona core.
+      // - /dump: export logs for the current session (admin-only, enforced server-side)
+      if (/^\/dump\b/i.test(trimmed)) {
+        appendMessage({
+          id: crypto.randomUUID(),
+          role: "user",
+          content: trimmed,
+          attachments: attachments ?? [],
+          meta: null,
+        });
+
+        const aiId = crypto.randomUUID();
+        appendMessage({
+          id: aiId,
+          role: "ai",
+          content: "ログを生成中…",
+          speakerId: activeCharacterId,
+          attachments: [],
+          meta: null,
+        });
+
+        try {
+          const url = new URL("/api/logs/export", window.location.origin);
+          url.searchParams.set("session_id", activeSessionId);
+          url.searchParams.set("limit", "2000");
+
+          const r = await fetch(url.toString(), { cache: "no-store" });
+          if (!r.ok) {
+            const detail = await r.text().catch(() => "");
+            throw new Error(`export failed: HTTP ${r.status} ${detail}`);
+          }
+
+          const data = (await r.json()) as unknown;
+          const ts = new Date().toISOString().replaceAll(":", "-");
+          const filename = `touhou-logs_session_${activeSessionId}_${ts}.json`;
+
+          const blob = new Blob([JSON.stringify(data, null, 2)], {
+            type: "application/json",
+          });
+          const dlUrl = URL.createObjectURL(blob);
+          try {
+            const a = document.createElement("a");
+            a.href = dlUrl;
+            a.download = filename;
+            a.click();
+          } finally {
+            URL.revokeObjectURL(dlUrl);
+          }
+
+          setMessagesBySession((prev) => {
+            const list = prev[activeSessionId] ?? [];
+            return {
+              ...prev,
+              [activeSessionId]: list.map((m) =>
+                m.id === aiId
+                  ? {
+                      ...m,
+                      content: `ログをダウンロードしました: ${filename}`,
+                    }
+                  : m
+              ),
+            };
+          });
+        } catch (e: any) {
+          const msg = e?.message ?? String(e);
+          setMessagesBySession((prev) => {
+            const list = prev[activeSessionId] ?? [];
+            return {
+              ...prev,
+              [activeSessionId]: list.map((m) =>
+                m.id === aiId
+                  ? {
+                      ...m,
+                      content:
+                        "ログのダンプに失敗しました。権限（管理者）またはサーバ設定を確認してください。\n" +
+                        msg,
+                    }
+                  : m
+              ),
+            };
+          });
+        }
+
+        return;
+      }
+
       const gen = ++ttsGenerationRef.current;
       ttsQueueRef.current = [];
       ttsBufferRef.current = "";
@@ -709,7 +797,14 @@ export default function ChatClient() {
         }
       }
     },
-    [activeSessionId, activeCharacterId, appendMessage, flushTts, pushTtsDelta],
+    [
+      activeSessionId,
+      activeCharacterId,
+      appendMessage,
+      flushTts,
+      pushTtsDelta,
+      setMessagesBySession,
+    ],
   );
 
   /* =========================

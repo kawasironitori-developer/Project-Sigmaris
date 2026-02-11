@@ -63,19 +63,6 @@ from persona_core.phase03.safety_override import SafetyOverrideLayer
 
 
 # --------------------------------------------------------------
-# v0 meta (compact, non-null)
-# --------------------------------------------------------------
-
-def _as_float(v: Any, default: float = 0.0) -> float:
-    try:
-        if isinstance(v, (int, float)):
-            return float(v)
-    except Exception:
-        pass
-    return float(default)
-
-
-# --------------------------------------------------------------
 # LLM client interface
 # --------------------------------------------------------------
 
@@ -548,6 +535,13 @@ class PersonaController:
         )
 
         meta: Dict[str, Any] = {}
+        turn_trace_id = str(trace_id or uuid.uuid4())
+        meta["trace_id"] = turn_trace_id
+        try:
+            if isinstance(getattr(req, "metadata", None), dict):
+                req.metadata["_trace_id"] = turn_trace_id
+        except Exception:
+            pass
         t0 = time.perf_counter()
         t_marks: Dict[str, float] = {"start": t0}
 
@@ -1255,6 +1249,13 @@ class PersonaController:
         )
 
         meta: Dict[str, Any] = {}
+        turn_trace_id = str(trace_id or uuid.uuid4())
+        meta["trace_id"] = turn_trace_id
+        try:
+            if isinstance(getattr(req, "metadata", None), dict):
+                req.metadata["_trace_id"] = turn_trace_id
+        except Exception:
+            pass
         t0 = time.perf_counter()
         t_marks: Dict[str, float] = {"start": t0}
 

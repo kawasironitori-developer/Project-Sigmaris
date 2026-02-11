@@ -737,6 +737,20 @@ async def persona_chat(req: ChatRequest) -> ChatResponse:
         },
     }
 
+    # Stable compact summary block (v1) for integration/debugging.
+    # Always non-null; intentionally excludes raw controller internals.
+    meta["meta_v1"] = {
+        "trace_id": str(meta.get("trace_id") or trace_id),
+        "intent": meta.get("intent") or {},
+        "dialogue_state": str(meta.get("dialogue_state") or "UNKNOWN"),
+        "telemetry": meta.get("telemetry") or {"C": 0.0, "N": 0.0, "M": 0.0, "S": 0.0, "R": 0.0},
+        "safety": {
+            "total_risk": float(((meta.get("safety") or {}).get("total_risk") or 0.0)),
+            "override": bool(((meta.get("safety") or {}).get("override") or False)),
+        },
+        "decision_candidates": meta.get("decision_candidates") or [],
+    }
+
     trace_event(
         log,
         trace_id=trace_id,
@@ -959,6 +973,19 @@ async def persona_chat_stream(req: ChatRequest):
                             "message_preview": preview_text(req.message) if TRACE_INCLUDE_TEXT else "",
                             "reply_preview": preview_text(reply_text) if TRACE_INCLUDE_TEXT else "",
                         },
+                    }
+
+                    meta["meta_v1"] = {
+                        "trace_id": str(meta.get("trace_id") or trace_id),
+                        "intent": meta.get("intent") or {},
+                        "dialogue_state": str(meta.get("dialogue_state") or "UNKNOWN"),
+                        "telemetry": meta.get("telemetry")
+                        or {"C": 0.0, "N": 0.0, "M": 0.0, "S": 0.0, "R": 0.0},
+                        "safety": {
+                            "total_risk": float(((meta.get("safety") or {}).get("total_risk") or 0.0)),
+                            "override": bool(((meta.get("safety") or {}).get("override") or False)),
+                        },
+                        "decision_candidates": meta.get("decision_candidates") or [],
                     }
 
                     yield _sse("done", {"reply": reply_text, "meta": meta})

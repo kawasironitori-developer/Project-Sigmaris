@@ -49,15 +49,17 @@ Sigmaris はそこを逆転させ、LLMを“頭脳”として使いつつ、**
 - **Safety Override**: 危険度が一定以上なら、応答方針を強制的に安全側へ上書きする（決定は決定論的）
 - **Observability**: ルーティング理由・状態・スコア・処理時間を構造化して返す（監査・改善が可能）
 
-### v0 meta（必ず non-null）
+### meta logging（必ず non-null）
 
-統合・デバッグのため、API の `meta` には常に「最小限の要約（v0）」が入り、`common_state_snapshots.meta` にも保存されます。
+統合・デバッグのため、API の `meta` には常に「最小限の要約」が入り、`common_state_snapshots.meta` にも保存されます。
 
-- `meta.intent` - 現在の意図ベクトル（best-effort）
+- `meta.trace_id` - 1ターンごとの UUID
+- `meta.intent` - 現在の意図分布（best-effort）
 - `meta.dialogue_state` - 現在の会話状態
 - `meta.telemetry` - `{ C, N, M, S, R }` のスコア
 - `meta.safety.total_risk` と `meta.safety.override`
 - `meta.decision_candidates` - 判断候補リスト（best-effort / v1）
+- `meta.meta_v1` - 上記キーをまとめた安定した要約ブロック
 - `meta.meta_version`, `meta.engine_version`, `meta.build_sha`, `meta.config_hash` - バージョン管理と再現性のためのキー
 
 要するに Sigmaris は、**モデルの賢さを競うプロジェクトではなく、長期稼働AIを“運用できる形”にするための基盤**です。
@@ -174,6 +176,17 @@ npm run dev
 Supabase の SQL Editor で実行:
 
 - `supabase/RESET_TO_COMMON.sql`（**破壊的リセット**。統一 `common_*` テーブルを作成）
+
+---
+
+## 管理者限定ログエクスポート（touhou-talk-ui）
+
+`touhou-talk-ui` では、チャット欄に `/dump` と入力すると、現在のセッションのログを JSON としてダウンロードできます。
+
+この機能は **管理者限定** です（Supabase Auth の user UUID をカンマ区切りで設定）:
+
+- `TOUHOU_ADMIN_USER_IDS`
+- `SIGMARIS_OPERATOR_USER_IDS`
 
 ---
 

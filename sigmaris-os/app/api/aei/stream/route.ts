@@ -1,4 +1,4 @@
-export const dynamic = "force-dynamic";
+﻿export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 import { randomUUID } from "crypto";
@@ -184,10 +184,8 @@ export async function POST(req: Request) {
         const now2 = new Date().toISOString();
         const replySafe =
           typeof replyAcc === "string" && replyAcc.trim().length > 0
-            ? replyAcc : "（応答生成が一時的に利用できません。）" /*
+            ? replyAcc
             : "（応答生成が一時的に利用できません。）";
-
-        */;
 
         await supabase.from("common_messages").insert([
           {

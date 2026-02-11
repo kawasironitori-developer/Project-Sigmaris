@@ -49,15 +49,17 @@ Per turn, Sigmaris returns and (optionally) persists structured **observability 
 - **Safety Override**: deterministic safety-first overrides that can constrain or redirect behavior
 - **Observability-first**: machine-readable routing reasons, state, scores, and timings
 
-### v0 meta (always non-null)
+### meta logging (always non-null)
 
 For integration and debugging, the API always includes a compact, non-null summary in `meta` (and it is stored in `common_state_snapshots.meta`):
 
-- `meta.intent` - current intent vector (best-effort)
+- `meta.trace_id` - per-turn UUID
+- `meta.intent` - current intent distribution (best-effort)
 - `meta.dialogue_state` - current dialogue state
 - `meta.telemetry` - `{ C, N, M, S, R }` scores
 - `meta.safety.total_risk` and `meta.safety.override`
 - `meta.decision_candidates` - best-effort decision candidate list (v1)
+- `meta.meta_v1` - stable compact summary of the above keys
 - `meta.meta_version`, `meta.engine_version`, `meta.build_sha`, `meta.config_hash` - versioning + reproducibility keys
 
 In short, Sigmaris is not a “smarter chatbot” — it’s infrastructure for operating LLMs **safely, consistently, and audibly over time**.
@@ -172,6 +174,17 @@ npm run dev
 Run this in the Supabase SQL Editor:
 
 - `supabase/RESET_TO_COMMON.sql` (**destructive reset**, recreates unified `common_*` tables)
+
+---
+
+## Admin log export (touhou-talk-ui)
+
+In `touhou-talk-ui`, you can type `/dump` in chat to export the current session logs as a JSON download.
+
+This is **admin-restricted**. Set one of the following (comma-separated Supabase Auth user UUIDs):
+
+- `TOUHOU_ADMIN_USER_IDS`
+- `SIGMARIS_OPERATOR_USER_IDS`
 
 ---
 
