@@ -4,7 +4,7 @@
 // ============================================================
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { requestPersonaV2Decision } from "@/lib/sigmaris-api";
 
 // -----------------------------
@@ -43,6 +43,8 @@ export default function ChatWindow({
 
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Persona v2 の状態可視化用
   const [globalState, setGlobalState] = useState<GlobalStatePayload | null>(
@@ -57,10 +59,16 @@ export default function ChatWindow({
     if (!input.trim()) return;
 
     const userText = input.trim();
+    const files = attachedFiles.slice(0, 3);
 
     // --- UI にユーザーメッセージを追加 ---
-    setMessages((prev) => [...prev, { role: "user", content: userText }]);
+    const displayText =
+      files.length > 0
+        ? `${userText}\n\n[添付] ${files.map((f) => f.name).join(", ")}`
+        : userText;
+    setMessages((prev) => [...prev, { role: "user", content: displayText }]);
     setInput("");
+    setAttachedFiles([]);
     setLoading(true);
 
     try {
@@ -95,15 +103,16 @@ export default function ChatWindow({
       // =====================================================
       // 2) route.ts に完全委譲して「最終応答（GPT生成）」を取得
       // =====================================================
+      const form = new FormData();
+      form.append("text", userText);
+      for (const f of files) form.append("files", f);
+
       const res = await fetch("/api/aei", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           "x-session-id": sessionId,
         },
-        body: JSON.stringify({
-          text: userText,
-        }),
+        body: form,
       });
 
       const data = await res.json();
@@ -242,7 +251,26 @@ export default function ChatWindow({
           )}
         </div>
 
-        <div className="p-3 border-t border-gray-800 flex bg-gray-900">
+        <div className="p-3 border-t border-gray-800 flex items-center gap-2 bg-gray-900">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const list = Array.from(e.target.files ?? []).slice(0, 3);
+              setAttachedFiles(list);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading}
+            className="px-3 py-2 bg-gray-800 rounded text-sm disabled:opacity-50"
+            title="Attach files (max 3)"
+          >
+            Attach
+          </button>
           <input
             className="flex-1 bg-gray-800 px-3 py-2 text-sm rounded"
             placeholder="type your message…"
@@ -250,6 +278,14 @@ export default function ChatWindow({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !loading && handleSend()}
           />
+          {attachedFiles.length > 0 && (
+            <div
+              className="text-xs text-gray-300 max-w-[220px] truncate"
+              title={attachedFiles.map((f) => f.name).join(", ")}
+            >
+              {attachedFiles.length} file(s)
+            </div>
+          )}
           <button
             onClick={handleSend}
             disabled={loading}

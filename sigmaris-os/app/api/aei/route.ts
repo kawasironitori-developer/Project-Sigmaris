@@ -14,6 +14,22 @@ type TraitTriplet = {
   curiosity: number;
 };
 
+type Phase04Attachment = {
+  type: "upload";
+  attachment_id: string;
+  file_name: string;
+  mime_type: string;
+  kind: string;
+  parsed_excerpt?: string;
+};
+
+type Phase04LinkAnalysis = {
+  type: "link_analysis";
+  url: string;
+  provider: "web_search" | "github_repo_search";
+  results: Array<Record<string, unknown>>;
+};
+
 function isTraitTriplet(v: any): v is TraitTriplet {
   return (
     v &&
@@ -30,6 +46,227 @@ function coreBaseUrl() {
     process.env.NEXT_PUBLIC_SIGMARIS_CORE ||
     "http://127.0.0.1:8000";
   return String(raw).replace(/\/+$/, "");
+}
+
+function clampText(s: string, n: number) {
+  const t = String(s ?? "");
+  if (t.length <= n) return t;
+  return t.slice(0, Math.max(0, n - 1)) + "...";
+}
+
+function extractUrls(text: string): string[] {
+  const t = String(text ?? "");
+  const re = /https?:\/\/[^\s<>"')\]]+/g;
+  const matches = t.match(re) ?? [];
+  const uniq: string[] = [];
+  for (const m of matches) {
+    const u = String(m ?? "").trim();
+    if (!u) continue;
+    if (!uniq.includes(u)) uniq.push(u);
+    if (uniq.length >= 3) break;
+  }
+  return uniq;
+}
+
+function githubRepoQueryFromUrl(urlStr: string): string | null {
+  try {
+    const u = new URL(urlStr);
+    if (u.hostname !== "github.com") return null;
+    const parts = u.pathname.split("/").filter(Boolean);
+    const owner = parts[0] ?? "";
+    const repo = parts[1] ?? "";
+    if (owner && repo) return `${repo} user:${owner}`;
+    if (owner) return `user:${owner}`;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function coreJson<T>(params: {
+  url: string;
+  accessToken: string | null;
+  body: unknown;
+}): Promise<{ ok: boolean; status: number; json: T | null }> {
+  const r = await fetch(params.url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(params.accessToken ? { Authorization: `Bearer ${params.accessToken}` } : {}),
+    },
+    body: JSON.stringify(params.body),
+  });
+  const text = await r.text().catch(() => "");
+  let json: T | null = null;
+  try {
+    json = text ? (JSON.parse(text) as T) : null;
+  } catch {
+    json = null;
+  }
+  return { ok: r.ok, status: r.status, json };
+}
+
+async function uploadAndParseFiles(params: {
+  base: string;
+  accessToken: string | null;
+  files: File[];
+}): Promise<Phase04Attachment[]> {
+  const out: Phase04Attachment[] = [];
+
+  for (const file of params.files.slice(0, 3)) {
+    try {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      const up = await fetch(`${params.base}/io/upload`, {
+        method: "POST",
+        headers: {
+          ...(params.accessToken ? { Authorization: `Bearer ${params.accessToken}` } : {}),
+        },
+        body: form,
+      });
+      if (!up.ok) continue;
+
+      const upJson = (await up.json().catch(() => null)) as
+        | { attachment_id?: unknown; file_name?: unknown; mime_type?: unknown }
+        | null;
+      const attachmentId = typeof upJson?.attachment_id === "string" ? upJson.attachment_id : null;
+      if (!attachmentId) continue;
+
+      const parsed = await coreJson<{ ok?: boolean; kind?: unknown; parsed?: unknown }>({
+        url: `${params.base}/io/parse`,
+        accessToken: params.accessToken,
+        body: { attachment_id: attachmentId, kind: null },
+      });
+      const kind = typeof parsed.json?.kind === "string" ? parsed.json.kind : "unknown";
+
+      const parsedAny = (parsed.json as any)?.parsed;
+      const excerptCandidate =
+        typeof parsedAny?.raw_excerpt === "string"
+          ? parsedAny.raw_excerpt
+          : typeof parsedAny?.text_excerpt === "string"
+            ? parsedAny.text_excerpt
+            : typeof parsedAny?.content_summary === "string"
+              ? parsedAny.content_summary
+              : "";
+
+      out.push({
+        type: "upload",
+        attachment_id: attachmentId,
+        file_name: typeof upJson?.file_name === "string" ? upJson.file_name : file.name,
+        mime_type:
+          typeof upJson?.mime_type === "string"
+            ? upJson.mime_type
+            : (file.type || "application/octet-stream"),
+        kind,
+        parsed_excerpt: excerptCandidate ? clampText(String(excerptCandidate), 1200) : undefined,
+      });
+    } catch {
+      // ignore single-file failure
+    }
+  }
+
+  return out;
+}
+
+async function analyzeLinks(params: {
+  base: string;
+  accessToken: string | null;
+  urls: string[];
+}): Promise<Phase04LinkAnalysis[]> {
+  const out: Phase04LinkAnalysis[] = [];
+
+  for (const url of params.urls.slice(0, 3)) {
+    const ghQ = githubRepoQueryFromUrl(url);
+    if (ghQ) {
+      const r = await coreJson<{ ok?: boolean; results?: unknown[] }>({
+        url: `${params.base}/io/github/repos`,
+        accessToken: params.accessToken,
+        body: { query: ghQ, max_results: 5 },
+      });
+      out.push({
+        type: "link_analysis",
+        url,
+        provider: "github_repo_search",
+        results: Array.isArray(r.json?.results)
+          ? (r.json?.results as Record<string, unknown>[])
+          : [],
+      });
+      continue;
+    }
+
+    const r = await coreJson<{ ok?: boolean; results?: unknown[] }>({
+      url: `${params.base}/io/web/search`,
+      accessToken: params.accessToken,
+      body: { query: url, max_results: 5 },
+    });
+    out.push({
+      type: "link_analysis",
+      url,
+      provider: "web_search",
+      results: Array.isArray(r.json?.results)
+        ? (r.json?.results as Record<string, unknown>[])
+        : [],
+    });
+  }
+
+  return out;
+}
+
+function buildAugmentedMessage(params: {
+  userText: string;
+  uploads: Phase04Attachment[];
+  linkAnalyses: Phase04LinkAnalysis[];
+}) {
+  let msg = String(params.userText ?? "").trim();
+
+  if (params.uploads.length > 0) {
+    const lines: string[] = [];
+    lines.push("[添付ファイルの解析結果（自動）]");
+    for (const a of params.uploads.slice(0, 3)) {
+      const head = `- ${a.file_name} (${a.kind}, ${a.mime_type})`;
+      const body = a.parsed_excerpt
+        ? `  ${clampText(a.parsed_excerpt.replace(/\s+/g, " ").trim(), 900)}`
+        : "";
+      lines.push(body ? `${head}\n${body}` : head);
+    }
+    msg += "\n\n" + lines.join("\n");
+  }
+
+  if (params.linkAnalyses.length > 0) {
+    const lines: string[] = [];
+    lines.push("[リンク解析（自動）]");
+    for (const a of params.linkAnalyses.slice(0, 3)) {
+      lines.push(`- ${a.url}`);
+      const top = (a.results ?? []).slice(0, 3);
+      for (const r of top) {
+        if (a.provider === "github_repo_search") {
+          const owner = typeof (r as any)?.owner === "string" ? String((r as any).owner) : "";
+          const name = typeof (r as any)?.name === "string" ? String((r as any).name) : "";
+          const desc = typeof (r as any)?.description === "string" ? String((r as any).description) : "";
+          const repoUrl =
+            typeof (r as any)?.repository_url === "string"
+              ? String((r as any).repository_url)
+              : "";
+          const label = [owner, name].filter(Boolean).join("/") || "(repo)";
+          lines.push(
+            `  - ${label}${desc ? ` — ${clampText(desc, 160)}` : ""}${repoUrl ? ` (${repoUrl})` : ""}`
+          );
+        } else {
+          const title =
+            typeof (r as any)?.title === "string" ? String((r as any).title) : "(result)";
+          const snippet =
+            typeof (r as any)?.snippet === "string" ? String((r as any).snippet) : "";
+          const url2 = typeof (r as any)?.url === "string" ? String((r as any).url) : "";
+          lines.push(
+            `  - ${clampText(title, 120)}${snippet ? ` — ${clampText(snippet, 160)}` : ""}${url2 ? ` (${url2})` : ""}`
+          );
+        }
+      }
+    }
+    msg += "\n\n" + lines.join("\n");
+  }
+
+  return clampText(msg, 12000);
 }
 
 /* -----------------------------------------------------
@@ -84,12 +321,26 @@ export async function POST(req: Request) {
   const step: any = { phase: "start" };
 
   try {
-    const body = (await req.json().catch(() => ({}))) as {
-      text?: string;
-      lang?: string;
-    };
+    const contentType = req.headers.get("content-type") ?? "";
+    let rawUserText = "";
+    let lang: string | null = null;
+    let files: File[] = [];
 
-    const rawUserText = String(body?.text ?? "").trim();
+    if (contentType.includes("multipart/form-data")) {
+      const form = await req.formData();
+      rawUserText = String(form.get("text") ?? "").trim();
+      lang = typeof form.get("lang") === "string" ? String(form.get("lang")) : null;
+      files = form.getAll("files").filter((f): f is File => f instanceof File);
+    } else {
+      const body = (await req.json().catch(() => ({}))) as {
+        text?: string;
+        lang?: string;
+      };
+      rawUserText = String(body?.text ?? "").trim();
+      lang = typeof body?.lang === "string" ? body.lang : null;
+      files = [];
+    }
+
     if (!rawUserText) {
       return NextResponse.json({ error: "Empty message", step }, { status: 400 });
     }
@@ -134,6 +385,19 @@ export async function POST(req: Request) {
     const coreUrl = coreBaseUrl();
     step.coreUrl = coreUrl;
 
+    const urls = extractUrls(rawUserText);
+    const phase04Uploads = await uploadAndParseFiles({ base: coreUrl, accessToken, files });
+    const phase04Links = await analyzeLinks({ base: coreUrl, accessToken, urls });
+    const augmentedText = buildAugmentedMessage({
+      userText: rawUserText,
+      uploads: phase04Uploads,
+      linkAnalyses: phase04Links,
+    });
+    const coreAttachments = [...phase04Uploads, ...phase04Links] as unknown as Record<
+      string,
+      unknown
+    >[];
+
     const coreRes = await fetch(`${coreUrl}/persona/chat`, {
       method: "POST",
       headers: {
@@ -143,12 +407,13 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         user_id: user.id,
         session_id: sessionId,
-        message: rawUserText,
+        message: augmentedText,
         trait_baseline: traitBaseline,
         meta: {
           client: "sigmaris-os",
-          lang: body?.lang ?? null,
+          lang,
         },
+        attachments: coreAttachments,
       }),
     });
 
@@ -179,24 +444,51 @@ export async function POST(req: Request) {
     const traitState: TraitTriplet | null = meta?.trait?.state ?? null;
 
     const now = new Date().toISOString();
-    await supabase.from("common_messages").insert([
-      {
-        user_id: user.id,
-        session_id: sessionId,
-        app: "sigmaris",
-        role: "user",
-        content: rawUserText,
-        created_at: now,
-      },
-      {
-        user_id: user.id,
-        session_id: sessionId,
-        app: "sigmaris",
-        role: "ai",
-        content: replySafe,
-        created_at: now,
-      },
-    ]);
+    try {
+      await supabase.from("common_messages").insert([
+        {
+          user_id: user.id,
+          session_id: sessionId,
+          app: "sigmaris",
+          role: "user",
+          content: rawUserText,
+          created_at: now,
+          meta: {
+            phase04: {
+              uploads: phase04Uploads,
+              link_analyses: phase04Links,
+            },
+          },
+        },
+        {
+          user_id: user.id,
+          session_id: sessionId,
+          app: "sigmaris",
+          role: "ai",
+          content: replySafe,
+          created_at: now,
+        },
+      ]);
+    } catch {
+      await supabase.from("common_messages").insert([
+        {
+          user_id: user.id,
+          session_id: sessionId,
+          app: "sigmaris",
+          role: "user",
+          content: rawUserText,
+          created_at: now,
+        },
+        {
+          user_id: user.id,
+          session_id: sessionId,
+          app: "sigmaris",
+          role: "ai",
+          content: replySafe,
+          created_at: now,
+        },
+      ]);
+    }
 
     // Persona OS の内部状態（meta）を数値化して保存（ダッシュボード/グラフ用）
     try {
