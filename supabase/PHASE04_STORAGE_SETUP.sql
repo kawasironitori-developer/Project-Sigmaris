@@ -18,55 +18,15 @@ values ('sigmaris-attachments', 'sigmaris-attachments', false)
 on conflict (id) do nothing;
 
 -- 2) Policies (optional)
--- Storage policies live on storage.objects. These are conservative defaults:
--- - Authenticated users can read/write only within their own prefix: `<user_id>/...`
+-- Storage policies live on `storage.objects`.
 --
--- If you intend to only access storage from the server (service role), you can skip policies.
-
--- Enable RLS (should already be enabled in Supabase)
-alter table storage.objects enable row level security;
-
--- Read own objects
-drop policy if exists sigmaris_attachments_read_own on storage.objects;
-create policy sigmaris_attachments_read_own
-  on storage.objects for select
-  to authenticated
-  using (
-    bucket_id = 'sigmaris-attachments'
-    and (storage.foldername(name))[1] = auth.uid()::text
-  );
-
--- Insert own objects
-drop policy if exists sigmaris_attachments_insert_own on storage.objects;
-create policy sigmaris_attachments_insert_own
-  on storage.objects for insert
-  to authenticated
-  with check (
-    bucket_id = 'sigmaris-attachments'
-    and (storage.foldername(name))[1] = auth.uid()::text
-  );
-
--- Update own objects
-drop policy if exists sigmaris_attachments_update_own on storage.objects;
-create policy sigmaris_attachments_update_own
-  on storage.objects for update
-  to authenticated
-  using (
-    bucket_id = 'sigmaris-attachments'
-    and (storage.foldername(name))[1] = auth.uid()::text
-  )
-  with check (
-    bucket_id = 'sigmaris-attachments'
-    and (storage.foldername(name))[1] = auth.uid()::text
-  );
-
--- Delete own objects
-drop policy if exists sigmaris_attachments_delete_own on storage.objects;
-create policy sigmaris_attachments_delete_own
-  on storage.objects for delete
-  to authenticated
-  using (
-    bucket_id = 'sigmaris-attachments'
-    and (storage.foldername(name))[1] = auth.uid()::text
-  );
-
+-- IMPORTANT:
+-- In some Supabase projects, the SQL Editor role is NOT the owner of `storage.objects`,
+-- so `ALTER TABLE storage.objects ...` / `CREATE POLICY ...` may fail with:
+--   ERROR: 42501: must be owner of table objects
+--
+-- This project’s backend uploads/downloads using the service role key (server-side),
+-- so these Storage RLS policies are OPTIONAL. You can skip them safely.
+--
+-- If you want end-user direct browser access to Storage objects, create policies via:
+--   Supabase Dashboard -> Storage -> Policies (or run SQL as the table owner).
