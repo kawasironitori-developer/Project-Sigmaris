@@ -28,6 +28,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi import Header
+from fastapi import Depends, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -48,8 +50,11 @@ from persona_core.types.core_types import PersonaRequest
 from persona_core.value.value_drift_engine import ValueDriftEngine, ValueState
 from persona_core.storage.supabase_rest import SupabaseConfig, SupabaseRESTClient
 from persona_core.storage.supabase_store import SupabaseEpisodeStore, SupabasePersonaDB
+from persona_core.storage.supabase_auth import SupabaseAuthError, resolve_user_from_bearer
+from persona_core.storage.supabase_storage import SupabaseStorageClient, SupabaseStorageConfig, SupabaseStorageError
 from persona_core.ego.ego_state import EgoContinuityState
 from persona_core.temporal_identity.temporal_identity_state import TemporalIdentityState
+from persona_core.phase04.runtime import get_phase04_runtime
 
 
 log = get_logger(__name__)
@@ -100,12 +105,86 @@ CONFIG_HASH = _compute_config_hash()
 
 app = FastAPI(title="Sigmaris Persona OS API", version="1.0.0")
 
+_cors_origins_raw = os.getenv("SIGMARIS_CORS_ORIGINS", "").strip()
+if _cors_origins_raw:
+    origins = [s.strip() for s in _cors_origins_raw.split(",") if s.strip()]
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
 _supabase_cfg = SupabaseConfig.from_env()
 _supabase: Optional[SupabaseRESTClient]
 if _supabase_cfg is not None:
     _supabase = SupabaseRESTClient(_supabase_cfg)
 else:
     _supabase = None
+
+_storage_bucket = os.getenv("SIGMARIS_STORAGE_BUCKET", "sigmaris-attachments").strip() or "sigmaris-attachments"
+_storage: Optional[SupabaseStorageClient] = None
+if _supabase_cfg is not None:
+    try:
+        _storage = SupabaseStorageClient(
+            SupabaseStorageConfig(url=_supabase_cfg.url, service_role_key=_supabase_cfg.service_role_key)
+        )
+    except Exception:
+        _storage = None
+
+_auth_required_default = os.getenv("SIGMARIS_REQUIRE_AUTH", "").strip().lower() in ("1", "true", "yes", "on")
+_auth_required = bool(_auth_required_default or (_supabase_cfg is not None))
+_auth_timeout_sec = int(os.getenv("SIGMARIS_AUTH_TIMEOUT_SEC", "15") or "15")
+
+
+class AuthContext(BaseModel):
+    user_id: str
+    email: Optional[str] = None
+
+
+def _auth_api_key() -> Optional[str]:
+    """
+    Prefer ANON key for auth calls if present, otherwise fall back to service role key.
+    (Either works for /auth/v1/user; using anon key is the least-privileged default.)
+    """
+    anon = os.getenv("SUPABASE_ANON_KEY") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+    if anon and anon.strip():
+        return anon.strip()
+    if _supabase_cfg is not None and _supabase_cfg.service_role_key:
+        return _supabase_cfg.service_role_key
+    return None
+
+
+def get_auth_context(authorization: Optional[str] = Header(default=None)) -> Optional[AuthContext]:
+    """
+    Public deployment invariant:
+    - Derive user_id from validated bearer token.
+    - Ignore any body-provided user_id.
+
+    If auth is not required (local demo), returns None.
+    """
+    if not _auth_required:
+        return None
+
+    if _supabase_cfg is None:
+        raise HTTPException(status_code=500, detail="Auth required but Supabase is not configured")
+
+    api_key = _auth_api_key()
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Auth required but SUPABASE_ANON_KEY is not configured")
+
+    try:
+        u = resolve_user_from_bearer(
+            supabase_url=_supabase_cfg.url,
+            supabase_api_key=api_key,
+            authorization=authorization,
+            timeout_sec=_auth_timeout_sec,
+        )
+        return AuthContext(user_id=u.user_id, email=u.email)
+    except SupabaseAuthError as e:
+        raise HTTPException(status_code=401, detail=str(e))
 
 
 def _v0_defaults(trace_id: str) -> Dict[str, Any]:
@@ -315,10 +394,63 @@ class ChatRequest(BaseModel):
     # Trait baseline (0..1). If provided, controller uses it and returns updated baseline in meta.
     trait_baseline: Optional[Dict[str, float]] = None
 
+    # Phase04: attachment metadata references (bytes are uploaded separately)
+    attachments: Optional[List[Dict[str, Any]]] = None
+
 
 class ChatResponse(BaseModel):
     reply: str
     meta: Dict[str, Any]
+
+
+# =============================================================
+# Phase04: Upload + Parse (MVP)
+# =============================================================
+
+class UploadResponse(BaseModel):
+    attachment_id: str
+    file_name: str
+    mime_type: str
+    size: int
+
+
+class ParseRequest(BaseModel):
+    attachment_id: str
+    kind: Optional[str] = None  # "text" | "markdown" | "code" | "image" | None(auto)
+
+
+class ParseResponse(BaseModel):
+    ok: bool
+    kind: str
+    parsed: Dict[str, Any]
+
+
+class WebSearchRequest(BaseModel):
+    query: str
+    max_results: int = 5
+    recency_days: Optional[int] = None
+    safe_search: str = "active"
+    domains: Optional[List[str]] = None
+
+
+class WebSearchResponse(BaseModel):
+    ok: bool
+    results: List[Dict[str, Any]]
+
+
+class GitHubRepoSearchRequest(BaseModel):
+    query: str
+    max_results: int = 5
+
+
+class GitHubCodeSearchRequest(BaseModel):
+    query: str
+    max_results: int = 5
+
+
+class GitHubSearchResponse(BaseModel):
+    ok: bool
+    results: List[Dict[str, Any]]
 
 
 # =============================================================
@@ -501,7 +633,7 @@ async def persona_operator_override(
 
 
 @app.post("/persona/chat", response_model=ChatResponse)
-async def persona_chat(req: ChatRequest) -> ChatResponse:
+async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(get_auth_context)) -> ChatResponse:
     """
     1ターン分のチャット処理。
     - 入力を PersonaRequest に変換
@@ -513,7 +645,7 @@ async def persona_chat(req: ChatRequest) -> ChatResponse:
     trace_id = new_trace_id()
     t0 = time.time()
 
-    user_id = req.user_id or DEFAULT_USER_ID
+    user_id = (auth.user_id if auth is not None else (req.user_id or DEFAULT_USER_ID))
     session_id = req.session_id or f"{user_id}:{uuid.uuid4().hex}"
 
     overload_score = _estimate_overload_score(req.message)
@@ -529,6 +661,9 @@ async def persona_chat(req: ChatRequest) -> ChatResponse:
             **({"gen": req.gen} if isinstance(req.gen, dict) and req.gen else {}),
         },
     )
+
+    phase04_db: Any = None
+    phase04_meta: Dict[str, Any] = {}
 
     # baseline はフロント側（Supabaseの直近snapshot）から渡せるようにする。
     baseline_from_client: Optional[TraitState] = None
@@ -551,6 +686,7 @@ async def persona_chat(req: ChatRequest) -> ChatResponse:
         embedding_model = llm_client
 
         persona_db = SupabasePersonaDB(_supabase)
+        phase04_db = persona_db
 
         # Phase02: operator overrides (best-effort). These affect *behavior*, not stored identity directly.
         # - subjectivity_mode: force mode (S0..S3) or "AUTO"
@@ -629,7 +765,7 @@ async def persona_chat(req: ChatRequest) -> ChatResponse:
         # Safety 監査ログ（任意）
         try:
             _supabase.insert(
-                "sigmaris_safety_assessments",
+                "common_safety_assessments",
                 {
                     "trace_id": trace_id,
                     "user_id": user_id,
@@ -647,6 +783,7 @@ async def persona_chat(req: ChatRequest) -> ChatResponse:
     else:
         persona_db = _persona_db
         episode_store = _episode_store
+        phase04_db = None
         try:
             controller = _get_inmemory_controller()
         except RuntimeError as e:
@@ -700,6 +837,19 @@ async def persona_chat(req: ChatRequest) -> ChatResponse:
     v0 = _normalize_v0(trace_id=trace_id, controller_meta=result.meta)
     decision_candidates = _normalize_decision_candidates(controller_meta=result.meta, v0=v0)
 
+    try:
+        rt = get_phase04_runtime()
+        phase04_meta = rt.run_for_turn(
+            user_id=user_id,
+            session_id=session_id,
+            message=req.message,
+            trace_id=trace_id,
+            persist=phase04_db,
+            attachments=req.attachments if isinstance(req.attachments, list) else None,
+        )
+    except Exception:
+        phase04_meta = {"error": "phase04_failed"}
+
     meta: Dict[str, Any] = {
         "meta_version": META_VERSION,
         "engine_version": ENGINE_VERSION,
@@ -735,6 +885,7 @@ async def persona_chat(req: ChatRequest) -> ChatResponse:
             "message_preview": preview_text(req.message) if TRACE_INCLUDE_TEXT else "",
             "reply_preview": preview_text(result.reply_text) if TRACE_INCLUDE_TEXT else "",
         },
+        "phase04": phase04_meta,
     }
 
     # Stable compact summary block (v1) for integration/debugging.
@@ -769,7 +920,7 @@ async def persona_chat(req: ChatRequest) -> ChatResponse:
 
 
 @app.post("/persona/chat/stream")
-async def persona_chat_stream(req: ChatRequest):
+async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = Depends(get_auth_context)):
     """
     SSE streaming version of /persona/chat.
     - event: delta -> data: {"text": "..."}
@@ -779,7 +930,7 @@ async def persona_chat_stream(req: ChatRequest):
     trace_id = new_trace_id()
     t0 = time.time()
 
-    user_id = req.user_id or DEFAULT_USER_ID
+    user_id = (auth.user_id if auth is not None else (req.user_id or DEFAULT_USER_ID))
     session_id = req.session_id or f"{user_id}:{uuid.uuid4().hex}"
     overload_score = _estimate_overload_score(req.message)
 
@@ -794,6 +945,8 @@ async def persona_chat_stream(req: ChatRequest):
             **({"gen": req.gen} if isinstance(req.gen, dict) and req.gen else {}),
         },
     )
+
+    phase04_db: Any = None
 
     baseline_from_client: Optional[TraitState] = None
     try:
@@ -811,6 +964,7 @@ async def persona_chat_stream(req: ChatRequest):
         llm_client = _get_llm_client()
         embedding_model = llm_client
         persona_db = SupabasePersonaDB(_supabase)
+        phase04_db = persona_db
 
         # Phase02: operator overrides (best-effort)
         try:
@@ -892,6 +1046,7 @@ async def persona_chat_stream(req: ChatRequest):
             trait_state=TraitState(),
             memory=None,
         )
+        phase04_db = None
 
     # SafetyLayer の数値メタを controller 側でも参照できるように注入
     try:
@@ -973,7 +1128,21 @@ async def persona_chat_stream(req: ChatRequest):
                             "message_preview": preview_text(req.message) if TRACE_INCLUDE_TEXT else "",
                             "reply_preview": preview_text(reply_text) if TRACE_INCLUDE_TEXT else "",
                         },
+                        "phase04": None,
                     }
+
+                    try:
+                        rt = get_phase04_runtime()
+                        meta["phase04"] = rt.run_for_turn(
+                            user_id=user_id,
+                            session_id=session_id,
+                            message=req.message,
+                            trace_id=trace_id,
+                            persist=phase04_db,
+                            attachments=req.attachments if isinstance(req.attachments, list) else None,
+                        )
+                    except Exception:
+                        meta["phase04"] = {"error": "phase04_failed"}
 
                     meta["meta_v1"] = {
                         "trace_id": str(meta.get("trace_id") or trace_id),
@@ -994,3 +1163,242 @@ async def persona_chat_stream(req: ChatRequest):
             yield _sse("error", {"error": str(e), "trace_id": trace_id})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/io/upload", response_model=UploadResponse)
+async def io_upload(
+    file: UploadFile = File(...),
+    auth: Optional[AuthContext] = Depends(get_auth_context),
+):
+    """
+    Phase04 MVP: upload raw bytes separately from chat.
+    - If Supabase is configured, stores bytes in Supabase Storage and metadata in `common_attachments`.
+    - Otherwise, stores to local disk (demo fallback).
+    - Returns an attachment_id for subsequent /io/parse.
+    """
+    if auth is None and _auth_required:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    max_bytes = int(os.getenv("SIGMARIS_UPLOAD_MAX_BYTES", "5242880") or "5242880")  # 5MB
+    data = await file.read()
+    if len(data) > max_bytes:
+        raise HTTPException(status_code=413, detail="File too large")
+
+    attachment_id = uuid.uuid4().hex
+    file_name = file.filename or ""
+    mime_type = file.content_type or "application/octet-stream"
+
+    sha256_hex = None
+    try:
+        sha256_hex = hashlib.sha256(data).hexdigest()
+    except Exception:
+        sha256_hex = None
+
+    # Prefer Supabase Storage when available.
+    if _supabase is not None and _storage is not None and auth is not None:
+        persona_db = SupabasePersonaDB(_supabase)
+        object_path = f"{auth.user_id}/{attachment_id}"
+        try:
+            _storage.upload(
+                bucket_id=_storage_bucket,
+                object_path=object_path,
+                data=data,
+                content_type=mime_type,
+                upsert=True,
+            )
+            persona_db.insert_attachment(
+                attachment_id=attachment_id,
+                user_id=auth.user_id,
+                bucket_id=_storage_bucket,
+                object_path=object_path,
+                file_name=file_name,
+                mime_type=mime_type,
+                size_bytes=int(len(data)),
+                sha256=sha256_hex,
+                meta={},
+            )
+        except (SupabaseStorageError, Exception) as e:
+            raise HTTPException(status_code=502, detail=f"storage upload failed: {e}")
+
+        return UploadResponse(
+            attachment_id=attachment_id,
+            file_name=file_name,
+            mime_type=mime_type,
+            size=int(len(data)),
+        )
+
+    # Demo fallback: local disk
+    base_dir = os.getenv("SIGMARIS_UPLOAD_DIR") or os.path.join("sigmaris_core", "data", "uploads")
+    os.makedirs(base_dir, exist_ok=True)
+    path = os.path.join(base_dir, attachment_id)
+    meta_path = path + ".json"
+
+    try:
+        with open(path, "wb") as f:
+            f.write(data)
+        meta = {
+            "attachment_id": attachment_id,
+            "user_id": (auth.user_id if auth is not None else None),
+            "file_name": file_name,
+            "mime_type": mime_type,
+            "size": int(len(data)),
+            "sha256": sha256_hex,
+        }
+        with open(meta_path, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"upload failed: {e}")
+
+    return UploadResponse(
+        attachment_id=attachment_id,
+        file_name=file_name,
+        mime_type=mime_type,
+        size=int(len(data)),
+    )
+
+
+@app.post("/io/parse", response_model=ParseResponse)
+async def io_parse(
+    req: ParseRequest,
+    auth: Optional[AuthContext] = Depends(get_auth_context),
+):
+    """
+    Phase04 MVP: parse uploaded content into bounded structured representations.
+    """
+    if auth is None and _auth_required:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    from persona_core.phase04.parsing.file_parser import parse_file_bytes  # local import to keep startup light
+
+    # Prefer Supabase Storage when available.
+    if _supabase is not None and _storage is not None and auth is not None:
+        persona_db = SupabasePersonaDB(_supabase)
+        row = None
+        try:
+            row = persona_db.load_attachment(attachment_id=str(req.attachment_id))
+        except Exception:
+            row = None
+        if not row:
+            raise HTTPException(status_code=404, detail="attachment not found")
+        owner = row.get("user_id")
+        if owner and str(owner) != str(auth.user_id):
+            raise HTTPException(status_code=403, detail="Forbidden")
+        bucket_id = str(row.get("bucket_id") or _storage_bucket)
+        object_path = str(row.get("object_path") or "")
+        if not object_path:
+            raise HTTPException(status_code=500, detail="attachment missing object_path")
+
+        try:
+            data = _storage.download(bucket_id=bucket_id, object_path=object_path)
+            parsed_kind, parsed = parse_file_bytes(
+                data=data,
+                file_name=str(row.get("file_name") or ""),
+                mime_type=str(row.get("mime_type") or ""),
+                kind=req.kind,
+            )
+            return ParseResponse(ok=True, kind=parsed_kind, parsed=parsed)
+        except SupabaseStorageError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"parse failed: {e}")
+
+    # Demo fallback: local disk
+    base_dir = os.getenv("SIGMARIS_UPLOAD_DIR") or os.path.join("sigmaris_core", "data", "uploads")
+    path = os.path.join(base_dir, str(req.attachment_id))
+    meta_path = path + ".json"
+    if not os.path.exists(path) or not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="attachment not found")
+
+    try:
+        meta = {}
+        if os.path.exists(meta_path):
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f) or {}
+        owner = meta.get("user_id")
+        if _auth_required and auth is not None and owner and str(owner) != str(auth.user_id):
+            raise HTTPException(status_code=403, detail="Forbidden")
+    except HTTPException:
+        raise
+    except Exception:
+        meta = {}
+
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+        parsed_kind, parsed = parse_file_bytes(
+            data=data,
+            file_name=str(meta.get("file_name") or ""),
+            mime_type=str(meta.get("mime_type") or ""),
+            kind=req.kind,
+        )
+        return ParseResponse(ok=True, kind=parsed_kind, parsed=parsed)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"parse failed: {e}")
+
+
+@app.post("/io/web/search", response_model=WebSearchResponse)
+async def io_web_search(
+    req: WebSearchRequest,
+    auth: Optional[AuthContext] = Depends(get_auth_context),
+):
+    """
+    Phase04 MVP: web search via an explicit provider (no scraping).
+    """
+    if auth is None and _auth_required:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    from persona_core.phase04.io.web_search import get_web_search_provider, WebSearchError
+
+    provider = get_web_search_provider()
+    if provider is None:
+        raise HTTPException(status_code=501, detail="web search provider not configured")
+
+    try:
+        results = provider.search(
+            query=req.query,
+            max_results=req.max_results,
+            recency_days=req.recency_days,
+            safe_search=req.safe_search,
+            domains=req.domains,
+        )
+        return WebSearchResponse(ok=True, results=[r.to_dict() for r in results])
+    except WebSearchError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/io/github/repos", response_model=GitHubSearchResponse)
+async def io_github_repo_search(
+    req: GitHubRepoSearchRequest,
+    auth: Optional[AuthContext] = Depends(get_auth_context),
+):
+    if auth is None and _auth_required:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    from persona_core.phase04.io.github_search import get_github_provider, GitHubSearchError
+
+    try:
+        gh = get_github_provider()
+        results = gh.search_repositories(query=req.query, max_results=req.max_results)
+        return GitHubSearchResponse(ok=True, results=[r.to_dict() for r in results])
+    except GitHubSearchError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/io/github/code", response_model=GitHubSearchResponse)
+async def io_github_code_search(
+    req: GitHubCodeSearchRequest,
+    auth: Optional[AuthContext] = Depends(get_auth_context),
+):
+    if auth is None and _auth_required:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    from persona_core.phase04.io.github_search import get_github_provider, GitHubSearchError
+
+    try:
+        gh = get_github_provider()
+        results = gh.search_code(query=req.query, max_results=req.max_results)
+        return GitHubSearchResponse(ok=True, results=[r.to_dict() for r in results])
+    except GitHubSearchError as e:
+        raise HTTPException(status_code=502, detail=str(e))

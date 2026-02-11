@@ -34,6 +34,11 @@ export async function POST(req: Request) {
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    const {
+      data: { session },
+    } = await supabaseAuth.auth.getSession();
+    const accessToken = session?.access_token ?? null;
     if (!isAllowedOperator(user.id)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -65,6 +70,7 @@ export async function POST(req: Request) {
       headers: {
         "Content-Type": "application/json",
         "x-sigmaris-operator-key": operatorKey,
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
       body: JSON.stringify({
         user_id: userId,
@@ -90,4 +96,3 @@ export async function POST(req: Request) {
     );
   }
 }
-

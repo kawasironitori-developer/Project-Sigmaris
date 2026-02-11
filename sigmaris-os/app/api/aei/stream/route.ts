@@ -60,6 +60,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const {
+    data: { session },
+  } = await supabaseAuth.auth.getSession();
+  const accessToken = session?.access_token ?? null;
+
   const body = (await req.json().catch(() => ({}))) as {
     text?: string;
     lang?: string;
@@ -78,7 +83,10 @@ export async function POST(req: Request) {
   const coreUrl = coreBaseUrl();
   const upstream = await fetch(`${coreUrl}/persona/chat/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
     body: JSON.stringify({
       user_id: user.id,
       session_id: sessionId,

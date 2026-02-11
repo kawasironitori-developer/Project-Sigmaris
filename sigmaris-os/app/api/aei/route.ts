@@ -107,6 +107,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized", step }, { status: 401 });
     }
 
+    const {
+      data: { session },
+    } = await supabaseAuth.auth.getSession();
+    const accessToken = session?.access_token ?? null;
+
     const supabase = getSupabaseServer();
 
     // --- load last trait baseline (stored in snapshot meta) ---
@@ -131,7 +136,10 @@ export async function POST(req: Request) {
 
     const coreRes = await fetch(`${coreUrl}/persona/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
       body: JSON.stringify({
         user_id: user.id,
         session_id: sessionId,

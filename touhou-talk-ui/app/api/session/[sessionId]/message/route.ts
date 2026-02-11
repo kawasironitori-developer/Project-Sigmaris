@@ -127,6 +127,17 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  let accessToken: string | null = null;
+  try {
+    const sb = await supabaseServer();
+    const {
+      data: { session },
+    } = await sb.auth.getSession();
+    accessToken = session?.access_token ?? null;
+  } catch {
+    accessToken = null;
+  }
+
   const contentType = req.headers.get("content-type") ?? "";
   if (!contentType.includes("multipart/form-data")) {
     return NextResponse.json(
@@ -274,7 +285,10 @@ export async function POST(
   // ---- streaming: proxy SSE from Sigmaris core and persist on done ----
   const upstream = await fetch(`${base}/persona/chat/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
     body: JSON.stringify({
       user_id: userId,
       session_id: sessionId,

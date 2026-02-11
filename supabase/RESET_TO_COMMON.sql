@@ -41,6 +41,13 @@ drop table if exists public.safety_logs cascade;
 -- sigmaris_core/persona_core/storage/SUPABASE_SCHEMA.sql legacy tables
 drop table if exists public.sigmaris_trace_events cascade;
 drop table if exists public.sigmaris_safety_assessments cascade;
+
+-- Phase04 additions (attachments + kernel)
+drop table if exists public.common_attachments cascade;
+drop table if exists public.common_kernel_state cascade;
+drop table if exists public.common_kernel_snapshots cascade;
+drop table if exists public.common_kernel_delta_logs cascade;
+drop table if exists public.common_kernel_rollbacks cascade;
 drop table if exists public.sigmaris_episodes cascade;
 drop table if exists public.sigmaris_life_events cascade;
 drop table if exists public.sigmaris_operator_overrides cascade;
@@ -385,6 +392,77 @@ create table if not exists public.common_safety_assessments (
 create index if not exists idx_common_safety_user_created
   on public.common_safety_assessments (user_id, created_at desc);
 
+-- ============================================================
+-- Phase04: Attachments (metadata only; bytes live in Supabase Storage)
+-- ============================================================
+create table if not exists public.common_attachments (
+  id uuid primary key default gen_random_uuid(),
+  attachment_id text not null unique,
+  user_id uuid not null,
+
+  bucket_id text not null,
+  object_path text not null,
+
+  file_name text not null default '',
+  mime_type text not null default 'application/octet-stream',
+  size_bytes bigint not null default 0,
+  sha256 text null,
+
+  meta jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_common_attachments_user_created
+  on public.common_attachments (user_id, created_at desc);
+
+create index if not exists idx_common_attachments_user_attachment_id
+  on public.common_attachments (user_id, attachment_id);
+
+-- ============================================================
+-- Phase04: Kernel state + snapshots (MVP)
+-- ============================================================
+create table if not exists public.common_kernel_state (
+  user_id uuid primary key,
+  state jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.common_kernel_snapshots (
+  id uuid primary key default gen_random_uuid(),
+  snapshot_id text not null unique,
+  user_id uuid not null,
+  state jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_common_kernel_snapshots_user_created
+  on public.common_kernel_snapshots (user_id, created_at desc);
+
+create table if not exists public.common_kernel_delta_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  session_id text,
+  trace_id text,
+  decision jsonb not null default '{}'::jsonb,
+  approved_deltas jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_common_kernel_delta_logs_user_created
+  on public.common_kernel_delta_logs (user_id, created_at desc);
+
+create table if not exists public.common_kernel_rollbacks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  snapshot_id text not null,
+  trace_id text,
+  reason text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_common_kernel_rollbacks_user_created
+  on public.common_kernel_rollbacks (user_id, created_at desc);
+
 -- Trace events
 create table if not exists public.common_trace_events (
   id uuid primary key default gen_random_uuid(),
@@ -435,6 +513,11 @@ alter table public.common_episodes enable row level security;
 alter table public.common_safety_assessments enable row level security;
 alter table public.common_trace_events enable row level security;
 alter table public.common_persona enable row level security;
+alter table public.common_attachments enable row level security;
+alter table public.common_kernel_state enable row level security;
+alter table public.common_kernel_snapshots enable row level security;
+alter table public.common_kernel_delta_logs enable row level security;
+alter table public.common_kernel_rollbacks enable row level security;
 
 -- Sessions
 drop policy if exists common_sessions_select_own on public.common_sessions;
@@ -598,6 +681,84 @@ create policy common_ego_snapshots_select_own
   on public.common_ego_snapshots for select
   to authenticated
   using (user_id = auth.uid());
+
+-- Attachments
+drop policy if exists common_attachments_select_own on public.common_attachments;
+create policy common_attachments_select_own
+  on public.common_attachments for select
+  to authenticated
+  using (user_id = auth.uid());
+
+drop policy if exists common_attachments_insert_own on public.common_attachments;
+create policy common_attachments_insert_own
+  on public.common_attachments for insert
+  to authenticated
+  with check (user_id = auth.uid());
+
+drop policy if exists common_attachments_delete_own on public.common_attachments;
+create policy common_attachments_delete_own
+  on public.common_attachments for delete
+  to authenticated
+  using (user_id = auth.uid());
+
+-- Kernel state (owner read/write)
+drop policy if exists common_kernel_state_select_own on public.common_kernel_state;
+create policy common_kernel_state_select_own
+  on public.common_kernel_state for select
+  to authenticated
+  using (user_id = auth.uid());
+
+drop policy if exists common_kernel_state_upsert_own on public.common_kernel_state;
+create policy common_kernel_state_upsert_own
+  on public.common_kernel_state for insert
+  to authenticated
+  with check (user_id = auth.uid());
+
+drop policy if exists common_kernel_state_update_own on public.common_kernel_state;
+create policy common_kernel_state_update_own
+  on public.common_kernel_state for update
+  to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+-- Kernel snapshots
+drop policy if exists common_kernel_snapshots_select_own on public.common_kernel_snapshots;
+create policy common_kernel_snapshots_select_own
+  on public.common_kernel_snapshots for select
+  to authenticated
+  using (user_id = auth.uid());
+
+drop policy if exists common_kernel_snapshots_insert_own on public.common_kernel_snapshots;
+create policy common_kernel_snapshots_insert_own
+  on public.common_kernel_snapshots for insert
+  to authenticated
+  with check (user_id = auth.uid());
+
+-- Kernel delta logs
+drop policy if exists common_kernel_delta_logs_select_own on public.common_kernel_delta_logs;
+create policy common_kernel_delta_logs_select_own
+  on public.common_kernel_delta_logs for select
+  to authenticated
+  using (user_id = auth.uid());
+
+drop policy if exists common_kernel_delta_logs_insert_own on public.common_kernel_delta_logs;
+create policy common_kernel_delta_logs_insert_own
+  on public.common_kernel_delta_logs for insert
+  to authenticated
+  with check (user_id = auth.uid());
+
+-- Kernel rollbacks
+drop policy if exists common_kernel_rollbacks_select_own on public.common_kernel_rollbacks;
+create policy common_kernel_rollbacks_select_own
+  on public.common_kernel_rollbacks for select
+  to authenticated
+  using (user_id = auth.uid());
+
+drop policy if exists common_kernel_rollbacks_insert_own on public.common_kernel_rollbacks;
+create policy common_kernel_rollbacks_insert_own
+  on public.common_kernel_rollbacks for insert
+  to authenticated
+  with check (user_id = auth.uid());
 
 drop policy if exists common_ego_snapshots_insert_own on public.common_ego_snapshots;
 create policy common_ego_snapshots_insert_own

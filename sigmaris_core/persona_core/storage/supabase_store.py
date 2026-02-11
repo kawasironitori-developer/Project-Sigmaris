@@ -230,6 +230,95 @@ class SupabasePersonaDB:
             }
             self._c.insert("common_integration_events", row)
 
+    # --------------------------
+    # Phase04 Kernel + Attachments
+    # --------------------------
+
+    def upsert_kernel_state(self, *, user_id: str, state: Dict[str, Any]) -> None:
+        self._c.upsert(
+            "common_kernel_state",
+            {"user_id": str(user_id), "state": state or {}, "updated_at": datetime.now(timezone.utc).isoformat()},
+            on_conflict="user_id",
+        )
+
+    def insert_kernel_snapshot(self, *, user_id: str, snapshot_id: str, state: Dict[str, Any]) -> None:
+        self._c.insert(
+            "common_kernel_snapshots",
+            {"user_id": str(user_id), "snapshot_id": str(snapshot_id), "state": state or {}},
+        )
+
+    def insert_kernel_delta_log(
+        self,
+        *,
+        user_id: str,
+        session_id: Optional[str],
+        trace_id: Optional[str],
+        decision: Dict[str, Any],
+        approved_deltas: List[Dict[str, Any]],
+    ) -> None:
+        self._c.insert(
+            "common_kernel_delta_logs",
+            {
+                "user_id": str(user_id),
+                "session_id": session_id,
+                "trace_id": trace_id,
+                "decision": decision or {},
+                "approved_deltas": approved_deltas or [],
+            },
+        )
+
+    def insert_kernel_rollback(
+        self,
+        *,
+        user_id: str,
+        snapshot_id: str,
+        trace_id: Optional[str],
+        reason: Optional[str],
+    ) -> None:
+        self._c.insert(
+            "common_kernel_rollbacks",
+            {"user_id": str(user_id), "snapshot_id": str(snapshot_id), "trace_id": trace_id, "reason": reason},
+        )
+
+    def insert_attachment(
+        self,
+        *,
+        attachment_id: str,
+        user_id: str,
+        bucket_id: str,
+        object_path: str,
+        file_name: str,
+        mime_type: str,
+        size_bytes: int,
+        sha256: Optional[str],
+        meta: Dict[str, Any],
+    ) -> None:
+        self._c.insert(
+            "common_attachments",
+            {
+                "attachment_id": str(attachment_id),
+                "user_id": str(user_id),
+                "bucket_id": str(bucket_id),
+                "object_path": str(object_path),
+                "file_name": str(file_name or ""),
+                "mime_type": str(mime_type or "application/octet-stream"),
+                "size_bytes": int(size_bytes),
+                "sha256": (str(sha256) if sha256 else None),
+                "meta": meta or {},
+            },
+        )
+
+    def load_attachment(self, *, attachment_id: str) -> Optional[Dict[str, Any]]:
+        rows = self._c.select(
+            "common_attachments",
+            columns="attachment_id,user_id,bucket_id,object_path,file_name,mime_type,size_bytes,sha256,meta,created_at",
+            filters=[f"attachment_id=eq.{attachment_id}"],
+            limit=1,
+        )
+        if not rows:
+            return None
+        return rows[0] if isinstance(rows[0], dict) else None
+
     def load_last_ego_state(self, *, user_id: str) -> Optional[Dict[str, Any]]:
         rows = self._c.select(
             "common_ego_snapshots",
