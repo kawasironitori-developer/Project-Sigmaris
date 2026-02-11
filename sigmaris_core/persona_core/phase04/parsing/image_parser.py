@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 from typing import Any, Dict, List
 
 
@@ -72,7 +73,7 @@ def parse_image_bytes(*, data: bytes, file_name: str, mime_type: str) -> Dict[st
     """
     Phase04 MVP image parsing:
     - Metadata via Pillow (if installed)
-    - OCR is intentionally optional and not performed by default
+    - OCR / caption is intentionally optional and not performed by default
     - Structural features: dominant colors + edge density
     """
     try:
@@ -133,6 +134,32 @@ def parse_image_bytes(*, data: bytes, file_name: str, mime_type: str) -> Dict[st
             excerpt += f" {len(dom)} dominant color clusters"
         excerpt += f" with edge_density≈{ed:.2f}."
 
+        # Optional: OpenAI Vision-based caption/OCR (disabled by default)
+        vision_caption = ""
+        vision_text = ""
+        vision_objects: List[str] = []
+        vision_note = "ocr_not_enabled"
+        try:
+            enabled = (os.getenv("SIGMARIS_IMAGE_VISION_ENABLED", "").strip().lower() in ("1", "true", "yes", "on"))
+        except Exception:
+            enabled = False
+
+        if enabled:
+            try:
+                from persona_core.phase04.parsing.openai_vision import analyze_image_bytes, OpenAIVisionError
+
+                vr = analyze_image_bytes(data=data, mime_type=mime_type, file_name=file_name)
+                vision_caption = str(vr.get("caption") or "").strip()
+                vision_text = str(vr.get("detected_text") or "").strip()
+                vision_objects = [str(x) for x in (vr.get("objects") or []) if str(x).strip()][:10]
+                vision_note = "vision_ok"
+                if vision_caption:
+                    excerpt = vision_caption
+            except OpenAIVisionError as e:
+                vision_note = f"vision_failed:{_safe_str(e)}"
+            except Exception as e:
+                vision_note = f"vision_failed:{type(e).__name__}"
+
         return {
             "file_type": "image",
             "metadata": {
@@ -144,19 +171,19 @@ def parse_image_bytes(*, data: bytes, file_name: str, mime_type: str) -> Dict[st
                 "timestamp": None,
             },
             "ocr": {
-                "detected_text": "",
-                "confidence": 0.0,
+                "detected_text": vision_text,
+                "confidence": (0.65 if vision_text else 0.0),
                 "language_detected": None,
                 "bounding_regions": [],
-                "note": "ocr_not_enabled",
+                "note": vision_note,
             },
             "visual_features": {
                 "dominant_colors": dom,
                 "edge_density": float(ed),
                 "structural_complexity": complexity,
-                "detected_objects": [],
+                "detected_objects": vision_objects,
             },
             "excerpt_summary": excerpt,
+            "raw_excerpt": vision_text[:1600] if vision_text else excerpt,
             "metadata_extra": {"file_name": file_name, "mime_type": mime_type},
         }
-

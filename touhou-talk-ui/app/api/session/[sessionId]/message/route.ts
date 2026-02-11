@@ -156,6 +156,10 @@ async function uploadAndParseFiles(params: {
             ? parsedAny.text_excerpt
             : typeof parsedAny?.content_summary === "string"
               ? parsedAny.content_summary
+              : typeof parsedAny?.excerpt_summary === "string"
+                ? parsedAny.excerpt_summary
+                : typeof parsedAny?.ocr?.detected_text === "string"
+                  ? parsedAny.ocr.detected_text
               : "";
 
       out.push({
