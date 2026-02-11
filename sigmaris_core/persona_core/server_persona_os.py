@@ -31,7 +31,7 @@ from fastapi import Header
 from fastapi import Depends, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from persona_core.storage.env_loader import load_dotenv
 from persona_core.controller.persona_controller import PersonaController, PersonaControllerConfig
@@ -431,6 +431,25 @@ class WebSearchRequest(BaseModel):
     recency_days: Optional[int] = None
     safe_search: str = "active"
     domains: Optional[List[str]] = None
+
+    @field_validator("safe_search", mode="before")
+    @classmethod
+    def _coerce_safe_search(cls, v: Any) -> str:
+        # Backward-compat: some clients may send boolean.
+        if v is True:
+            return "active"
+        if v is False:
+            return "off"
+        if v is None:
+            return "active"
+        if isinstance(v, str):
+            s = v.strip()
+            if s.lower() in ("true", "1", "yes", "on"):
+                return "active"
+            if s.lower() in ("false", "0", "no", "off"):
+                return "off"
+            return s or "active"
+        return "active"
 
 
 class WebSearchResponse(BaseModel):
