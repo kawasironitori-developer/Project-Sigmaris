@@ -332,7 +332,7 @@ async function autoBrowseFromText(params: {
       query: intent.query,
       max_results: maxResults,
       recency_days: intent.recency_days,
-      safe_search: true,
+      safe_search: "active",
       domains: null,
     },
   });
