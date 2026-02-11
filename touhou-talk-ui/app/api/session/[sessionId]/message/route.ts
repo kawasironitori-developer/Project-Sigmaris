@@ -77,6 +77,43 @@ function extractUrls(text: string): string[] {
   return uniq;
 }
 
+function containsAny(text: string, needles: string[]) {
+  const t = String(text ?? "");
+  return needles.some((n) => n && t.includes(n));
+}
+
+function detectAutoBrowse(text: string): { enabled: boolean; query: string; recency_days: number } {
+  const t = String(text ?? "").trim();
+  if (!t) return { enabled: false, query: "", recency_days: 7 };
+
+  if ((process.env.SIGMARIS_AUTO_BROWSE_ENABLED ?? "").toLowerCase() === "0") {
+    return { enabled: false, query: "", recency_days: 7 };
+  }
+
+  const optOut = [
+    "検索しないで",
+    "ネット見ないで",
+    "ブラウズしないで",
+    "推測でいい",
+    "勘でいい",
+    "オフラインで",
+    "参照不要",
+    "ソース不要",
+  ];
+  if (containsAny(t, optOut)) return { enabled: false, query: "", recency_days: 7 };
+
+  const triggers = ["調べて", "検索", "探して", "ニュース", "速報", "ヘッドライン", "最新", "ソース", "出典", "根拠", "参照", "リンク"];
+  if (!containsAny(t, triggers)) return { enabled: false, query: "", recency_days: 7 };
+
+  const isNews = containsAny(t, ["ニュース", "速報", "ヘッドライン"]);
+  const isRecent = containsAny(t, ["今日", "本日", "最新", "いま", "今"]);
+  const recency_days = isNews || isRecent ? 1 : 30;
+
+  // Use the user text as query; Serper supports natural queries.
+  const q = clampText(t.replace(/\s+/g, " ").trim(), 240);
+  return { enabled: true, query: q, recency_days };
+}
+
 function githubRepoQueryFromUrl(urlStr: string): string | null {
   try {
     const u = new URL(urlStr);
@@ -217,6 +254,7 @@ async function analyzeLinks(params: {
       title?: unknown;
       final_url?: unknown;
       summary?: unknown;
+      text_excerpt?: unknown;
       key_points?: unknown;
       sources?: unknown[];
     }>({
@@ -225,10 +263,20 @@ async function analyzeLinks(params: {
       body: { url, summarize: true, max_chars: 12000 },
     });
 
-    if (f.ok && f.json && typeof f.json.summary === "string") {
-      const kp = Array.isArray(f.json.key_points) ? (f.json.key_points as any[]) : [];
-      const title = typeof f.json.title === "string" ? f.json.title : "";
-      const finalUrl = typeof f.json.final_url === "string" ? f.json.final_url : url;
+    const fj = f.json;
+    const fetchedSnippet =
+      f.ok && fj
+        ? typeof fj.summary === "string"
+          ? String(fj.summary)
+          : typeof fj.text_excerpt === "string"
+            ? String(fj.text_excerpt)
+            : ""
+        : "";
+
+    if (fetchedSnippet && fj) {
+      const kp = Array.isArray(fj.key_points) ? (fj.key_points as any[]) : [];
+      const title = typeof fj.title === "string" ? fj.title : "";
+      const finalUrl = typeof fj.final_url === "string" ? fj.final_url : url;
       out.push({
         type: "link_analysis",
         url,
@@ -236,7 +284,7 @@ async function analyzeLinks(params: {
         results: [
           {
             title: title || undefined,
-            snippet: clampText(String(f.json.summary), 600),
+            snippet: clampText(fetchedSnippet, 600),
             url: finalUrl || url,
           },
           ...kp.slice(0, 3).map((x) => ({ snippet: clampText(String(x ?? ""), 160) })),
@@ -264,6 +312,57 @@ async function analyzeLinks(params: {
   }
 
   return out;
+}
+
+async function autoBrowseFromText(params: {
+  base: string;
+  accessToken: string | null;
+  userText: string;
+}): Promise<Phase04LinkAnalysis[]> {
+  const intent = detectAutoBrowse(params.userText);
+  if (!intent.enabled) return [];
+
+  const maxResultsRaw = Number(process.env.SIGMARIS_AUTO_BROWSE_MAX_RESULTS ?? "5");
+  const maxResults = Number.isFinite(maxResultsRaw) ? Math.min(8, Math.max(1, maxResultsRaw)) : 5;
+
+  const sr = await coreJson<{ ok?: boolean; results?: unknown[] }>({
+    url: `${params.base}/io/web/search`,
+    accessToken: params.accessToken,
+    body: {
+      query: intent.query,
+      max_results: maxResults,
+      recency_days: intent.recency_days,
+      safe_search: true,
+      domains: null,
+    },
+  });
+
+  const results = Array.isArray(sr.json?.results) ? (sr.json?.results as any[]) : [];
+  const top = results.slice(0, maxResults);
+
+  const analyses: Phase04LinkAnalysis[] = [];
+  analyses.push({
+    type: "link_analysis",
+    url: `query:${intent.query}`,
+    provider: "web_search",
+    results: top.map((x) => ({
+      title: typeof x?.title === "string" ? x.title : undefined,
+      snippet: typeof x?.snippet === "string" ? x.snippet : undefined,
+      url: typeof x?.url === "string" ? x.url : undefined,
+    })),
+  });
+
+  // Deep fetch a couple of URLs (allowlist enforced by core)
+  const fetchTopRaw = Number(process.env.SIGMARIS_AUTO_BROWSE_FETCH_TOP ?? "2");
+  const fetchTop = Number.isFinite(fetchTopRaw) ? Math.min(3, Math.max(0, fetchTopRaw)) : 2;
+
+  const urls = top
+    .map((x) => (typeof x?.url === "string" ? String(x.url) : ""))
+    .filter(Boolean)
+    .slice(0, fetchTop);
+
+  const fetched = await analyzeLinks({ base: params.base, accessToken: params.accessToken, urls });
+  return [...analyses, ...fetched];
 }
 
 function buildAugmentedMessage(params: {
@@ -462,7 +561,10 @@ export async function POST(
 
   const base = coreBaseUrl();
   const phase04Uploads = await uploadAndParseFiles({ base, accessToken, files });
-  const phase04Links = await analyzeLinks({ base, accessToken, urls });
+  const phase04Links =
+    urls.length > 0
+      ? await analyzeLinks({ base, accessToken, urls })
+      : await autoBrowseFromText({ base, accessToken, userText: text.trim() });
   const augmentedText = buildAugmentedMessage({
     userText: text.trim(),
     uploads: phase04Uploads,

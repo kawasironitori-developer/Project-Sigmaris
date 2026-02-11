@@ -10,6 +10,14 @@ import { getSupabaseServer } from "@/lib/supabaseServer";
 
 type TraitTriplet = { calm: number; empathy: number; curiosity: number };
 
+type Phase04AutoSource = {
+  type: "auto_browse";
+  query: string;
+  recency_days: number;
+  results: Array<{ title?: string; url?: string; snippet?: string }>;
+  fetched: Array<{ url: string; final_url?: string; title?: string; summary?: string; text_excerpt?: string }>;
+};
+
 function coreBaseUrl() {
   const raw =
     process.env.SIGMARIS_CORE_URL ||
@@ -30,6 +38,112 @@ function isTraitTriplet(v: any): v is TraitTriplet {
 
 function toSse(event: string, data: any) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+function clampText(s: string, n: number) {
+  const t = String(s ?? "");
+  if (t.length <= n) return t;
+  return t.slice(0, Math.max(0, n - 1)) + "...";
+}
+
+function containsAny(text: string, needles: string[]) {
+  const t = String(text ?? "");
+  return needles.some((n) => n && t.includes(n));
+}
+
+function detectAutoBrowse(text: string): { enabled: boolean; query: string; recency_days: number } {
+  const t = String(text ?? "").trim();
+  if (!t) return { enabled: false, query: "", recency_days: 7 };
+
+  if ((process.env.SIGMARIS_AUTO_BROWSE_ENABLED ?? "").toLowerCase() === "0") {
+    return { enabled: false, query: "", recency_days: 7 };
+  }
+
+  const optOut = [
+    "検索しないで",
+    "ネット見ないで",
+    "ブラウズしないで",
+    "推測でいい",
+    "勘でいい",
+    "オフラインで",
+    "参照不要",
+    "ソース不要",
+  ];
+  if (containsAny(t, optOut)) return { enabled: false, query: "", recency_days: 7 };
+
+  const triggers = [
+    "調べて",
+    "検索",
+    "探して",
+    "ニュース",
+    "速報",
+    "ヘッドライン",
+    "最新",
+    "ソース",
+    "出典",
+    "根拠",
+    "参照",
+    "リンク",
+  ];
+  if (!containsAny(t, triggers)) return { enabled: false, query: "", recency_days: 7 };
+
+  const isNews = containsAny(t, ["ニュース", "速報", "ヘッドライン"]);
+  const isRecent = containsAny(t, ["今日", "本日", "最新", "いま", "今"]);
+  const recency_days = isNews || isRecent ? 1 : 30;
+
+  const q = clampText(t.replace(/\s+/g, " ").trim(), 240);
+  return { enabled: true, query: q, recency_days };
+}
+
+async function coreJson<T>(params: {
+  url: string;
+  accessToken: string | null;
+  body: unknown;
+}): Promise<{ ok: boolean; status: number; json: T | null }> {
+  const r = await fetch(params.url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(params.accessToken ? { Authorization: `Bearer ${params.accessToken}` } : {}),
+    },
+    body: JSON.stringify(params.body),
+  });
+  const text = await r.text().catch(() => "");
+  let json: T | null = null;
+  try {
+    json = text ? (JSON.parse(text) as T) : null;
+  } catch {
+    json = null;
+  }
+  return { ok: r.ok, status: r.status, json };
+}
+
+function buildAugmentedMessage(params: {
+  userText: string;
+  source: Phase04AutoSource | null;
+}) {
+  let msg = String(params.userText ?? "").trim();
+  const s = params.source;
+  if (!s) return msg;
+
+  const lines: string[] = [];
+  lines.push("[リンク解析（自動）]");
+  lines.push(`- query: ${s.query} (recency_days=${s.recency_days})`);
+  for (const r of (s.results ?? []).slice(0, 5)) {
+    const title = r.title ? clampText(String(r.title), 120) : "(result)";
+    const snip = r.snippet ? ` — ${clampText(String(r.snippet), 160)}` : "";
+    const u = r.url ? ` (${String(r.url)})` : "";
+    lines.push(`  - ${title}${snip}${u}`);
+  }
+  for (const f of (s.fetched ?? []).slice(0, 2)) {
+    const u = f.final_url || f.url;
+    const title = f.title ? clampText(String(f.title), 120) : "(fetched)";
+    const snip = f.summary || f.text_excerpt || "";
+    lines.push(`  - [fetched] ${title}${snip ? ` — ${clampText(String(snip), 180)}` : ""} (${u})`);
+  }
+
+  msg += "\n\n" + lines.join("\n");
+  return clampText(msg, 12000);
 }
 
 async function readLastBaseline(userId: string): Promise<TraitTriplet | null> {
@@ -81,6 +195,79 @@ export async function POST(req: Request) {
   const traitBaseline = await readLastBaseline(user.id);
 
   const coreUrl = coreBaseUrl();
+
+  // Natural language auto-browse (no URL required). 1-shot per request, bounded.
+  let autoSource: Phase04AutoSource | null = null;
+  try {
+    const intent = detectAutoBrowse(rawUserText);
+    if (intent.enabled) {
+      const maxResultsRaw = Number(process.env.SIGMARIS_AUTO_BROWSE_MAX_RESULTS ?? "5");
+      const maxResults = Number.isFinite(maxResultsRaw) ? Math.min(8, Math.max(1, maxResultsRaw)) : 5;
+
+      const sr = await coreJson<{ ok?: boolean; results?: any[] }>({
+        url: `${coreUrl}/io/web/search`,
+        accessToken,
+        body: {
+          query: intent.query,
+          max_results: maxResults,
+          recency_days: intent.recency_days,
+          safe_search: true,
+          domains: null,
+        },
+      });
+      const results = Array.isArray(sr.json?.results) ? (sr.json?.results as any[]) : [];
+
+      const fetchTopRaw = Number(process.env.SIGMARIS_AUTO_BROWSE_FETCH_TOP ?? "2");
+      const fetchTop = Number.isFinite(fetchTopRaw) ? Math.min(3, Math.max(0, fetchTopRaw)) : 2;
+      const urls = results
+        .map((x) => (typeof x?.url === "string" ? String(x.url) : ""))
+        .filter(Boolean)
+        .slice(0, fetchTop);
+
+      const fetched: Phase04AutoSource["fetched"] = [];
+      for (const u of urls) {
+        const fr = await coreJson<{
+          ok?: boolean;
+          url?: unknown;
+          final_url?: unknown;
+          title?: unknown;
+          summary?: unknown;
+          text_excerpt?: unknown;
+        }>({
+          url: `${coreUrl}/io/web/fetch`,
+          accessToken,
+          body: { url: u, summarize: true, max_chars: 12000 },
+        });
+        if (fr.ok && fr.json) {
+          fetched.push({
+            url: typeof fr.json.url === "string" ? fr.json.url : u,
+            final_url: typeof fr.json.final_url === "string" ? fr.json.final_url : undefined,
+            title: typeof fr.json.title === "string" ? fr.json.title : undefined,
+            summary: typeof fr.json.summary === "string" ? fr.json.summary : undefined,
+            text_excerpt: typeof fr.json.text_excerpt === "string" ? fr.json.text_excerpt : undefined,
+          });
+        }
+      }
+
+      autoSource = {
+        type: "auto_browse",
+        query: intent.query,
+        recency_days: intent.recency_days,
+        results: results.slice(0, maxResults).map((x) => ({
+          title: typeof x?.title === "string" ? x.title : undefined,
+          url: typeof x?.url === "string" ? x.url : undefined,
+          snippet: typeof x?.snippet === "string" ? x.snippet : undefined,
+        })),
+        fetched,
+      };
+    }
+  } catch {
+    autoSource = null;
+  }
+
+  const augmentedText = buildAugmentedMessage({ userText: rawUserText, source: autoSource });
+  const attachments = autoSource ? ([autoSource] as any) : null;
+
   const upstream = await fetch(`${coreUrl}/persona/chat/stream`, {
     method: "POST",
     headers: {
@@ -90,10 +277,11 @@ export async function POST(req: Request) {
     body: JSON.stringify({
       user_id: user.id,
       session_id: sessionId,
-      message: rawUserText,
+      message: augmentedText,
       trait_baseline: traitBaseline,
       reward_signal: typeof body.reward_signal === "number" ? body.reward_signal : 0.0,
       affect_signal: body.affect_signal ?? null,
+      attachments,
     }),
   });
 
@@ -117,6 +305,7 @@ export async function POST(req: Request) {
         role: "user",
         content: rawUserText,
         created_at: now,
+        meta: autoSource ? { phase04: { auto_browse: autoSource } } : null,
       },
     ]);
   } catch {
