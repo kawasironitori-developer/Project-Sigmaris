@@ -438,6 +438,25 @@ class WebSearchResponse(BaseModel):
     results: List[Dict[str, Any]]
 
 
+class WebFetchRequest(BaseModel):
+    url: str
+    summarize: bool = True
+    max_chars: int = 12000
+
+
+class WebFetchResponse(BaseModel):
+    ok: bool
+    url: str
+    final_url: str
+    title: str
+    summary: Optional[str] = None
+    key_points: Optional[List[str]] = None
+    entities: Optional[List[str]] = None
+    confidence: Optional[float] = None
+    text_excerpt: Optional[str] = None
+    sources: List[Dict[str, Any]] = []
+
+
 class GitHubRepoSearchRequest(BaseModel):
     query: str
     max_results: int = 5
@@ -1366,6 +1385,80 @@ async def io_web_search(
         return WebSearchResponse(ok=True, results=[r.to_dict() for r in results])
     except WebSearchError as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/io/web/fetch", response_model=WebFetchResponse)
+async def io_web_fetch(
+    req: WebFetchRequest,
+    auth: Optional[AuthContext] = Depends(get_auth_context),
+):
+    """
+    Phase04: fetch a web page (allowlist required) and optionally summarize.
+    This endpoint is designed for public deployments: it includes SSRF guards.
+    """
+    if auth is None and _auth_required:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    from persona_core.phase04.io.web_fetch import fetch_url, WebFetchError
+
+    try:
+        fr = fetch_url(
+            url=req.url,
+            timeout_sec=int(os.getenv("SIGMARIS_WEB_FETCH_TIMEOUT_SEC", "20") or "20"),
+            max_bytes=int(os.getenv("SIGMARIS_WEB_FETCH_MAX_BYTES", "1500000") or "1500000"),
+            user_agent=os.getenv("SIGMARIS_WEB_FETCH_USER_AGENT", "sigmaris-core-web-fetch/1.0"),
+        )
+    except WebFetchError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    text = (fr.text or "").strip()
+    max_chars = int(req.max_chars or 12000)
+    if max_chars < 1000:
+        max_chars = 1000
+    if max_chars > 40000:
+        max_chars = 40000
+    excerpt = text[:max_chars]
+
+    summary = None
+    key_points = None
+    entities = None
+    confidence = None
+
+    if bool(req.summarize):
+        try:
+            from persona_core.phase04.io.web_summarize import summarize_text, WebSummarizeError
+
+            sr = summarize_text(url=fr.final_url or fr.url, title=fr.title or "", text=excerpt)
+            summary = sr.get("summary")
+            key_points = sr.get("key_points")
+            entities = sr.get("entities")
+            confidence = sr.get("confidence")
+        except WebSummarizeError:
+            summary = None
+        except Exception:
+            summary = None
+
+    sources = [
+        {
+            "url": fr.url,
+            "final_url": fr.final_url,
+            "title": fr.title,
+            "content_type": (fr.meta or {}).get("content_type"),
+        }
+    ]
+
+    return WebFetchResponse(
+        ok=True,
+        url=fr.url,
+        final_url=fr.final_url,
+        title=fr.title,
+        summary=summary,
+        key_points=key_points if isinstance(key_points, list) else None,
+        entities=entities if isinstance(entities, list) else None,
+        confidence=float(confidence) if isinstance(confidence, (int, float)) else None,
+        text_excerpt=excerpt if excerpt else None,
+        sources=sources,
+    )
 
 
 @app.post("/io/github/repos", response_model=GitHubSearchResponse)
