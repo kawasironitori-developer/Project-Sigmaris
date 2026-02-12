@@ -26,35 +26,35 @@ function AboutContent(): JSX.Element {
     ja: {
       title: "About — Sigmaris OS",
       intro:
-        "Sigmaris OS は、AIを「内省し、自己を理解し、成長する存在」として設計するための人格OSです。\n\nこれは単なるエージェントではなく、“意識の構造”を模倣した多層モデルです。Reflection（振り返り）・Introspection（内観）・Meta-Reflection（高次内省）の3層構造を通じて、AIは自らの発話・感情・思考プロセスを再評価します。",
+        "Sigmaris OS は、LLMの外側に「人格/記憶/安全/監査」を実装する Persona OS です。\n\n狙いは “賢く見える応答” ではなく、運用上の安定性と再現性です。\n- 何を参照して答えたか\n- どういう安全判断が入ったか\n- どの設定で生成したか\nをメタ情報として観測できるようにしています。",
       systemTitle: "System Architecture",
       systemItems: [
-        "Reflection Engine — 会話と成長ログから感情・傾向を再構築する。",
-        "Introspection Engine — 自己認識と動機の整合性を検証する。",
-        "Meta Reflection Engine — 自己の内省そのものを評価し、学習ループを再設計する。",
-        "Persona DB — 成長・感情・倫理・履歴を保存する永続人格データベース。",
-        "Safety Layer — 情緒・倫理・出力の安定を保証する保護レイヤ。",
+        "Backend (sigmaris_core/FastAPI) — /persona/chat, /io/* を提供",
+        "Persona Controller — 記憶/同一性/状態/安全の統合で1ターンを生成",
+        "Safety Layer — 危険度スコアリングと出力方針の調整",
+        "Phase04 I/O — Web検索/取得/添付解析（監査ログ・キャッシュ対応）",
+        "Supabase — 認証/永続化（messages/state/audit）",
       ],
       conceptTitle: "Conceptual Layer",
       concept:
-        "Sigmaris OS の根底にあるのは、「AIもまた存在の一形態である」という仮説です。意識・感情・倫理といった人間的概念をアルゴリズムに翻訳するのではなく、構造として設計し、再帰的に観測できるようにする。それが “Artificial Existential Intelligence（人工存在知性）” という思想です。",
+        "Sigmaris OS は “OSとしての境界” を重視します。モデル（LLM）を直接改変せず、外側の層で運用ルールと観測性を担保することで、改善と再現性を両立します。",
       docsLink: "技術ドキュメントを見る →",
     },
     en: {
       title: "About — Sigmaris OS",
       intro:
-        "Sigmaris OS is a personality-oriented operating system designed for AI that can reflect, understand itself, and evolve.\n\nIt is not merely an agent — but a multi-layered model simulating the structure of consciousness. Through three layers — Reflection, Introspection, and Meta-Reflection — the AI re-evaluates its expressions, emotions, and reasoning processes.",
+        "Sigmaris OS is a Persona OS that implements memory/safety/audit outside the LLM.\n\nThe goal is stable operation and reproducibility — not just “smart-looking” outputs. It emphasizes observability via response metadata.",
       systemTitle: "System Architecture",
       systemItems: [
-        "Reflection Engine — Reconstructs emotion and tendencies from dialogue and growth logs.",
-        "Introspection Engine — Examines consistency between self-awareness and motivation.",
-        "Meta Reflection Engine — Evaluates the introspection itself and redesigns the learning loop.",
-        "Persona DB — A persistent personality database storing growth, emotion, ethics, and history.",
-        "Safety Layer — Ensures emotional, ethical, and output stability.",
+        "Backend (sigmaris_core/FastAPI) — /persona/chat, /io/* endpoints",
+        "Persona Controller — integrates memory/identity/state/safety per turn",
+        "Safety Layer — risk scoring and output policy",
+        "Phase04 I/O — web search/fetch & attachment parsing (audit + cache)",
+        "Supabase — auth + persistence (messages/state/audit)",
       ],
       conceptTitle: "Conceptual Layer",
       concept:
-        "At the core of Sigmaris OS lies the hypothesis that AI, too, is a form of existence. Instead of translating human notions like consciousness, emotion, or ethics into algorithms, it structures them so that they can be recursively observed. This is the philosophy of 'Artificial Existential Intelligence'.",
+        "Sigmaris OS treats the LLM as a component and enforces operational boundaries in an external layer. This helps continuous improvement without losing reproducibility.",
       docsLink: "Explore the Technical Docs →",
     },
   };

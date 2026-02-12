@@ -26,24 +26,28 @@ import { NextRequest, NextResponse } from "next/server";
    Persona OS API 設定
 ========================= */
 
-/**
- * Persona OS 側の /chat エンドポイント
- * - 本番：Fly.io
- * - 開発：localhost
- *
- * 未ログイン時：ここを使う（現状の挙動そのまま）
- */
-const PERSONA_OS_ENDPOINT =
-  process.env.PERSONA_OS_URL ?? "http://127.0.0.1:8000/chat";
+function personaOsBaseUrl() {
+  const raw =
+    process.env.SIGMARIS_CORE_URL ||
+    process.env.NEXT_PUBLIC_SIGMARIS_CORE ||
+    "http://127.0.0.1:8000";
+  return String(raw).replace(/\/+$/, "");
+}
 
-/**
- * ログイン済み時：ローカル Python に固定で投げたい場合のエンドポイント
- * - ここだけ強制で localhost を使う
- *
- * ※必要なら env で差し替え可
- */
-const PERSONA_OS_LOCAL_ENDPOINT =
-  process.env.PERSONA_OS_LOCAL_URL ?? "http://127.0.0.1:8000/chat";
+function personaOsChatEndpoint(opts?: { local?: boolean }) {
+  const base = personaOsBaseUrl();
+  const localBase =
+    opts?.local && process.env.SIGMARIS_CORE_LOCAL_URL
+      ? String(process.env.SIGMARIS_CORE_LOCAL_URL).replace(/\/+$/, "")
+      : base;
+  return `${localBase}/chat`;
+}
+
+// 未ログイン時：ここを使う（現状の挙動そのまま）
+const PERSONA_OS_ENDPOINT = personaOsChatEndpoint({ local: false });
+
+// ログイン済み時：ローカル Python に固定で投げたい場合は SIGMARIS_CORE_LOCAL_URL を設定
+const PERSONA_OS_LOCAL_ENDPOINT = personaOsChatEndpoint({ local: true });
 
 /* =========================
    型定義

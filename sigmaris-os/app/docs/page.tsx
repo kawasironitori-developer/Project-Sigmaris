@@ -21,12 +21,17 @@ function DocsContent(): JSX.Element {
       title: "ドキュメント",
       overviewTitle: "概要",
       overview:
-        "Sigmaris OS は「LLMの外側の制御レイヤ（人格/記憶/安全/状態）」を実装する試みです。フロント（sigmaris-os）はログインとUIを担い、バックエンド（sigmaris_core）は /persona/chat を提供します。",
+        "Sigmaris OS は、LLMの外側に「人格/記憶/安全/状態/監査」を実装する Persona OS です。フロント（sigmaris-os）はログインとUIを担い、バックエンド（sigmaris_core）は /persona/chat などを提供します。",
       apiTitle: "API",
       api: [
-        ["POST /api/aei", "チャット送信（内部で /persona/chat に中継）"],
-        ["GET /api/aei?session=...", "セッション履歴取得（Supabase）"],
-        ["GET /api/sessions", "セッション一覧（Supabase）"],
+        ["POST /persona/chat", "1ターンの応答生成（FastAPI / sigmaris_core）"],
+        ["POST /persona/chat/stream", "SSEストリーミング応答（FastAPI / sigmaris_core）"],
+        ["POST /io/web/search", "Web検索（Serper）"],
+        ["POST /io/web/fetch", "Web本文取得→要約（ドメイン制限推奨）"],
+        ["POST /io/upload", "添付アップロード（Supabase Storage優先）"],
+        ["POST /io/parse", "添付解析（テキスト/画像など）"],
+        ["GET /api/ops/code-stats", "コード行数集計（sigmaris-os / 要ログイン）"],
+        ["GET /api/ops/portfolio-evidence", "自分のログ要約（本文なし / 要ログイン）"],
       ],
       back: "ホームへ戻る",
     },
@@ -34,12 +39,17 @@ function DocsContent(): JSX.Element {
       title: "Docs",
       overviewTitle: "Overview",
       overview:
-        "Sigmaris OS implements an external control layer for LLM operation (identity/memory/safety/state). The frontend (sigmaris-os) handles login/UI, and the backend (sigmaris_core) provides /persona/chat.",
+        "Sigmaris OS implements an external control layer for LLM operation (identity/memory/safety/state/audit). The frontend (sigmaris-os) handles login/UI, and the backend (sigmaris_core) provides /persona/chat and more.",
       apiTitle: "API",
       api: [
-        ["POST /api/aei", "Send chat (proxies to /persona/chat)"],
-        ["GET /api/aei?session=...", "Get session history (Supabase)"],
-        ["GET /api/sessions", "List sessions (Supabase)"],
+        ["POST /persona/chat", "Generate a single reply (FastAPI / sigmaris_core)"],
+        ["POST /persona/chat/stream", "SSE streaming reply (FastAPI / sigmaris_core)"],
+        ["POST /io/web/search", "Web search (Serper)"],
+        ["POST /io/web/fetch", "Fetch page body -> summarize (allowlist recommended)"],
+        ["POST /io/upload", "Upload attachments (prefers Supabase Storage)"],
+        ["POST /io/parse", "Parse attachments (text/image, etc.)"],
+        ["GET /api/ops/code-stats", "Compute LOC (sigmaris-os / auth required)"],
+        ["GET /api/ops/portfolio-evidence", "My evidence summary (no contents / auth required)"],
       ],
       back: "Back to Home",
     },
@@ -102,4 +112,3 @@ function DocsContent(): JSX.Element {
     </main>
   );
 }
-

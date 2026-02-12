@@ -55,15 +55,17 @@ def load_dotenv(*, override: bool = False) -> None:
     代表的な場所から .env を探索して読み込む。
     """
     cwd = Path.cwd()
+    repo_root = Path(__file__).resolve().parents[3]
     candidates: Iterable[Path] = (
+        # Prefer repo root `.env` so the monorepo can be configured from a single place.
+        repo_root / ".env",  # repo root/.env
+        repo_root / "sigmaris_core" / ".env",  # sigmaris_core/.env (fallback)
         cwd / ".env",
         cwd / "sigmaris_core" / ".env",
-        Path(__file__).resolve().parents[2] / ".env",  # sigmaris_core/.env
-        Path(__file__).resolve().parents[3] / ".env",  # repo root/.env
+        Path(__file__).resolve().parents[2] / ".env",  # sigmaris_core/.env (fallback)
     )
 
     for p in candidates:
         if load_env_file(p, override=override):
             # 最初に見つかったものを採用
             return
-

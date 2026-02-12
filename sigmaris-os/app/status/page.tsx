@@ -131,6 +131,7 @@ function StatusContent() {
   const [failLatest, setFailLatest] = useState<FailureSnapshot | null>(null);
   const [failSeries, setFailSeries] = useState<FailureSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [publicMode, setPublicMode] = useState(false);
   const [traitKey, setTraitKey] = useState<"calm" | "empathy" | "curiosity">(
     "calm"
   );
@@ -195,6 +196,20 @@ function StatusContent() {
         setSubjSeries(h?.snapshots ?? []);
         setFailLatest(i?.snapshot ?? null);
         setFailSeries(j?.snapshots ?? []);
+
+        const isPublic = Boolean(
+          a?.public ||
+            b?.public ||
+            c?.public ||
+            d?.public ||
+            e?.public ||
+            f?.public ||
+            g?.public ||
+            h?.public ||
+            i?.public ||
+            j?.public
+        );
+        setPublicMode(isPublic);
       } catch (e) {
         console.error("status load failed:", e);
       } finally {
@@ -351,12 +366,19 @@ function StatusContent() {
       <Header />
 
       <div className="max-w-6xl mx-auto mt-6">
-        <Link
-          href="/logs"
-          className="inline-flex items-center gap-2 rounded-full border border-[#4c7cf7]/60 px-3 py-1 text-xs text-[#e6eef4] hover:bg-[#4c7cf7]/15 transition"
-        >
-          Logs Export（JSON）
-        </Link>
+        <div className="flex items-center gap-3 flex-wrap">
+          <Link
+            href="/logs"
+            className="inline-flex items-center gap-2 rounded-full border border-[#4c7cf7]/60 px-3 py-1 text-xs text-[#e6eef4] hover:bg-[#4c7cf7]/15 transition"
+          >
+            Logs Export（JSON）
+          </Link>
+          {publicMode ? (
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#4c7cf7]/35 px-3 py-1 text-xs text-[#cfe0ff] bg-[#4c7cf7]/10">
+              Public portfolio view（read-only）
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <div className="max-w-6xl mx-auto mt-16 space-y-8">
@@ -499,89 +521,91 @@ function StatusContent() {
               />
             </div>
 
-            <Panel title="Operator (mode override)">
-              <div className="text-xs text-[#94a3b8] mb-3">
-                運用者が Subjectivity Mode と Freeze を上書きします（監査ログが残ります）。
-              </div>
-              {opError ? (
-                <div className="text-sm text-[#fb7185] mb-3">{opError}</div>
-              ) : null}
+            {!publicMode ? (
+              <Panel title="Operator (mode override)">
+                <div className="text-xs text-[#94a3b8] mb-3">
+                  運用者が Subjectivity Mode と Freeze を上書きします（監査ログが残ります）。
+                </div>
+                {opError ? (
+                  <div className="text-sm text-[#fb7185] mb-3">{opError}</div>
+                ) : null}
 
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="text-xs text-[#b9c4d2]">
-                  Mode
-                  <select
-                    className="ml-2 bg-[#0b1220] border border-[#4c7cf7]/25 rounded px-2 py-1 text-[#e6eef4]"
-                    value={opMode}
-                    onChange={(e) => setOpMode(e.target.value as any)}
-                  >
-                    <option value="AUTO">AUTO</option>
-                    <option value="S0_TOOL">S0_TOOL</option>
-                    <option value="S1_PROTO">S1_PROTO</option>
-                    <option value="S2_FUNCTIONAL">S2_FUNCTIONAL</option>
-                    <option value="S3_SAFE">S3_SAFE</option>
-                  </select>
-                </label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="text-xs text-[#b9c4d2]">
+                    Mode
+                    <select
+                      className="ml-2 bg-[#0b1220] border border-[#4c7cf7]/25 rounded px-2 py-1 text-[#e6eef4]"
+                      value={opMode}
+                      onChange={(e) => setOpMode(e.target.value as any)}
+                    >
+                      <option value="AUTO">AUTO</option>
+                      <option value="S0_TOOL">S0_TOOL</option>
+                      <option value="S1_PROTO">S1_PROTO</option>
+                      <option value="S2_FUNCTIONAL">S2_FUNCTIONAL</option>
+                      <option value="S3_SAFE">S3_SAFE</option>
+                    </select>
+                  </label>
 
-                <label className="text-xs text-[#b9c4d2] flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={opFreeze}
-                    onChange={(e) => setOpFreeze(e.target.checked)}
-                  />
-                  Freeze updates
-                </label>
+                  <label className="text-xs text-[#b9c4d2] flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={opFreeze}
+                      onChange={(e) => setOpFreeze(e.target.checked)}
+                    />
+                    Freeze updates
+                  </label>
 
-                <button
-                  type="button"
-                  disabled={opSaving}
-                  className={[
-                    "px-3 py-2 rounded-lg text-xs border transition-colors",
-                    opSaving
-                      ? "border-[#4c7cf7]/20 bg-[#4c7cf7]/10 text-[#94a3b8]"
-                      : "border-[#4c7cf7]/45 bg-[#4c7cf7]/15 text-[#e6eef4] hover:border-[#4c7cf7]/70",
-                  ].join(" ")}
-                  onClick={async () => {
-                    setOpSaving(true);
-                    setOpError(null);
-                    try {
-                      const res = await fetch("/api/operator/override", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        credentials: "include",
-                        body: JSON.stringify({
-                          kind: "ops_mode_set",
-                          payload: {
-                            subjectivity_mode: opMode,
-                            freeze_updates: opFreeze,
-                          },
-                        }),
-                      });
-                      const json = await res.json().catch(() => null);
-                      if (!res.ok) {
-                        setOpError(
-                          json?.error
-                            ? String(json.error)
-                            : `operator override failed (${res.status})`
-                        );
-                      } else {
-                        // Refresh state quickly (best-effort)
-                        const a = await fetch("/api/state/latest", {
+                  <button
+                    type="button"
+                    disabled={opSaving}
+                    className={[
+                      "px-3 py-2 rounded-lg text-xs border transition-colors",
+                      opSaving
+                        ? "border-[#4c7cf7]/20 bg-[#4c7cf7]/10 text-[#94a3b8]"
+                        : "border-[#4c7cf7]/45 bg-[#4c7cf7]/15 text-[#e6eef4] hover:border-[#4c7cf7]/70",
+                    ].join(" ")}
+                    onClick={async () => {
+                      setOpSaving(true);
+                      setOpError(null);
+                      try {
+                        const res = await fetch("/api/operator/override", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
                           credentials: "include",
-                        }).then((r) => r.json());
-                        setLatest(a?.snapshot ?? null);
+                          body: JSON.stringify({
+                            kind: "ops_mode_set",
+                            payload: {
+                              subjectivity_mode: opMode,
+                              freeze_updates: opFreeze,
+                            },
+                          }),
+                        });
+                        const json = await res.json().catch(() => null);
+                        if (!res.ok) {
+                          setOpError(
+                            json?.error
+                              ? String(json.error)
+                              : `operator override failed (${res.status})`
+                          );
+                        } else {
+                          // Refresh state quickly (best-effort)
+                          const a = await fetch("/api/state/latest", {
+                            credentials: "include",
+                          }).then((r) => r.json());
+                          setLatest(a?.snapshot ?? null);
+                        }
+                      } catch (e: any) {
+                        setOpError(e?.message ?? String(e));
+                      } finally {
+                        setOpSaving(false);
                       }
-                    } catch (e: any) {
-                      setOpError(e?.message ?? String(e));
-                    } finally {
-                      setOpSaving(false);
-                    }
-                  }}
-                >
-                  Apply
-                </button>
-              </div>
-            </Panel>
+                    }}
+                  >
+                    Apply
+                  </button>
+                </div>
+              </Panel>
+            ) : null}
           </div>
         )}
 

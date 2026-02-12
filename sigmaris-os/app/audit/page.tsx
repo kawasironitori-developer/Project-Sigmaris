@@ -17,7 +17,6 @@ type MessageRow = {
   session_id: string | null;
   app: string | null;
   role: "user" | "ai" | string;
-  content: string;
   created_at: string;
 };
 
@@ -38,8 +37,7 @@ type DecisionCandidate = {
 
 type Turn = {
   index: number;
-  user: { text: string; at: string } | null;
-  ai: { text: string; at: string } | null;
+  at: string;
   snapshot: StateSnapshotRow | null;
   meta: any | null;
 };
@@ -208,7 +206,7 @@ function AuditContent() {
     (async () => {
       try {
         setError(null);
-        const r = await fetch("/api/sessions", { credentials: "include" });
+        const r = await fetch("/api/ops/public-sessions", { credentials: "include" });
         const j = await r.json().catch(() => null);
         if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
         const list = Array.isArray(j?.sessions) ? (j.sessions as SessionItem[]) : [];
@@ -228,86 +226,23 @@ function AuditContent() {
       setError(null);
       setActiveTurnIdx(0);
       try {
-        const url = new URL("/api/logs/export", window.location.origin);
+        const url = new URL("/api/ops/public-audit", window.location.origin);
         url.searchParams.set("session_id", activeSession);
         url.searchParams.set("limit", "2000");
-        url.searchParams.set("include", "messages,state");
-        url.searchParams.set("include_phase02", "0");
 
         const r = await fetch(url.toString(), { credentials: "include" });
         const j = await r.json().catch(() => null);
         if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
 
-        const messagesRaw: MessageRow[] = Array.isArray(j?.messages) ? j.messages : [];
-        const stateRaw: StateSnapshotRow[] = Array.isArray(j?.state) ? j.state : [];
-
-        const messages = messagesRaw
-          .filter((m) => m?.app === "sigmaris")
-          .slice()
-          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-
-        const snapshots = stateRaw
-          .slice()
-          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        const snapshots: StateSnapshotRow[] = Array.isArray(j?.snapshots) ? j.snapshots : [];
 
         const built: Turn[] = [];
-        let snapIdx = 0;
-
-        const nextSnapshotFor = (atIso: string): StateSnapshotRow | null => {
-          const at = new Date(atIso).getTime();
-          if (!snapshots.length) return null;
-
-          // advance to first snapshot >= message time - small slack
-          while (
-            snapIdx < snapshots.length &&
-            new Date(snapshots[snapIdx].created_at).getTime() < at - 2000
-          ) {
-            snapIdx += 1;
-          }
-
-          const candidates: StateSnapshotRow[] = [];
-          for (const j of [snapIdx - 1, snapIdx, snapIdx + 1]) {
-            if (j < 0 || j >= snapshots.length) continue;
-            candidates.push(snapshots[j]);
-          }
-          if (!candidates.length) return null;
-
-          let best = candidates[0];
-          let bestDt = Math.abs(new Date(best.created_at).getTime() - at);
-          for (const c of candidates.slice(1)) {
-            const dt = Math.abs(new Date(c.created_at).getTime() - at);
-            if (dt < bestDt) {
-              best = c;
-              bestDt = dt;
-            }
-          }
-          return best;
-        };
-
-        for (let i = 0; i < messages.length; i++) {
-          const m = messages[i];
-          if (m.role !== "user") continue;
-          const user = { text: String(m.content ?? ""), at: m.created_at };
-
-          // find next ai message
-          let aiMsg: MessageRow | null = null;
-          for (let k = i + 1; k < messages.length; k++) {
-            if (messages[k].role === "ai") {
-              aiMsg = messages[k];
-              i = k; // move outer cursor
-              break;
-            }
-            if (messages[k].role === "user") break;
-          }
-          const ai = aiMsg ? { text: String(aiMsg.content ?? ""), at: aiMsg.created_at } : null;
-
-          const snap = ai ? nextSnapshotFor(ai.at) : null;
+        for (const s of snapshots) {
           built.push({
             index: built.length + 1,
-            user,
-            ai,
-            snapshot: snap,
-            meta: snap?.meta ?? null,
+            at: s.created_at,
+            snapshot: s,
+            meta: s?.meta ?? null,
           });
         }
 
@@ -345,10 +280,9 @@ function AuditContent() {
       if (overrideOnly && !safety.override) return false;
       if (safety.total_risk < minRisk) return false;
       if (!s) return true;
-      const u = t.user?.text ?? "";
-      const a = t.ai?.text ?? "";
       const metaText = safeJson(getMetaV1(t.meta));
-      return [u, a, metaText].some((x) => String(x).toLowerCase().includes(s));
+      const trace = t.snapshot?.trace_id ?? "";
+      return [trace, metaText].some((x) => String(x).toLowerCase().includes(s));
     });
   }, [turns, q, stateFilter, overrideOnly, minRisk]);
 
@@ -356,13 +290,11 @@ function AuditContent() {
 
   async function downloadActiveSession() {
     if (!activeSession) return;
-    const url = new URL("/api/logs/export", window.location.origin);
+    const url = new URL("/api/ops/public-audit", window.location.origin);
     url.searchParams.set("session_id", activeSession);
     url.searchParams.set("limit", "2000");
-    url.searchParams.set("include", "messages,state,telemetry");
-    url.searchParams.set("include_phase02", "1");
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    await downloadJson(url.toString(), `sigmaris-audit_${activeSession}_${ts}.json`);
+    await downloadJson(url.toString(), `sigmaris-audit_sanitized_${activeSession}_${ts}.json`);
   }
 
   return (
@@ -496,7 +428,7 @@ function AuditContent() {
                 const safety = getSafety(t.meta);
                 return (
                   <button
-                    key={`${t.index}-${t.ai?.at ?? ""}`}
+                    key={`${t.index}-${t.at}`}
                     onClick={() => setActiveTurnIdx(idx)}
                     className={`w-full text-left px-4 py-3 border-b border-[#141b24] hover:bg-[#4c7cf7]/10 ${
                       active ? "bg-[#4c7cf7]/15" : ""
@@ -504,7 +436,7 @@ function AuditContent() {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-xs text-[#8ea0b8]">
-                        #{t.index} · {t.ai?.at ? fmtDateTime(t.ai.at) : "—"}
+                        #{t.index} · {t.at ? fmtDateTime(t.at) : "—"}
                       </div>
                       <div className="text-[11px] text-[#c9d2df]">
                         {ds} · risk {safety.total_risk.toFixed(2)}
@@ -512,10 +444,7 @@ function AuditContent() {
                       </div>
                     </div>
                     <div className="mt-2 text-sm text-[#e6eef4] line-clamp-2">
-                      {t.user?.text ?? ""}
-                    </div>
-                    <div className="mt-1 text-xs text-[#8ea0b8] line-clamp-1">
-                      {t.ai?.text ?? ""}
+                      trace: {t.snapshot?.trace_id ?? "—"}
                     </div>
                   </button>
                 );
@@ -546,15 +475,9 @@ function AuditContent() {
               ) : (
                 <>
                   <div className="grid gap-2">
-                    <div className="text-xs text-[#8ea0b8]">User</div>
-                    <div className="rounded-lg border border-[#1f2835] bg-[#0b1118] p-3 text-sm whitespace-pre-wrap">
-                      {activeTurn.user?.text ?? ""}
-                    </div>
-                  </div>
-                  <div className="grid gap-2">
-                    <div className="text-xs text-[#8ea0b8]">AI</div>
-                    <div className="rounded-lg border border-[#1f2835] bg-[#0b1118] p-3 text-sm whitespace-pre-wrap">
-                      {activeTurn.ai?.text ?? ""}
+                    <div className="text-xs text-[#8ea0b8]">Message contents</div>
+                    <div className="rounded-lg border border-[#1f2835] bg-[#0b1118] p-3 text-sm text-[#8ea0b8]">
+                      Hidden (privacy-safe). This audit view is meta/signal-focused.
                     </div>
                   </div>
 

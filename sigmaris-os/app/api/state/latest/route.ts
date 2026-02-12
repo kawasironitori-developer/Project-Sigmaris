@@ -15,7 +15,11 @@ export async function GET() {
       error: authError,
     } = await supabaseAuth.auth.getUser();
 
-    if (authError || !user) {
+    const publicEnabled = (process.env.SIGMARIS_PORTFOLIO_PUBLIC_ENABLED ?? "").trim().toLowerCase();
+    const publicUserId = (process.env.SIGMARIS_PORTFOLIO_PUBLIC_USER_ID ?? "").trim();
+    const isPublic = (!user || authError) && ["1", "true", "yes", "on"].includes(publicEnabled) && !!publicUserId;
+    const viewerUserId = (user?.id as string | undefined) || (isPublic ? publicUserId : "");
+    if (!viewerUserId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -25,13 +29,19 @@ export async function GET() {
       .select(
         "id, session_id, trace_id, global_state, overload_score, reflective_score, memory_pointer_count, safety_flag, safety_risk_score, value_state, trait_state, meta, created_at"
       )
-      .eq("user_id", user.id)
+      .eq("user_id", viewerUserId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (error) throw error;
-    return NextResponse.json({ ok: true, snapshot: data ?? null });
+
+    // Public mode must not leak any text excerpts that could be stored inside meta.
+    if (isPublic && data && typeof data === "object") {
+      (data as any).meta = null;
+    }
+
+    return NextResponse.json({ ok: true, snapshot: data ?? null, public: isPublic });
   } catch (err: any) {
     console.error("[/api/state/latest] failed:", err);
     return NextResponse.json(

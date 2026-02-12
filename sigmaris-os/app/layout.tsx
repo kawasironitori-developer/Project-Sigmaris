@@ -17,8 +17,8 @@ const robotoMono = Roboto_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sigmaris Studio",
-  description: "AEI Personality OS",
+  title: "Sigmaris OS",
+  description: "Persona OS for LLM operation (memory/safety/audit outside the model).",
 };
 
 export default function RootLayout({

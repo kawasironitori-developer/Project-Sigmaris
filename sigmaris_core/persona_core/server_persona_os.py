@@ -307,6 +307,37 @@ def _normalize_decision_candidates(*, controller_meta: Any, v0: Dict[str, Any]) 
     ]
 
 
+def _extract_persona_runtime_meta(gen: Any) -> Dict[str, Any]:
+    """
+    Expose small, stable persona runtime fields for reproducibility/debugging.
+    Must NOT include full persona_system prompt (too large, can leak instructions).
+    """
+    if not isinstance(gen, dict):
+        return {}
+    allow = (
+        "quality_pipeline",
+        "quality_mode",
+        "_touhou_chat_mode",
+        "_persona_version",
+        "_persona_hash",
+        "_persona_state",
+    )
+    out: Dict[str, Any] = {}
+    for k in allow:
+        if k not in gen:
+            continue
+        v = gen.get(k)
+        if v is None:
+            continue
+        # keep JSON-serializable + small
+        if isinstance(v, (str, int, float, bool)):
+            out[k] = v
+        elif isinstance(v, dict):
+            # persona_state is expected to be a small dict
+            out[k] = {str(kk): vv for kk, vv in v.items() if isinstance(kk, str)}
+    return out
+
+
 def _estimate_overload_score(message: str) -> float:
     """
     overload_score は GlobalStateMachine の入力のひとつです。
@@ -970,6 +1001,10 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
         "phase04": phase04_meta,
     }
 
+    persona_runtime = _extract_persona_runtime_meta(req.gen)
+    if persona_runtime:
+        meta["persona_runtime"] = persona_runtime
+
     # Stable compact summary block (v1) for integration/debugging.
     # Always non-null; intentionally excludes raw controller internals.
     meta["meta_v1"] = {
@@ -1225,6 +1260,10 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
                         )
                     except Exception:
                         meta["phase04"] = {"error": "phase04_failed"}
+
+                    persona_runtime = _extract_persona_runtime_meta(req.gen)
+                    if persona_runtime:
+                        meta["persona_runtime"] = persona_runtime
 
                     meta["meta_v1"] = {
                         "trace_id": str(meta.get("trace_id") or trace_id),

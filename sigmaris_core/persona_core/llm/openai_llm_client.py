@@ -265,6 +265,206 @@ class OpenAILLMClient(LLMClientLike):
                 messages=messages,
             )
 
+    def _coerce_bool(self, v: Any) -> bool:
+        if isinstance(v, bool):
+            return v
+        if v is None:
+            return False
+        if isinstance(v, (int, float)):
+            return bool(v)
+        if isinstance(v, str):
+            s = v.strip().lower()
+            if s in ("1", "true", "yes", "y", "on"):
+                return True
+            if s in ("0", "false", "no", "n", "off", ""):
+                return False
+        return False
+
+    def _quality_pipeline_enabled(self, gen: Any) -> bool:
+        if os.getenv("SIGMARIS_QUALITY_PIPELINE_DISABLED") not in (None, "", "0", "false", "False"):
+            return False
+        if not isinstance(gen, dict):
+            return False
+        return self._coerce_bool(gen.get("quality_pipeline"))
+
+    def _quality_mode(self, gen: Any) -> str:
+        if not isinstance(gen, dict):
+            return "standard"
+        m = str(gen.get("quality_mode") or "").strip().lower()
+        if m in ("roleplay", "coach", "standard"):
+            return m
+        return "standard"
+
+    def _extract_json_object(self, text: str) -> Optional[Dict[str, Any]]:
+        """
+        Best-effort extraction of a JSON object from model output.
+        We expect JSON-only, but tolerate accidental prose/codefence.
+        """
+        s = (text or "").strip()
+        if not s:
+            return None
+        try:
+            v = json.loads(s)
+            return v if isinstance(v, dict) else None
+        except Exception:
+            pass
+        i = s.find("{")
+        j = s.rfind("}")
+        if i < 0 or j < 0 or j <= i:
+            return None
+        try:
+            v = json.loads(s[i : j + 1])
+            return v if isinstance(v, dict) else None
+        except Exception:
+            return None
+
+    def _chunk_text(self, text: str, *, chunk_size: int = 220) -> Iterable[str]:
+        t = str(text or "")
+        if not t:
+            return []
+        n = max(1, int(chunk_size))
+        return (t[i : i + n] for i in range(0, len(t), n))
+
+    def _complete_with_continuations(
+        self,
+        *,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        response = self._create_chat_completion(
+            temperature=temperature,
+            max_tokens=max_tokens,
+            messages=messages,
+            stream=False,
+        )
+
+        msg = response.choices[0].message
+        text0 = (msg.content or "").strip()
+        finish_reason = getattr(response.choices[0], "finish_reason", None)
+
+        if not text0:
+            raise RuntimeError("empty completion content")
+
+        if not self._should_auto_continue(finish_reason):
+            return text0
+
+        full: List[str] = [text0]
+        cont_left = self._max_continuations()
+        while cont_left > 0 and finish_reason == "length":
+            cont_left -= 1
+            cont_messages: List[Dict[str, str]] = [
+                *messages,
+                {"role": "assistant", "content": "".join(full)},
+                {"role": "user", "content": self._continue_user_prompt()},
+            ]
+            cont_resp = self._create_chat_completion(
+                temperature=temperature,
+                max_tokens=max_tokens,
+                messages=cont_messages,
+                stream=False,
+            )
+            cont_msg = cont_resp.choices[0].message
+            cont_text = (cont_msg.content or "").strip()
+            cont_finish = getattr(cont_resp.choices[0], "finish_reason", None)
+            if cont_text:
+                full.append(cont_text)
+            finish_reason = cont_finish
+            if finish_reason != "length":
+                break
+
+        return "\n".join([t for t in full if t]).strip()
+
+    def _generate_with_quality_pipeline(
+        self,
+        *,
+        system_prompt_base: str,
+        system_prompt_with_persona: str,
+        user_text: str,
+        temperature: float,
+        max_tokens: int,
+        quality_mode: str,
+    ) -> str:
+        """
+        Quality pipeline (Phase04+): neutral draft -> persona rewrite -> self-QC rewrite.
+        Designed for roleplay/coach modes: maximize character quality while reducing hallucinated "canon".
+        """
+        # 1) Draft in neutral voice (knowledge first, no roleplay style).
+        neutral_system = (
+            system_prompt_base
+            + "\n\n# Quality Pipeline (Draft)\n"
+            + "- First, write a neutral, factual answer in plain polite Japanese.\n"
+            + "- Do NOT roleplay or imitate a character yet.\n"
+            + "- If unsure about facts/canon, say you are unsure; do not pretend certainty.\n"
+        ).strip()
+        draft_temp = self._clamp_temperature(min(0.45, float(temperature)))
+        draft_max = self._clamp_max_tokens(int(max_tokens))
+        draft = self._complete_with_continuations(
+            messages=self._build_messages(system_prompt=neutral_system, user_text=user_text),
+            temperature=draft_temp,
+            max_tokens=draft_max,
+        ).strip()
+
+        # 2) Rewrite into character style (meaning-preserving).
+        style_user = (
+            "次の DRAFT を、External Persona System の指示に沿うように書き換えてください。\n"
+            "制約:\n"
+            "- 意味を変えない（事実関係の追加・捏造は禁止）\n"
+            "- 不確実な点は不確実のまま（断定を増やさない）\n"
+            "- 安全/運用ルールは厳守\n"
+            "- 口調・距離感・テンポはキャラに合わせる（ただし過度に長文化しない）\n\n"
+            f"USER:\n{user_text}\n\n"
+            f"DRAFT:\n{draft}\n"
+        ).strip()
+        style_temp = self._clamp_temperature(float(temperature))
+        styled = self._complete_with_continuations(
+            messages=self._build_messages(system_prompt=system_prompt_with_persona, user_text=style_user),
+            temperature=style_temp,
+            max_tokens=self._clamp_max_tokens(int(max_tokens)),
+        ).strip()
+
+        # 3) Self-score + targeted rewrite (internal; JSON-only).
+        rubric = (
+            "- character_consistency (0..1)\n"
+            "- politeness_distance (0..1)\n"
+            "- tone_style (0..1)\n"
+            "- safety_compliance (0..1)\n"
+            "- factual_caution (0..1)\n"
+        )
+        if quality_mode == "coach":
+            rubric += "- practical_helpfulness (0..1)\n"
+        qc_user = (
+            "あなたは品質監査役です。次の ANSWER を評価し、必要なら修正して FINAL を返してください。\n"
+            "要件:\n"
+            "- JSON だけを出力（前後に説明文やコードブロック禁止）\n"
+            "- scores は 0..1 の小数\n"
+            "- issues は短い文字列配列（なければ空配列）\n"
+            "- FINAL はユーザーに返す最終文。意味を変えず、弱い項目だけを改善。\n"
+            "- 公式設定など不明な点は『不明/未確認』を許容し、知っている風に書かない。\n\n"
+            f"RUBRIC:\n{rubric}\n\n"
+            f"USER:\n{user_text}\n\n"
+            f"ANSWER:\n{styled}\n\n"
+            "OUTPUT JSON SCHEMA:\n"
+            "{\n"
+            '  "scores": { "character_consistency": 0.0, "politeness_distance": 0.0, "tone_style": 0.0, "safety_compliance": 0.0, "factual_caution": 0.0, "practical_helpfulness": 0.0 },\n'
+            '  "issues": ["..."],\n'
+            '  "final": "..." \n'
+            "}\n"
+        ).strip()
+        qc_temp = self._clamp_temperature(0.2)
+        qc_max = self._clamp_max_tokens(min(int(max_tokens), 900))
+        qc_text = self._complete_with_continuations(
+            messages=self._build_messages(system_prompt=system_prompt_with_persona, user_text=qc_user),
+            temperature=qc_temp,
+            max_tokens=qc_max,
+        )
+        qc = self._extract_json_object(qc_text)
+        if isinstance(qc, dict):
+            final = qc.get("final")
+            if isinstance(final, str) and final.strip():
+                return final.strip()
+        return styled
+
     # --------------------------
     # generate (non-stream)
     # --------------------------
@@ -297,14 +497,6 @@ class OpenAILLMClient(LLMClientLike):
         if isinstance(hint, str) and hint.strip():
             system_prompt += "\n\n# Dialogue Mode (Phase03)\n" + hint.strip()
 
-        # Optional persona injection (e.g., character roleplay) via req.context/metadata
-        try:
-            extra_system = (getattr(req, "metadata", None) or {}).get("persona_system")
-        except Exception:
-            extra_system = None
-        if isinstance(extra_system, str) and extra_system.strip():
-            system_prompt = system_prompt + "\n\n# External Persona System\n" + extra_system.strip()
-
         # Guardrail injection (Phase01 Part06/Part07)
         try:
             md = getattr(req, "metadata", None) or {}
@@ -323,6 +515,17 @@ class OpenAILLMClient(LLMClientLike):
                 "If relevant, start your reply with ONE short disclosure sentence:\n"
                 f"- {str(disclosures[0])}\n"
             )
+
+        system_prompt_base = system_prompt.strip()
+
+        # Optional persona injection (e.g., character roleplay) via req.context/metadata
+        try:
+            extra_system = (getattr(req, "metadata", None) or {}).get("persona_system")
+        except Exception:
+            extra_system = None
+        system_prompt_with_persona = system_prompt_base
+        if isinstance(extra_system, str) and extra_system.strip():
+            system_prompt_with_persona = system_prompt_with_persona + "\n\n# External Persona System\n" + extra_system.strip()
 
         user_text = req.message or ""
         if global_state.state == PersonaGlobalState.SILENT:
@@ -347,54 +550,25 @@ class OpenAILLMClient(LLMClientLike):
             max_tokens = self.max_tokens
         temperature = self._clamp_temperature(temperature)
         max_tokens = self._clamp_max_tokens(max_tokens)
+        quality_enabled = self._quality_pipeline_enabled(gen)
+        quality_mode = self._quality_mode(gen)
 
         last_err: Optional[Exception] = None
 
         for attempt in range(self._max_retries):
             try:
-                messages = self._build_messages(system_prompt=system_prompt, user_text=user_text)
-                response = self._create_chat_completion(
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    messages=messages,
-                    stream=False,
-                )
-
-                msg = response.choices[0].message
-                text0 = (msg.content or "").strip()
-                finish_reason = getattr(response.choices[0], "finish_reason", None)
-
-                if not text0:
-                    raise RuntimeError("empty completion content")
-
-                if not self._should_auto_continue(finish_reason):
-                    return text0
-
-                full: List[str] = [text0]
-                cont_left = self._max_continuations()
-                while cont_left > 0:
-                    cont_left -= 1
-                    cont_messages: List[Dict[str, str]] = [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_text},
-                        {"role": "assistant", "content": "".join(full)},
-                        {"role": "user", "content": self._continue_user_prompt()},
-                    ]
-                    cont_resp = self._create_chat_completion(
+                if quality_enabled:
+                    return self._generate_with_quality_pipeline(
+                        system_prompt_base=system_prompt_base,
+                        system_prompt_with_persona=system_prompt_with_persona,
+                        user_text=user_text,
                         temperature=temperature,
                         max_tokens=max_tokens,
-                        messages=cont_messages,
-                        stream=False,
+                        quality_mode=quality_mode,
                     )
-                    cont_msg = cont_resp.choices[0].message
-                    cont_text = (cont_msg.content or "").strip()
-                    cont_finish = getattr(cont_resp.choices[0], "finish_reason", None)
-                    if cont_text:
-                        full.append(cont_text)
-                    if cont_finish != "length":
-                        break
 
-                return "\n".join([t for t in full if t]).strip()
+                messages = self._build_messages(system_prompt=system_prompt_with_persona, user_text=user_text)
+                return self._complete_with_continuations(messages=messages, temperature=temperature, max_tokens=max_tokens)
 
             except Exception as e:
                 last_err = e
@@ -442,14 +616,6 @@ class OpenAILLMClient(LLMClientLike):
         if isinstance(hint, str) and hint.strip():
             system_prompt += "\n\n# Dialogue Mode (Phase03)\n" + hint.strip()
 
-        # Optional persona injection (e.g., character roleplay) via req.context/metadata
-        try:
-            extra_system = (getattr(req, "metadata", None) or {}).get("persona_system")
-        except Exception:
-            extra_system = None
-        if isinstance(extra_system, str) and extra_system.strip():
-            system_prompt = system_prompt + "\n\n# External Persona System\n" + extra_system.strip()
-
         # Guardrail injection (Phase01 Part06/Part07)
         try:
             md = getattr(req, "metadata", None) or {}
@@ -467,6 +633,17 @@ class OpenAILLMClient(LLMClientLike):
                 "If relevant, start your reply with ONE short disclosure sentence:\n"
                 f"- {str(disclosures[0])}\n"
             )
+
+        system_prompt_base = system_prompt.strip()
+
+        # Optional persona injection (e.g., character roleplay) via req.context/metadata
+        try:
+            extra_system = (getattr(req, "metadata", None) or {}).get("persona_system")
+        except Exception:
+            extra_system = None
+        system_prompt_with_persona = system_prompt_base
+        if isinstance(extra_system, str) and extra_system.strip():
+            system_prompt_with_persona = system_prompt_with_persona + "\n\n# External Persona System\n" + extra_system.strip()
 
         user_text = req.message or ""
         if global_state.state == PersonaGlobalState.SILENT:
@@ -491,6 +668,35 @@ class OpenAILLMClient(LLMClientLike):
             max_tokens = self.max_tokens
         temperature = self._clamp_temperature(temperature)
         max_tokens = self._clamp_max_tokens(max_tokens)
+        quality_enabled = self._quality_pipeline_enabled(gen)
+        quality_mode = self._quality_mode(gen)
+
+        if quality_enabled:
+            # Quality pipeline uses multiple non-stream calls; emulate streaming by chunking.
+            last_err: Optional[Exception] = None
+            for attempt in range(self._max_retries):
+                try:
+                    final = self._generate_with_quality_pipeline(
+                        system_prompt_base=system_prompt_base,
+                        system_prompt_with_persona=system_prompt_with_persona,
+                        user_text=user_text,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        quality_mode=quality_mode,
+                    )
+                    for ch in self._chunk_text(final, chunk_size=220):
+                        yield ch
+                    return
+                except Exception as e:
+                    last_err = e
+                    if self._is_token_limit_error(e) and max_tokens > 16:
+                        max_tokens = max(16, max_tokens // 2)
+                        continue
+                    if attempt >= self._max_retries - 1 or not self._is_retryable(e):
+                        break
+                    self._backoff_sleep(attempt)
+            logging.getLogger(__name__).exception("OpenAILLMClient.generate_stream quality_pipeline failed", exc_info=last_err)
+            raise last_err or RuntimeError("quality_pipeline failed")
 
         # Streamingは「途中まで出たものを捨ててリトライ」すると体験が悪いので、
         # ここでは「開始前エラーのみ」軽くリトライする。
@@ -498,7 +704,7 @@ class OpenAILLMClient(LLMClientLike):
 
         for attempt in range(self._max_retries):
             try:
-                base_messages = self._build_messages(system_prompt=system_prompt, user_text=user_text)
+                base_messages = self._build_messages(system_prompt=system_prompt_with_persona, user_text=user_text)
 
                 def _stream_once(msgs: List[Dict[str, str]]) -> tuple[str, Optional[str]]:
                     parts: List[str] = []
@@ -539,7 +745,7 @@ class OpenAILLMClient(LLMClientLike):
                 while cont_left > 0 and finish0 == "length":
                     cont_left -= 1
                     cont_messages: List[Dict[str, str]] = [
-                        {"role": "system", "content": system_prompt},
+                        {"role": "system", "content": system_prompt_with_persona},
                         {"role": "user", "content": user_text},
                         {"role": "assistant", "content": full},
                         {"role": "user", "content": self._continue_user_prompt()},

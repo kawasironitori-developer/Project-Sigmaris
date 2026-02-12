@@ -31,15 +31,9 @@ export default function Header() {
   const text = {
     home: lang === "ja" ? "ホーム" : "Home",
     about: lang === "ja" ? "概要" : "About",
-    sigmaris: "Sigmaris",
-    vision: lang === "ja" ? "理念" : "Vision",
     docs: lang === "ja" ? "ドキュメント" : "Docs",
-    status: lang === "ja" ? "状態" : "Status",
-    audit: lang === "ja" ? "監査" : "Audit",
-    codeSize: lang === "ja" ? "規模" : "Code Size",
-    memory: lang === "ja" ? "メモリ" : "Memory",
-    funding: lang === "ja" ? "支援" : "Funding",
-    tokushoho: lang === "ja" ? "特定商取引法" : "Legal",
+    evidence: lang === "ja" ? "証拠" : "Evidence",
+    myEvidence: lang === "ja" ? "自分の証拠" : "My Evidence",
     switch: lang === "ja" ? "EN" : "JP",
     login: lang === "ja" ? "ログイン" : "Login",
     signup: lang === "ja" ? "新規登録" : "Sign Up",
@@ -47,6 +41,12 @@ export default function Header() {
     chat: lang === "ja" ? "チャットへ" : "Chat",
     account: lang === "ja" ? "アカウント" : "Account",
   };
+
+  const userLabel = (() => {
+    const id = typeof user?.id === "string" ? user.id : "";
+    if (!id) return "";
+    return `${id.slice(0, 8)}…`;
+  })();
 
   return (
     <motion.header
@@ -59,7 +59,7 @@ export default function Header() {
       <div className="px-6 py-3 flex items-center justify-between">
         {/* === ロゴ === */}
         <Link
-          href="/"
+          href="/home"
           className="flex items-center gap-2 hover:opacity-90 transition"
         >
           <Image
@@ -77,44 +77,20 @@ export default function Header() {
 
         {/* === PC用ナビ === */}
         <nav className="hidden md:flex items-center gap-6 text-sm">
+          <Link href="/home" className="text-[#c9d2df] hover:text-[#4c7cf7]">
+            {text.home}
+          </Link>
           <Link href="/about" className="text-[#c9d2df] hover:text-[#4c7cf7]">
             {text.about}
-          </Link>
-          <Link
-            href="/about/sigmaris"
-            className="text-[#c9d2df] hover:text-[#4c7cf7]"
-          >
-            {text.sigmaris}
-          </Link>
-          <Link href="/vision" className="text-[#c9d2df] hover:text-[#4c7cf7]">
-            {text.vision}
           </Link>
           <Link href="/docs" className="text-[#c9d2df] hover:text-[#4c7cf7]">
             {text.docs}
           </Link>
-          <Link href="/status" className="text-[#c9d2df] hover:text-[#4c7cf7]">
-            {text.status}
+          <Link href="/evidence" className="text-[#c9d2df] hover:text-[#4c7cf7]">
+            {text.evidence}
           </Link>
-          <Link href="/audit" className="text-[#c9d2df] hover:text-[#4c7cf7]">
-            {text.audit}
-          </Link>
-          <Link
-            href="/audit/code-size"
-            className="text-[#c9d2df] hover:text-[#4c7cf7]"
-          >
-            {text.codeSize}
-          </Link>
-          <Link href="/memory" className="text-[#c9d2df] hover:text-[#4c7cf7]">
-            {text.memory}
-          </Link>
-          <Link href="/funding" className="text-[#c9d2df] hover:text-[#4c7cf7]">
-            {text.funding}
-          </Link>
-          <Link
-            href="/tokushoho"
-            className="text-[#c9d2df] hover:text-[#4c7cf7]"
-          >
-            {text.tokushoho}
+          <Link href="/" className="text-[#c9d2df] hover:text-[#4c7cf7]">
+            {text.chat}
           </Link>
 
           {/* 言語切替 */}
@@ -154,7 +130,7 @@ export default function Header() {
         {user ? (
           <>
             <div className="flex items-center gap-4 flex-wrap">
-              <span>👤 {user.email?.split("@")[0]}</span>
+              <span>👤 {userLabel}</span>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               <Link
@@ -162,6 +138,12 @@ export default function Header() {
                 className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 transition text-white"
               >
                 {text.chat}
+              </Link>
+              <Link
+                href="/evidence/my"
+                className="px-3 py-1 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/20 transition"
+              >
+                {text.myEvidence}
               </Link>
               <Link
                 href="/account"
@@ -207,16 +189,11 @@ export default function Header() {
             className="absolute top-16 left-0 w-full bg-[#0e141b]/95 backdrop-blur-xl border-t border-[#1f2835] flex flex-col items-center gap-5 py-6 text-sm md:hidden"
           >
             {[
+              { href: "/home", label: text.home },
               { href: "/about", label: text.about },
-              { href: "/about/sigmaris", label: text.sigmaris },
-              { href: "/vision", label: text.vision },
               { href: "/docs", label: text.docs },
-              { href: "/status", label: text.status },
-              { href: "/audit", label: text.audit },
-              { href: "/audit/code-size", label: text.codeSize },
-              { href: "/memory", label: text.memory },
-              { href: "/funding", label: text.funding },
-              { href: "/tokushoho", label: text.tokushoho },
+              { href: "/evidence", label: text.evidence },
+              { href: "/", label: text.chat },
             ].map((link, i) => (
               <Link
                 key={i}
@@ -242,13 +219,20 @@ export default function Header() {
             {/* 下段：モバイル用アカウント */}
             {user && (
               <div className="mt-4 text-xs text-[#c9d2df] flex flex-col items-center gap-2">
-                <span>👤 {user.email?.split("@")[0]}</span>
+                <span>👤 {userLabel}</span>
                 <Link
                   href="/"
                   onClick={() => setMenuOpen(false)}
                   className="px-4 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition"
                 >
                   {text.chat}
+                </Link>
+                <Link
+                  href="/evidence/my"
+                  onClick={() => setMenuOpen(false)}
+                  className="px-4 py-1 border border-[#4c7cf7] rounded-full hover:bg-[#4c7cf7]/20 transition"
+                >
+                  {text.myEvidence}
                 </Link>
                 <button
                   onClick={handleLogout}

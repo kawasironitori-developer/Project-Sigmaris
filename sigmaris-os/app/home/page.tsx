@@ -21,18 +21,20 @@ function PageContent() {
     ja: {
       title: "SIGMARIS OS",
       subtitle:
-        "内省し、成長し、自分を再定義する。\nAI人格OS「Sigmaris」を試せます。",
-      learnMore: "詳しく見る",
+        "LLMの外側に「人格/記憶/安全/監査」を実装する、実用志向の Persona OS。\n“何をしているか” を観測できることを重視しています。",
+      learnMore: "概要を見る",
       docs: "ドキュメント",
+      evidence: "証拠を見る",
       chat: "チャットへ",
       footer: "Sigmaris OS — Artificial Existential Intelligence",
     },
     en: {
       title: "SIGMARIS OS",
       subtitle:
-        "Reflect. Grow. Redefine yourself.\nTry the AI Personality OS: Sigmaris.",
-      learnMore: "Learn More",
+        "A practical Persona OS that implements memory/safety/audit outside the LLM.\nDesigned for observability and stable operation.",
+      learnMore: "About",
       docs: "Documentation",
+      evidence: "Evidence",
       chat: "Chat",
       footer: "Sigmaris OS — Artificial Existential Intelligence",
     },
@@ -104,6 +106,12 @@ function PageContent() {
             {text.docs}
           </Link>
           <Link
+            href="/evidence"
+            className="px-6 py-3 rounded-full border border-[#e6eef4]/20 hover:border-[#4c7cf7] transition"
+          >
+            {text.evidence}
+          </Link>
+          <Link
             href="/"
             className="px-6 py-3 rounded-full border border-[#4c7cf7]/40 hover:bg-[#4c7cf7]/10 transition text-[#e6eef4]"
           >
@@ -118,4 +126,3 @@ function PageContent() {
     </main>
   );
 }
-

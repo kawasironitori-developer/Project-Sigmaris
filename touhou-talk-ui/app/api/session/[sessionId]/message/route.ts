@@ -5,7 +5,13 @@ import { NextRequest, NextResponse } from "next/server";
 import "server-only";
 
 import { supabaseServer, requireUserId } from "@/lib/supabase-server";
-import { buildTouhouPersonaSystem, genParamsFor, type TouhouChatMode } from "@/lib/touhouPersona";
+import crypto from "node:crypto";
+import {
+  buildTouhouPersonaSystemV2,
+  genParamsForV2,
+  type TouhouChatMode,
+  type TouhouPersonaState,
+} from "@/lib/touhouPersona";
 
 type PersonaChatResponse = { reply: string; meta?: Record<string, unknown> };
 
@@ -43,8 +49,7 @@ function looksLikeMissingColumn(err: unknown, column: string) {
 function coreBaseUrl() {
   const raw =
     process.env.SIGMARIS_CORE_URL ||
-    process.env.PERSONA_OS_LOCAL_URL ||
-    process.env.PERSONA_OS_URL ||
+    process.env.NEXT_PUBLIC_SIGMARIS_CORE ||
     "http://127.0.0.1:8000";
   return String(raw).replace(/\/+$/, "");
 }
@@ -541,6 +546,31 @@ function wantsStream(req: NextRequest) {
   return url.searchParams.get("stream") === "1";
 }
 
+function sha256Hex(s: string) {
+  return crypto.createHash("sha256").update(String(s ?? ""), "utf8").digest("hex");
+}
+
+function derivePersonaState(text: string): TouhouPersonaState {
+  const t = String(text ?? "").trim();
+  const relationship: TouhouPersonaState["relationship"] =
+    /ありがとう|助かった|好き|すごい|最高/.test(t)
+      ? "close"
+      : /うざい|きもい|死ね|消えろ|バカ/.test(t)
+        ? "distant"
+        : "neutral";
+
+  const mood: TouhouPersonaState["mood"] =
+    /！！+|!!!+/.test(t) ? "excited" : /ムカ|怒|うざ/.test(t) ? "annoyed" : "calm";
+
+  const interest = (extractTheme(t) ?? "").trim() || (t.slice(0, 24).replace(/\s+/g, " ").trim() || "general");
+
+  return {
+    relationship,
+    mood,
+    interest: interest.slice(0, 80),
+  };
+}
+
 // Character persona is injected via `persona_system` (system-side) to avoid dilution over long chats.
 
 export async function POST(
@@ -664,10 +694,27 @@ export async function POST(
   const chatMode: TouhouChatMode =
     chatModeRaw === "roleplay" || chatModeRaw === "coach" ? chatModeRaw : "partner";
 
-  const personaSystem = buildTouhouPersonaSystem(characterId, { chatMode });
+  const personaVersion = 2;
+  const personaState = derivePersonaState(text.trim());
+  const personaSystem = buildTouhouPersonaSystemV2(characterId, {
+    chatMode,
+    state: personaState,
+    personaVersion,
+  });
+  const personaHash = sha256Hex(personaSystem);
   const retrievalHint = retrievalSystemHint({ linkAnalyses: phase04Links });
   const personaSystemWithRetrieval = retrievalHint ? `${personaSystem}\n\n# Retrieval\n${retrievalHint}` : personaSystem;
-  const gen = genParamsFor(characterId);
+  const genBase = genParamsForV2(characterId, { chatMode });
+  const qualityPipeline = chatMode === "roleplay" || chatMode === "coach";
+  const gen = {
+    ...genBase,
+    quality_pipeline: qualityPipeline,
+    quality_mode: qualityPipeline ? chatMode : "standard",
+    _touhou_chat_mode: chatMode,
+    _persona_version: personaVersion,
+    _persona_hash: personaHash,
+    _persona_state: personaState,
+  } as Record<string, unknown>;
   const streamMode = wantsStream(req);
 
   if (!streamMode) {

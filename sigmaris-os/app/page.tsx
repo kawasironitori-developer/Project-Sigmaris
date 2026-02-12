@@ -195,10 +195,8 @@ export default function SigmarisChatPage() {
       <header className="sticky top-0 z-50 border-b border-[#4c7cf7]/30 bg-[#0e141b]/95 backdrop-blur-md shadow-sm pt-[env(safe-area-inset-top)]">
         {/* 上段：タイトル */}
         <div className="flex items-center justify-between px-4 lg:px-8 py-2">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold text-[#4c7cf7]">
-              Sigmaris Studio
-            </h1>
+            <div className="flex items-center gap-3">
+            <h1 className="text-lg font-semibold text-[#4c7cf7]">Sigmaris OS</h1>
             <span className="text-xs text-gray-400">
               {lang === "ja"
                 ? "対話中AI人格OS"

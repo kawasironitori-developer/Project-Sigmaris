@@ -11,7 +11,10 @@ import { ContextChain } from "@/engine/ContextChain";
 // 設定
 // ============================================================
 
-const AEI_CORE_URL = process.env.AEI_CORE_URL || "http://127.0.0.1:8000"; // FastAPI 側
+const AEI_CORE_URL =
+  process.env.SIGMARIS_CORE_URL ||
+  process.env.NEXT_PUBLIC_SIGMARIS_CORE ||
+  "http://127.0.0.1:8000"; // FastAPI 側
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 

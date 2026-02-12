@@ -15,7 +15,11 @@ export async function GET(req: Request) {
       error: authError,
     } = await supabaseAuth.auth.getUser();
 
-    if (authError || !user) {
+    const publicEnabled = (process.env.SIGMARIS_PORTFOLIO_PUBLIC_ENABLED ?? "").trim().toLowerCase();
+    const publicUserId = (process.env.SIGMARIS_PORTFOLIO_PUBLIC_USER_ID ?? "").trim();
+    const isPublic = (!user || authError) && ["1", "true", "yes", "on"].includes(publicEnabled) && !!publicUserId;
+    const viewerUserId = (user?.id as string | undefined) || (isPublic ? publicUserId : "");
+    if (!viewerUserId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -29,12 +33,20 @@ export async function GET(req: Request) {
       .select(
         "id, global_state, overload_score, reflective_score, memory_pointer_count, safety_risk_score, safety_flag, value_state, trait_state, meta, created_at"
       )
-      .eq("user_id", user.id)
+      .eq("user_id", viewerUserId)
       .order("created_at", { ascending: false })
       .limit(limit);
 
     if (error) throw error;
-    return NextResponse.json({ ok: true, snapshots: (data ?? []).reverse() });
+
+    const snapshots = (data ?? []).slice().reverse();
+    if (isPublic) {
+      for (const row of snapshots as any[]) {
+        if (row && typeof row === "object") row.meta = null;
+      }
+    }
+
+    return NextResponse.json({ ok: true, snapshots, public: isPublic });
   } catch (err: any) {
     console.error("[/api/state/timeseries] failed:", err);
     return NextResponse.json(
