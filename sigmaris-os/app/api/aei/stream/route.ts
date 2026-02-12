@@ -128,6 +128,7 @@ function buildAugmentedMessage(params: {
 
   const lines: string[] = [];
   lines.push("[リンク解析（自動）]");
+  lines.push("※このブロックはサーバー側でWeb検索/取得した結果です。根拠として使えます。");
   lines.push(`- query: ${s.query} (recency_days=${s.recency_days})`);
   for (const r of (s.results ?? []).slice(0, 5)) {
     const title = r.title ? clampText(String(r.title), 120) : "(result)";
@@ -144,6 +145,16 @@ function buildAugmentedMessage(params: {
 
   msg += "\n\n" + lines.join("\n");
   return clampText(msg, 12000);
+}
+
+function retrievalSystemHint(params: { enabled: boolean }) {
+  if (!params.enabled) return "";
+  return [
+    "Retrieval Mode: ON",
+    "- Web retrieval results may be provided in the user message under [リンク解析（自動）].",
+    "- If that block exists, do NOT claim you cannot browse the web. Use the provided results.",
+    "- When you reference facts from the results, include the URL shown in parentheses as the source.",
+  ].join("\n");
 }
 
 async function readLastBaseline(userId: string): Promise<TraitTriplet | null> {
@@ -266,6 +277,7 @@ export async function POST(req: Request) {
   }
 
   const augmentedText = buildAugmentedMessage({ userText: rawUserText, source: autoSource });
+  const retrievalHint = retrievalSystemHint({ enabled: Boolean(autoSource) });
   const attachments = autoSource ? ([autoSource] as any) : null;
 
   const upstream = await fetch(`${coreUrl}/persona/chat/stream`, {
@@ -281,6 +293,7 @@ export async function POST(req: Request) {
       trait_baseline: traitBaseline,
       reward_signal: typeof body.reward_signal === "number" ? body.reward_signal : 0.0,
       affect_signal: body.affect_signal ?? null,
+      persona_system: retrievalHint ? `# Retrieval\n${retrievalHint}` : null,
       attachments,
     }),
   });

@@ -388,6 +388,7 @@ function buildAugmentedMessage(params: {
   if (params.linkAnalyses.length > 0) {
     const lines: string[] = [];
     lines.push("[リンク解析（自動）]");
+    lines.push("※このブロックはサーバー側でWeb検索/取得した結果です。根拠として使えます。");
     for (const a of params.linkAnalyses.slice(0, 3)) {
       lines.push(`- ${a.url}`);
       for (const r of (a.results ?? []).slice(0, 3)) {
@@ -408,6 +409,16 @@ function buildAugmentedMessage(params: {
   }
 
   return clampText(msg, 12000);
+}
+
+function retrievalSystemHint(params: { linkAnalyses: Phase04LinkAnalysis[] }) {
+  if (!params.linkAnalyses || params.linkAnalyses.length === 0) return "";
+  return [
+    "Retrieval Mode: ON",
+    "- Web/GitHub retrieval results may be provided in the user message under [リンク解析（自動）].",
+    "- If that block exists, do NOT claim you cannot browse the web. Use the provided results.",
+    "- When you reference facts from the results, include the URL shown in parentheses as the source.",
+  ].join("\n");
 }
 
 function toStateSnapshotRow(params: {
@@ -609,6 +620,8 @@ export async function POST(
     chatModeRaw === "roleplay" || chatModeRaw === "coach" ? chatModeRaw : "partner";
 
   const personaSystem = buildTouhouPersonaSystem(characterId, { chatMode });
+  const retrievalHint = retrievalSystemHint({ linkAnalyses: phase04Links });
+  const personaSystemWithRetrieval = retrievalHint ? `${personaSystem}\n\n# Retrieval\n${retrievalHint}` : personaSystem;
   const gen = genParamsFor(characterId);
   const streamMode = wantsStream(req);
 
@@ -624,7 +637,7 @@ export async function POST(
         session_id: sessionId,
         message: augmentedText,
         character_id: characterId,
-        persona_system: personaSystem,
+        persona_system: personaSystemWithRetrieval,
         gen,
         attachments: coreAttachments,
       }),
@@ -695,7 +708,7 @@ export async function POST(
       session_id: sessionId,
       message: augmentedText,
       character_id: characterId,
-      persona_system: personaSystem,
+      persona_system: personaSystemWithRetrieval,
       gen,
       attachments: coreAttachments,
     }),

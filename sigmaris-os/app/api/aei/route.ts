@@ -378,6 +378,7 @@ function buildAugmentedMessage(params: {
   if (params.linkAnalyses.length > 0) {
     const lines: string[] = [];
     lines.push("[リンク解析（自動）]");
+    lines.push("※このブロックはサーバー側でWeb検索/取得した結果です。根拠として使えます。");
     for (const a of params.linkAnalyses.slice(0, 3)) {
       lines.push(`- ${a.url}`);
       const top = (a.results ?? []).slice(0, 3);
@@ -410,6 +411,16 @@ function buildAugmentedMessage(params: {
   }
 
   return clampText(msg, 12000);
+}
+
+function retrievalSystemHint(params: { linkAnalyses: Phase04LinkAnalysis[] }) {
+  if (!params.linkAnalyses || params.linkAnalyses.length === 0) return "";
+  return [
+    "Retrieval Mode: ON",
+    "- Web retrieval results may be provided in the user message under [リンク解析（自動）].",
+    "- If that block exists, do NOT claim you cannot browse the web. Use the provided results.",
+    "- When you reference facts from the results, include the URL shown in parentheses as the source.",
+  ].join("\n");
 }
 
 /* -----------------------------------------------------
@@ -539,6 +550,7 @@ export async function POST(req: Request) {
       uploads: phase04Uploads,
       linkAnalyses: phase04Links,
     });
+    const retrievalHint = retrievalSystemHint({ linkAnalyses: phase04Links });
     const coreAttachments = [...phase04Uploads, ...phase04Links] as unknown as Record<
       string,
       unknown
@@ -555,6 +567,7 @@ export async function POST(req: Request) {
         session_id: sessionId,
         message: augmentedText,
         trait_baseline: traitBaseline,
+        persona_system: retrievalHint ? `# Retrieval\n${retrievalHint}` : null,
         meta: {
           client: "sigmaris-os",
           lang,
