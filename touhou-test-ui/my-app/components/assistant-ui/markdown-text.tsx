@@ -8,12 +8,61 @@ import {
   unstable_memoizeMarkdownComponents as memoizeMarkdownComponents,
   useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
+
 import remarkGfm from "remark-gfm";
-import { type FC, memo, useState } from "react";
+import { type FC, memo, useState, useEffect } from "react";
 import { CheckIcon, CopyIcon } from "lucide-react";
+import { createHighlighter, type Highlighter } from "shiki";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { cn } from "@/lib/utils";
+
+/* ============================================================
+   🔥 テーマはここで変更
+============================================================ */
+const CURRENT_THEME = "github-dark";
+// 例:
+// "nord"
+// "dracula"
+// "vitesse-dark"
+// "monokai"
+
+/* ============================================================
+   Shiki 初期化（キャッシュ）
+============================================================ */
+let highlighterPromise: Promise<Highlighter> | null = null;
+
+async function getShikiHighlighter() {
+  if (!highlighterPromise) {
+    highlighterPromise = createHighlighter({
+      themes: [CURRENT_THEME],
+      langs: [
+        "ts",
+        "tsx",
+        "js",
+        "jsx",
+        "json",
+        "python",
+        "bash",
+        "html",
+        "css",
+        "java"
+      ],
+    });
+  }
+
+  const highlighter = await highlighterPromise;
+
+  if (!highlighter.getLoadedThemes().includes(CURRENT_THEME)) {
+    await highlighter.loadTheme(CURRENT_THEME);
+  }
+
+  return highlighter;
+}
+
+/* ============================================================
+   Markdown Component
+============================================================ */
 
 const MarkdownTextImpl = () => {
   return (
@@ -27,8 +76,13 @@ const MarkdownTextImpl = () => {
 
 export const MarkdownText = memo(MarkdownTextImpl);
 
+/* ============================================================
+   Code Header
+============================================================ */
+
 const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   const { isCopied, copyToClipboard } = useCopyToClipboard();
+
   const onCopy = () => {
     if (!code || isCopied) return;
     copyToClipboard(code);
@@ -66,6 +120,10 @@ const useCopyToClipboard = ({
   return { isCopied, copyToClipboard };
 };
 
+/* ============================================================
+   defaultComponents
+============================================================ */
+
 const defaultComponents = memoizeMarkdownComponents({
   h1: ({ className, ...props }) => (
     <h1
@@ -76,6 +134,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   h2: ({ className, ...props }) => (
     <h2
       className={cn(
@@ -85,6 +144,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   h3: ({ className, ...props }) => (
     <h3
       className={cn(
@@ -94,6 +154,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   h4: ({ className, ...props }) => (
     <h4
       className={cn(
@@ -103,6 +164,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   h5: ({ className, ...props }) => (
     <h5
       className={cn(
@@ -112,6 +174,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   h6: ({ className, ...props }) => (
     <h6
       className={cn(
@@ -121,6 +184,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   p: ({ className, ...props }) => (
     <p
       className={cn(
@@ -130,6 +194,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   a: ({ className, ...props }) => (
     <a
       className={cn(
@@ -139,6 +204,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   blockquote: ({ className, ...props }) => (
     <blockquote
       className={cn(
@@ -148,6 +214,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   ul: ({ className, ...props }) => (
     <ul
       className={cn(
@@ -157,6 +224,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   ol: ({ className, ...props }) => (
     <ol
       className={cn(
@@ -166,12 +234,14 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   hr: ({ className, ...props }) => (
     <hr
       className={cn("aui-md-hr my-2 border-muted-foreground/20", className)}
       {...props}
     />
   ),
+
   table: ({ className, ...props }) => (
     <table
       className={cn(
@@ -181,6 +251,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   th: ({ className, ...props }) => (
     <th
       className={cn(
@@ -190,6 +261,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   td: ({ className, ...props }) => (
     <td
       className={cn(
@@ -199,6 +271,7 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   tr: ({ className, ...props }) => (
     <tr
       className={cn(
@@ -208,15 +281,18 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
+
   li: ({ className, ...props }) => (
     <li className={cn("aui-md-li leading-normal", className)} {...props} />
   ),
+
   sup: ({ className, ...props }) => (
     <sup
       className={cn("aui-md-sup [&>a]:text-xs [&>a]:no-underline", className)}
       {...props}
     />
   ),
+
   pre: ({ className, ...props }) => (
     <pre
       className={cn(
@@ -226,18 +302,45 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  code: function Code({ className, ...props }) {
+
+  code: function Code({ className, children, ...props }) {
     const isCodeBlock = useIsMarkdownCodeBlock();
-    return (
-      <code
-        className={cn(
-          !isCodeBlock &&
+    const [html, setHtml] = useState<string | null>(null);
+
+    useEffect(() => {
+      if (!isCodeBlock) return;
+
+      const code = String(children ?? "");
+      const language =
+        (className || "").replace("language-", "").trim() || "ts";
+
+      getShikiHighlighter().then((highlighter) => {
+        const rendered = highlighter.codeToHtml(code, {
+          lang: language,
+          theme: CURRENT_THEME,
+        });
+        setHtml(rendered);
+      });
+    }, [children, className, isCodeBlock]);
+
+    if (!isCodeBlock) {
+      return (
+        <code
+          className={cn(
             "aui-md-inline-code rounded-md border border-border/50 bg-muted/50 px-1.5 py-0.5 font-mono text-[0.85em]",
-          className,
-        )}
-        {...props}
-      />
-    );
+            className,
+          )}
+          {...props}
+        >
+          {children}
+        </code>
+      );
+    }
+
+    if (!html) return null;
+
+    return <div dangerouslySetInnerHTML={{ __html: html }} />;
   },
+
   CodeHeader,
 });
