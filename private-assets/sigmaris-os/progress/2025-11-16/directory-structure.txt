@@ -1,0 +1,226 @@
+- .gitignore
+- app
+  - about
+    - page.tsx
+    - sigmaris
+      - page.tsx
+  - account
+    - page.tsx
+  - api
+    - account
+      - info
+        - route.ts
+    - aei
+      - route.ts
+    - billing
+      - checkout
+        - route.ts
+      - webhook
+        - route.ts
+    - chat
+      - route.ts
+    - claim-free
+      - route.ts
+    - message
+      - route.ts
+    - persona
+      - history
+        - route.ts
+      - route.ts
+    - reflect
+      - route.ts
+    - sessions
+      - route.ts
+    - summary
+      - route.ts
+    - test
+      - route.ts
+    - translate
+      - route.ts
+    - try
+      - route.ts
+  - auth
+    - callback
+      - route.ts
+    - login
+      - page.tsx
+  - billing
+    - cancel
+      - page.tsx
+    - success
+      - page.tsx
+  - chat
+    - [sessionId]
+      - page.tsx
+  - dashboard
+    - account
+      - page.tsx
+    - billing
+      - page.tsx
+  - docs
+    - page.tsx
+  - favicon.ico
+  - funding
+    - page.tsx
+  - globals.css
+  - home
+    - page.tsx
+  - layout.tsx
+  - page.tsx
+  - plans
+    - page.tsx
+  - tokushoho
+    - page.tsx
+  - try
+    - page.tsx
+  - vision
+    - page.tsx
+- body.json
+- components
+  - chat
+    - ChatInput.tsx
+    - ChatList.tsx
+    - ChatWindow.tsx
+    - RightPanel.tsx
+  - ChatBox.tsx
+  - ChatMessage.tsx
+  - ChatWindow.tsx
+  - EunoiaMeter.tsx
+  - GrowthGraph.tsx
+  - Header.tsx
+  - HistoryPanel.tsx
+  - IntrospectionPanel.tsx
+  - PersonaChart.tsx
+  - PersonaPanel.tsx
+  - ReflectionPanel.tsx
+  - StatePanel.tsx
+- context
+  - LangContext.tsx
+- create-docs
+  - 2025
+    - 11
+      - 17
+        - create01.md
+- data
+  - growth.json
+  - metaMemory.json
+  - personality.db
+  - sigmaris.db
+- docs
+  - aesthetics.md
+  - architecture.md
+  - confilict.md
+  - curiosity.md
+  - growth.md
+  - implementation-plan.md
+  - index.md
+  - introspection.md
+  - io-spec.md
+  - logging.md
+  - memory.md
+  - meta-persona.md
+  - motivation.md
+  - narrative.md
+  - persona.md
+  - reload-pack.md
+  - safety.md
+  - test-spec.md
+  - ui-spec.md
+  - versioning.md
+- engine
+  - ContextChain.ts
+  - emotion
+    - EmotionSynth.ts
+  - EmotionMapper.ts
+  - EmotionSynth.ts
+  - GrowthEngine.ts
+  - GrowthTracker.ts
+  - IntentClassifier.ts
+  - IntrospectionEngine.ts
+  - LongTermMemory.ts
+  - memory
+  - MemoryManager.ts
+  - meta
+    - MetaReflectionEngine.ts
+  - MetaMemory.ts
+  - PersonaDB.ts
+  - PersonalityEngine.ts
+  - PersonalityLoop.ts
+  - reflection
+    - MetaReflectionEngine.ts
+  - ReflectionEngine.ts
+  - safety
+    - SafetyLayer.ts
+  - SafetyGuardian.ts
+  - SafetyLayer.ts
+  - SemanticMap.ts
+  - state
+  - sync
+    - PersonaSync.ts
+- eslint.config.mjs
+- hooks
+  - useSigmarisChat.ts
+- lib
+  - db.ts
+  - eunoia.ts
+  - guard.ts
+  - memoryFlush.ts
+  - parallelTasks.ts
+  - plan.ts
+  - sigmarisLangContext.tsx
+  - stripe.ts
+  - summary.ts
+  - supabaseClient.ts
+  - supabaseServer.ts
+  - traits.ts
+  - usage.ts
+- LICENSE
+- next-env.d.ts
+- next.config.mjs
+- package.json
+- postcss.config.js
+- postcss.config.mjs
+- progress
+  - 2025-11-06
+    - directory-structure.txt
+    - sigmaris.mproj.1.md
+    - sigmaris.mproj.2.md
+    - sigmaris.mproj.3.md
+  - 2025-11-10
+    - directory-structure.txt
+    - sigmaris.mproj.1.md
+    - sigmaris.mproj.2.md
+    - sigmaris.mproj.3.md
+    - sigmaris.mproj.4.md
+    - sigmaris.mproj.5.md
+    - sigmaris.mproj.6.md
+    - sigmaris.mproj.7.md
+- README.md
+- result.json
+- src
+  - aei-lite
+    - config.ts
+    - core
+      - existential-core.ts
+      - growth-core.ts
+      - logic-core.ts
+      - memory-core.ts
+      - safety-core.ts
+    - index.ts
+    - types.ts
+- tailwind.config.js
+- temp
+  - buildMetaProject.cjs
+  - buildMetaProject.js
+- tools
+  - buildMetaProject.ts
+- types
+  - message.ts
+  - routes.d.ts
+  - safety.ts
+  - trait.ts
+  - user.d.ts
+- ui
+  - EmotionBadge.tsx
+  - SafetyIndicator.tsx
+  - TraitVisualizer.tsx

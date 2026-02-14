@@ -1261,10 +1261,13 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
                     except Exception:
                         meta["phase04"] = {"error": "phase04_failed"}
 
+<<<<<<< HEAD
                     persona_runtime = _extract_persona_runtime_meta(req.gen)
                     if persona_runtime:
                         meta["persona_runtime"] = persona_runtime
 
+=======
+>>>>>>> phase04-kernel-storage
                     meta["meta_v1"] = {
                         "trace_id": str(meta.get("trace_id") or trace_id),
                         "intent": meta.get("intent") or {},

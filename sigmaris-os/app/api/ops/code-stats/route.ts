@@ -189,17 +189,14 @@ let _cache:
 
 export async function GET(req: Request) {
   try {
-    const publicEnabled = envOn("SIGMARIS_PORTFOLIO_PUBLIC_ENABLED") || envOn("SIGMARIS_CODE_STATS_PUBLIC");
-    if (!publicEnabled) {
-      const supabaseAuth = createRouteHandlerClient({ cookies });
-      const {
-        data: { user },
-        error: authError,
-      } = await supabaseAuth.auth.getUser();
+    const supabaseAuth = createRouteHandlerClient({ cookies });
+    const {
+      data: { user },
+      error: authError,
+    } = await supabaseAuth.auth.getUser();
 
-      if (authError || !user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const enabled = envOn("SIGMARIS_CODE_STATS_ENABLED");
