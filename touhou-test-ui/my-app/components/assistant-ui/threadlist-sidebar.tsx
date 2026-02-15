@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Github, MessagesSquare } from "lucide-react";
+import { Github, X } from "lucide-react";
 import Link from "next/link";
 import {
   Sidebar,
@@ -10,43 +10,48 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
 
 export function ThreadListSidebar({
   ...props
 }: React.ComponentProps<typeof Sidebar>) {
+  const { setOpen, setOpenMobile, isMobile } = useSidebar();
+
+  const handleClose = () => {
+    if (isMobile) {
+      setOpenMobile(false);
+    } else {
+      setOpen(false);
+    }
+  };
+
   return (
     <Sidebar {...props}>
-      <SidebarHeader className="aui-sidebar-header mb-2 border-b">
-        <div className="aui-sidebar-header-content flex items-center justify-between">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton size="lg" asChild>
-                <Link
-                  href="https://assistant-ui.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <div className="aui-sidebar-header-icon-wrapper flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                    <MessagesSquare className="aui-sidebar-header-icon size-4" />
-                  </div>
-                  <div className="aui-sidebar-header-heading mr-6 flex flex-col gap-0.5 leading-none">
-                    <span className="aui-sidebar-header-title font-semibold">
-                      assistant-ui
-                    </span>
-                  </div>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </div>
+      {/* ===== Header ===== */}
+      <SidebarHeader className="mb-2 border-b px-2 py-2">
+        {isMobile && (
+          <div className="flex justify-end">
+            <button
+              onClick={handleClose}
+              className="flex size-8 items-center justify-center rounded-md hover:bg-sidebar-accent transition"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        )}
       </SidebarHeader>
-      <SidebarContent className="aui-sidebar-content px-2">
+
+      {/* ===== Content ===== */}
+      <SidebarContent className="px-2">
         <ThreadList />
       </SidebarContent>
+
       <SidebarRail />
-      <SidebarFooter className="aui-sidebar-footer border-t">
+
+      {/* ===== Footer ===== */}
+      <SidebarFooter className="border-t">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
@@ -54,13 +59,11 @@ export function ThreadListSidebar({
                 href="https://github.com/assistant-ui/assistant-ui"
                 target="_blank"
               >
-                <div className="aui-sidebar-footer-icon-wrapper flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                  <Github className="aui-sidebar-footer-icon size-4" />
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                  <Github className="size-4" />
                 </div>
-                <div className="aui-sidebar-footer-heading flex flex-col gap-0.5 leading-none">
-                  <span className="aui-sidebar-footer-title font-semibold">
-                    GitHub
-                  </span>
+                <div className="flex flex-col gap-0.5 leading-none">
+                  <span className="font-semibold">GitHub</span>
                   <span>View Source</span>
                 </div>
               </Link>

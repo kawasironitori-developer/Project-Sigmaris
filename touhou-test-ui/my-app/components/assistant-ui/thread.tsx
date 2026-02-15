@@ -201,19 +201,45 @@ const AssistantMessage: FC = () => {
       className="aui-assistant-message-root fade-in slide-in-from-bottom-1 relative mx-auto w-full max-w-(--thread-max-width) animate-in py-3 duration-150"
       data-role="assistant"
     >
-      <div className="aui-assistant-message-content wrap-break-word px-2 text-foreground leading-relaxed">
-        <MessagePrimitive.Parts
-          components={{
-            Text: MarkdownText,
-            tools: { Fallback: ToolFallback },
-          }}
-        />
-        <MessageError />
-      </div>
+      <div className="px-2 flex flex-col">
+        {/* ===== キャラクターアイコン（左上・非重なり） ===== */}
+        <div className="mb-1">
+          <img
+            src="/images/nitori.png"
+            alt="assistant avatar"
+            className="size-16 rounded-full object-cover shadow"
+          />
+        </div>
 
-      <div className="aui-assistant-message-footer mt-1 ml-2 flex">
-        <BranchPicker />
-        <AssistantActionBar />
+        {/* ===== バブル ===== */}
+        <div
+          className="
+        aui-assistant-message-content
+        wrap-break-word
+        rounded-2xl
+        bg-background/80
+        backdrop-blur-md
+        shadow
+        px-4
+        py-3
+        text-foreground
+        leading-relaxed
+      "
+        >
+          <MessagePrimitive.Parts
+            components={{
+              Text: MarkdownText,
+              tools: { Fallback: ToolFallback },
+            }}
+          />
+          <MessageError />
+        </div>
+
+        {/* ===== Footer ===== */}
+        <div className="aui-assistant-message-footer mt-2 ml-2 flex">
+          <BranchPicker />
+          <AssistantActionBar />
+        </div>
       </div>
     </MessagePrimitive.Root>
   );
