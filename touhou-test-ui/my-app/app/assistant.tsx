@@ -49,13 +49,9 @@ export const Assistant = () => {
             <div
               className="absolute inset-0 bg-cover bg-center bg-no-repeat"
               style={{
-                backgroundImage: "url('/images/flandre.png')",
-                opacity: 1, // ←ここで薄さ調整
+                backgroundImage: "url('/images/nitori-back.png')",
               }}
             />
-
-            {/* 透明オーバーレイ（色だけ薄く足す） */}
-            <div className="absolute inset-0 bg-black/20" />
 
             {/* Header */}
             <header className="relative z-20 flex h-16 shrink-0 items-center gap-2 border-b px-4 bg-background/70 backdrop-blur">
