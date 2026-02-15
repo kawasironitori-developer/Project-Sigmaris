@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 
 import { supabase } from "@/lib/supabaseClient";
+import { getSkipMapOnStart } from "@/lib/touhou-settings";
 import TopShell from "@/components/top/TopShell";
 
 export default function TopPage() {
@@ -36,6 +37,15 @@ export default function TopPage() {
       listener.subscription.unsubscribe();
     };
   }, []);
+
+  // If enabled, skip map and go straight to chat after login.
+  useEffect(() => {
+    if (!authChecked) return;
+    if (!user) return;
+    if (!getSkipMapOnStart()) return;
+    enter();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authChecked, user]);
 
   // =========================
   // タイピング表示用テキスト
@@ -94,7 +104,8 @@ export default function TopPage() {
     setLoading(true);
 
     setTimeout(() => {
-      router.push("/map/session/gensokyo");
+      const skip = getSkipMapOnStart();
+      router.push(skip ? "/chat/session" : "/map/session/gensokyo");
     }, 1200);
   };
 

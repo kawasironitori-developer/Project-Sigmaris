@@ -17,6 +17,7 @@ export type CharacterDef = {
     accent: string;
   };
   ui: {
+    avatar?: string;
     chatBackground: string;
     placeholder: string;
   };

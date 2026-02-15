@@ -5,32 +5,40 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRef } from "react";
 import { startTransition } from "react";
 
-import ChatPane from "@/components/ChatPaneSession";
-import CharacterPanel from "@/components/CharacterPanelSession";
+import {
+  AssistantRuntimeProvider,
+  useExternalStoreRuntime,
+  type AppendMessage,
+  type CompleteAttachment,
+  type ExternalStoreAdapter,
+} from "@assistant-ui/react";
+
+import { Thread } from "@/components/assistant-ui/thread";
+import { TouhouSidebar } from "@/components/assistant-ui/touhou-sidebar";
+import { TouhouUiProvider } from "@/components/assistant-ui/touhou-ui-context";
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
+import { Separator } from "@/components/ui/separator";
 
 import { CHARACTERS, getCharacterTtsConfig } from "@/data/characters";
 import { getGroupsByLocation, canEnableGroup, GroupDef } from "@/data/group";
 
-import { useChatController } from "@/hooks/useChatController";
+import {
+  extractTextFromThreadMessageContent,
+  talkMessageToThreadMessageLike,
+  TouhouUploadAttachmentAdapter,
+  type TalkUiMessage,
+} from "@/lib/assistant-ui/touhou-external-store";
 
 
 /* =========================
    Types
 ========================= */
 
-type Message = {
-  id: string;
-  role: "user" | "ai";
-  content: string;
-  speakerId?: string;
-  attachments?: {
-    name: string;
-    size: number;
-    type: string;
-    previewUrl?: string;
-  }[];
-  meta?: Record<string, unknown> | null;
-};
+type Message = TalkUiMessage;
 
 type SessionSummary = {
   id: string;
@@ -39,7 +47,6 @@ type SessionSummary = {
   mode: "single" | "group";
   layer: string | null;
   location: string | null;
-  chatMode?: "partner" | "roleplay" | "coach";
 };
 
 type PanelGroupContext = {
@@ -109,12 +116,6 @@ export default function ChatClient() {
      State
   ========================= */
 
-  /* =========================
-     Channel (talk / vscode)
-  ========================= */
-
-  const [channel, setChannel] = useState<"talk" | "vscode">("talk");
-  const [vscodeConnected, setVscodeConnected] = useState(true);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeCharacterId, setActiveCharacterId] = useState<string | null>(
@@ -123,6 +124,10 @@ export default function ChatClient() {
 
   const [messagesBySession, setMessagesBySession] = useState<
     Record<string, Message[]>
+  >({});
+
+  const [isRunningBySession, setIsRunningBySession] = useState<
+    Record<string, boolean>
   >({});
 
   const appendMessage = useCallback(
@@ -136,11 +141,6 @@ export default function ChatClient() {
     },
     [activeSessionId],
   );
-
-  const controller = useChatController({
-    channel,
-    appendMessage,
-  });
 
   const [mode] = useState<"single" | "group">("single");
 
@@ -306,6 +306,17 @@ export default function ChatClient() {
   }, [activeCharacterId]);
 
   /* =========================
+     Character filter (location)
+  ========================= */
+
+  const visibleCharacters = useMemo(() => {
+    if (!currentLocationId) return [];
+    return Object.values(CHARACTERS).filter(
+      (c) => c.world?.location === currentLocationId,
+    );
+  }, [currentLocationId]);
+
+  /* =========================
      Group Context
   ========================= */
 
@@ -363,8 +374,6 @@ export default function ChatClient() {
 
   const selectCharacter = useCallback(
     async (characterId: string) => {
-      setChannel("talk"); // 笘・繧ｻ繝・す繝ｧ繝ｳ蛻・崛譎ゅ・蠢・★騾壼ｸｸ莨夊ｩｱ縺ｫ謌ｻ縺・
-
       const existing = sessions.find(
         (s) =>
           s.characterId === characterId &&
@@ -400,7 +409,6 @@ export default function ChatClient() {
         mode,
         layer: currentLayer,
         location: currentLocationId,
-        chatMode: "partner",
       };
 
       setSessions((prev) => [newSession, ...prev]);
@@ -412,6 +420,38 @@ export default function ChatClient() {
     },
     [sessions, mode, currentLayer, currentLocationId],
   );
+
+  const createSession = useCallback(async () => {
+    if (!activeCharacterId) return;
+
+    const res = await fetch("/api/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        characterId: activeCharacterId,
+        mode,
+        layer: currentLayer,
+        location: currentLocationId,
+      }),
+    });
+
+    if (!res.ok) return;
+    const data = (await res.json()) as CreateSessionResponse;
+
+    const newSession: SessionSummary = {
+      id: data.sessionId,
+      title: "新しい会話",
+      characterId: activeCharacterId,
+      mode,
+      layer: currentLayer,
+      location: currentLocationId,
+    };
+
+    setSessions((prev) => [newSession, ...prev]);
+    setActiveSessionId(newSession.id);
+    setMessagesBySession((prev) => ({ ...prev, [newSession.id]: [] }));
+    setHasSelectedOnce(true);
+  }, [activeCharacterId, mode, currentLayer, currentLocationId]);
 
   /* =========================
    Reset auto select flag when URL char changes
@@ -447,35 +487,10 @@ export default function ChatClient() {
       if (!s) return;
       setActiveSessionId(s.id);
       setActiveCharacterId(s.characterId);
-      setChannel("talk"); // 笘・蠢ｵ縺ｮ縺溘ａ繝ｪ繧ｻ繝・ヨ
       setHasSelectedOnce(true);
       setIsPanelOpen(false);
     },
     [sessions],
-  );
-
-  const activeChatMode = useMemo(() => {
-    const s = sessions.find((x) => x.id === activeSessionId);
-    const m = s?.chatMode;
-    return m === "roleplay" || m === "coach" ? m : "partner";
-  }, [sessions, activeSessionId]);
-
-  const handleSetChatMode = useCallback(
-    async (chatMode: "partner" | "roleplay" | "coach") => {
-      if (!activeSessionId) return;
-
-      const res = await fetch(`/api/session/${activeSessionId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatMode }),
-      });
-      if (!res.ok) return;
-
-      setSessions((prev) =>
-        prev.map((s) => (s.id === activeSessionId ? { ...s, chatMode } : s)),
-      );
-    },
-    [activeSessionId],
   );
 
   const handleDeleteSession = useCallback(
@@ -532,7 +547,18 @@ export default function ChatClient() {
       const data = await res.json();
       setMessagesBySession((prev) => ({
         ...prev,
-        [activeSessionId]: data.messages ?? [],
+        [activeSessionId]:
+          (Array.isArray(data.messages) ? data.messages : []).map((m: any) => ({
+            id: String(m.id),
+            role: m.role === "user" ? "user" : "ai",
+            content: String(m.content ?? ""),
+            speakerId:
+              typeof m.speaker_id === "string" && m.speaker_id
+                ? m.speaker_id
+                : undefined,
+            attachments: [],
+            meta: (m.meta ?? null) as Record<string, unknown> | null,
+          })) ?? [],
       }));
     })();
   }, [activeSessionId, sessions, messagesBySession]);
@@ -545,12 +571,7 @@ export default function ChatClient() {
     async (payload: {
       text: string;
       files: File[];
-      attachments?: {
-        name: string;
-        size: number;
-        type: string;
-        previewUrl?: string;
-      }[];
+      attachments?: CompleteAttachment[];
     }) => {
       if (!activeSessionId || !activeCharacterId) return;
 
@@ -643,158 +664,174 @@ export default function ChatClient() {
         return;
       }
 
-      const gen = ++ttsGenerationRef.current;
-      ttsQueueRef.current = [];
-      ttsBufferRef.current = "";
-      ttsConfigByGenRef.current.set(gen, getCharacterTtsConfig(activeCharacterId));
+      setIsRunningBySession((prev) => ({
+        ...prev,
+        [activeSessionId]: true,
+      }));
+
       try {
-        ttsCurrentAudioRef.current?.pause();
-      } catch {
-        // ignore
-      }
+        const gen = ++ttsGenerationRef.current;
+        ttsQueueRef.current = [];
+        ttsBufferRef.current = "";
+        ttsConfigByGenRef.current.set(
+          gen,
+          getCharacterTtsConfig(activeCharacterId),
+        );
+        try {
+          ttsCurrentAudioRef.current?.pause();
+        } catch {
+          // ignore
+        }
 
-      // 竭 user message
-      appendMessage({
-        id: crypto.randomUUID(),
-        role: "user",
-        content: text,
-        attachments: attachments ?? [],
-        meta: null,
-      });
-
-      // 竭｡ talk蟆ら畑 endpoint
-      const endpoint = `/api/session/${activeSessionId}/message`;
-
-      // 竭｢ talk縺ｯ FormData 縺ｧ files 騾√ｋ
-      const form = new FormData();
-      form.append("characterId", activeCharacterId);
-      form.append("text", text);
-
-      for (const file of files) {
-        form.append("files", file);
-      }
-
-      // 遶ｭ・｣ AI placeholder (stream target)
-      const aiId = crypto.randomUUID();
-      appendMessage({
-        id: aiId,
-        role: "ai",
-        content: "...",
-        speakerId: activeCharacterId,
-        attachments: [],
-        meta: null,
-      });
-
-      const res = await fetch(`${endpoint}?stream=1`, {
-        method: "POST",
-        headers: {
-          Accept: "text/event-stream",
-        },
-        body: form,
-      });
-
-      if (!res.ok || !res.body) return;
-
-      const reader = res.body.getReader();
-
-      // 竭｣ ai message
-      const decoder = new TextDecoder();
-      let buf = "";
-      let doneReceived = false;
-
-      const appendDelta = (delta: string) => {
-        if (!delta) return;
-        pushTtsDelta(delta, gen);
-        setMessagesBySession((prev) => {
-          const list = prev[activeSessionId] ?? [];
-          return {
-            ...prev,
-            [activeSessionId]: list.map((m) => {
-              if (m.id !== aiId) return m;
-              const prevText = typeof m.content === "string" ? m.content : "";
-              const base = prevText === "..." ? "" : prevText;
-              return { ...m, content: base + delta };
-            }),
-          };
+        // 竭 user message
+        appendMessage({
+          id: crypto.randomUUID(),
+          role: "user",
+          content: text,
+          attachments: attachments ?? [],
+          meta: null,
         });
-      };
 
-      const finalize = (finalText: string, meta: unknown) => {
-        setMessagesBySession((prev) => {
-          const list = prev[activeSessionId] ?? [];
-          return {
-            ...prev,
-            [activeSessionId]: list.map((m) =>
-              m.id === aiId
-                ? {
-                    ...m,
-                    content: finalText,
-                    meta:
-                      meta && typeof meta === "object" && !Array.isArray(meta)
-                        ? (meta as Record<string, unknown>)
-                        : null,
-                  }
-                : m
-            ),
-          };
+        // 竭｡ talk蟆ら畑 endpoint
+        const endpoint = `/api/session/${activeSessionId}/message`;
+
+        // 竭｢ talk縺ｯ FormData 縺ｧ files 騾√ｋ
+        const form = new FormData();
+        form.append("characterId", activeCharacterId);
+        form.append("text", text);
+
+        for (const file of files) {
+          form.append("files", file);
+        }
+
+        // 遶ｭ・｣ AI placeholder (stream target)
+        const aiId = crypto.randomUUID();
+        appendMessage({
+          id: aiId,
+          role: "ai",
+          content: "...",
+          speakerId: activeCharacterId,
+          attachments: [],
+          meta: null,
         });
-      };
 
-      while (!doneReceived) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
+        const res = await fetch(`${endpoint}?stream=1`, {
+          method: "POST",
+          headers: {
+            Accept: "text/event-stream",
+          },
+          body: form,
+        });
 
-        while (true) {
-          const idx = buf.indexOf("\n\n");
-          if (idx === -1) break;
-          const block = buf.slice(0, idx);
-          buf = buf.slice(idx + 2);
-          if (!block.trim()) continue;
+        if (!res.ok || !res.body) return;
 
-          const lines = block.split("\n");
-          let event = "message";
-          const dataLines: string[] = [];
-          for (const line of lines) {
-            if (line.startsWith("event:")) event = line.slice(6).trim();
-            else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
-          }
-          const dataRaw = dataLines.join("\n");
+        const reader = res.body.getReader();
 
-          if (event === "delta") {
-            try {
-              const parsed = JSON.parse(dataRaw);
-              appendDelta(typeof parsed?.text === "string" ? parsed.text : "");
-            } catch {
-              appendDelta(dataRaw);
+        // 竭｣ ai message
+        const decoder = new TextDecoder();
+        let buf = "";
+        let doneReceived = false;
+
+        const appendDelta = (delta: string) => {
+          if (!delta) return;
+          pushTtsDelta(delta, gen);
+          setMessagesBySession((prev) => {
+            const list = prev[activeSessionId] ?? [];
+            return {
+              ...prev,
+              [activeSessionId]: list.map((m) => {
+                if (m.id !== aiId) return m;
+                const prevText = typeof m.content === "string" ? m.content : "";
+                const base = prevText === "..." ? "" : prevText;
+                return { ...m, content: base + delta };
+              }),
+            };
+          });
+        };
+
+        const finalize = (finalText: string, meta: unknown) => {
+          setMessagesBySession((prev) => {
+            const list = prev[activeSessionId] ?? [];
+            return {
+              ...prev,
+              [activeSessionId]: list.map((m) =>
+                m.id === aiId
+                  ? {
+                      ...m,
+                      content: finalText,
+                      meta:
+                        meta && typeof meta === "object" && !Array.isArray(meta)
+                          ? (meta as Record<string, unknown>)
+                          : null,
+                    }
+                  : m,
+              ),
+            };
+          });
+        };
+
+        while (!doneReceived) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+
+          while (true) {
+            const idx = buf.indexOf("\n\n");
+            if (idx === -1) break;
+            const block = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            if (!block.trim()) continue;
+
+            const lines = block.split("\n");
+            let event = "message";
+            const dataLines: string[] = [];
+            for (const line of lines) {
+              if (line.startsWith("event:")) event = line.slice(6).trim();
+              else if (line.startsWith("data:"))
+                dataLines.push(line.slice(5).trim());
             }
-          } else if (event === "done") {
-            try {
-              const parsed = JSON.parse(dataRaw);
-              const reply =
-                typeof parsed?.reply === "string"
-                  ? parsed.reply
-                  : typeof parsed?.content === "string"
-                    ? parsed.content
-                    : "";
-              const meta = parsed?.meta ?? null;
-              flushTts(gen);
-              finalize(
-                reply && reply.trim().length > 0
-                  ? reply
-                  : "（応答生成が一時的に利用できません。）",
-                meta
-              );
-            } catch {
-              flushTts(gen);
-              finalize("（応答生成が一時的に利用できません。）", null);
+            const dataRaw = dataLines.join("\n");
+
+            if (event === "delta") {
+              try {
+                const parsed = JSON.parse(dataRaw);
+                appendDelta(typeof parsed?.text === "string" ? parsed.text : "");
+              } catch {
+                appendDelta(dataRaw);
+              }
+            } else if (event === "done") {
+              try {
+                const parsed = JSON.parse(dataRaw);
+                const reply =
+                  typeof parsed?.reply === "string"
+                    ? parsed.reply
+                    : typeof parsed?.content === "string"
+                      ? parsed.content
+                      : "";
+                const meta = parsed?.meta ?? null;
+                flushTts(gen);
+                finalize(
+                  reply && reply.trim().length > 0
+                    ? reply
+                    : "（応答生成が一時的に利用できません。）",
+                  meta,
+                );
+              } catch {
+                flushTts(gen);
+                finalize("（応答生成が一時的に利用できません。）", null);
+              }
+              doneReceived = true;
+              break;
+            } else if (event === "error") {
+              console.warn("[talk stream error]", dataRaw);
             }
-            doneReceived = true;
-            break;
-          } else if (event === "error") {
-            console.warn("[talk stream error]", dataRaw);
           }
         }
+      } finally {
+        setIsRunningBySession((prev) => ({
+          ...prev,
+          [activeSessionId]: false,
+        }));
       }
     },
     [
@@ -814,94 +851,147 @@ export default function ChatClient() {
   const activeMessages =
     activeSessionId != null ? (messagesBySession[activeSessionId] ?? []) : [];
 
+  const attachmentAdapter = useMemo(() => new TouhouUploadAttachmentAdapter(), []);
+
+  const store = useMemo<ExternalStoreAdapter<Message>>(
+    () => ({
+      isDisabled: !activeSessionId || !activeCharacterId,
+      isRunning:
+        !!activeSessionId && (isRunningBySession[activeSessionId] ?? false),
+      isLoading: false,
+      messages: activeMessages,
+      convertMessage: (m) => talkMessageToThreadMessageLike(m),
+      setMessages: undefined,
+      onNew: async (message: AppendMessage) => {
+        if (!activeSessionId || !activeCharacterId) return;
+        if (message.role !== "user") return;
+
+        const text = extractTextFromThreadMessageContent(message.content);
+        const auiAttachments = (message.attachments ??
+          []) as unknown as CompleteAttachment[];
+        const files = auiAttachments
+          .map((a) => a.file)
+          .filter(Boolean) as File[];
+
+        await handleSendTalk({ text, files, attachments: auiAttachments });
+      },
+      adapters: {
+        attachments: attachmentAdapter,
+        threadList: {
+          threadId: activeSessionId ?? undefined,
+          isLoading: !sessionsLoaded,
+          threads: sessions.map((s) => ({
+            status: "regular",
+            id: s.id,
+            remoteId: s.id,
+            externalId: s.id,
+            title: s.title,
+          })),
+          archivedThreads: [],
+          onSwitchToNewThread: async () => {
+            await createSession();
+          },
+          onSwitchToThread: async (threadId: string) => {
+            selectSession(threadId);
+          },
+          onRename: async (threadId: string, newTitle: string) => {
+            await handleRenameSession(threadId, newTitle);
+          },
+          onDelete: async (threadId: string) => {
+            await handleDeleteSession(threadId);
+          },
+          onArchive: undefined,
+          onUnarchive: undefined,
+        },
+      },
+      unstable_capabilities: { copy: true },
+      onEdit: undefined,
+      onReload: undefined,
+      onResume: undefined,
+      onCancel: undefined,
+    }),
+    [
+      activeCharacterId,
+      activeMessages,
+      activeSessionId,
+      attachmentAdapter,
+      createSession,
+      handleDeleteSession,
+      handleRenameSession,
+      handleSendTalk,
+      isRunningBySession,
+      selectSession,
+      sessions,
+      sessionsLoaded,
+    ],
+  );
+
+  const runtime = useExternalStoreRuntime(store);
+
   return (
-    <div className="relative flex h-dvh w-full overflow-hidden">
-      {/* ===== Mobile / Tablet 蛻晏屓・壹そ繝・す繝ｧ繝ｳ譛ｪ驕ｸ謚槭↑繧牙・逕ｻ髱｢ Panel ===== */}
-      {isMobile && !hasSelectedOnce && !activeSessionId && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <CharacterPanel
-            characters={CHARACTERS}
-            activeCharacterId={activeCharacterId}
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            onSelectCharacter={selectCharacter}
-            onSelectSession={selectSession}
-            onCreateSession={() => {}}
-            onRenameSession={handleRenameSession}
-            onDeleteSession={handleDeleteSession}
-            activeChatMode={activeChatMode}
-            onChangeChatMode={handleSetChatMode}
-            currentLocationId={currentLocationId}
-            currentLayer={currentLayer}
-            groupContext={panelGroupContext}
-            mode={mode}
-            fullScreen
-          />
-        </div>
-      )}
-
-      {/* ===== Desktop ===== */}
-      <div className="hidden lg:block">
-        <CharacterPanel
-          characters={CHARACTERS}
-          activeCharacterId={activeCharacterId}
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSelectCharacter={selectCharacter}
-          onSelectSession={selectSession}
-          onCreateSession={() => {}}
-          onRenameSession={handleRenameSession}
-          onDeleteSession={handleDeleteSession}
-          activeChatMode={activeChatMode}
-          onChangeChatMode={handleSetChatMode}
-          currentLocationId={currentLocationId}
-          currentLayer={currentLayer}
-          groupContext={panelGroupContext}
-          mode={mode}
-        />
-      </div>
-
-      {/* ===== Mobile / Tablet 騾壼ｸｸ Panel ===== */}
-      {isPanelOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
-            onClick={() => setIsPanelOpen(false)}
-          />
-          <div className="fixed left-0 top-0 z-50 h-full w-80 lg:hidden">
-            <CharacterPanel
-              characters={CHARACTERS}
+    <AssistantRuntimeProvider runtime={runtime}>
+      <TouhouUiProvider
+        value={{
+          activeSessionId,
+          sessions: sessions.map((s) => ({ id: s.id, characterId: s.characterId })),
+          characters: CHARACTERS,
+        }}
+      >
+        <SidebarProvider>
+          <div className="flex h-dvh w-full bg-background text-foreground transition-colors duration-300">
+            <TouhouSidebar
+              visibleCharacters={visibleCharacters}
               activeCharacterId={activeCharacterId}
-              sessions={sessions}
-              activeSessionId={activeSessionId}
               onSelectCharacter={selectCharacter}
-              onSelectSession={selectSession}
-              onCreateSession={() => {}}
-              onRenameSession={handleRenameSession}
-              onDeleteSession={handleDeleteSession}
-              activeChatMode={activeChatMode}
-              onChangeChatMode={handleSetChatMode}
-              currentLocationId={currentLocationId}
-              currentLayer={currentLayer}
-              groupContext={panelGroupContext}
-              mode={mode}
             />
-          </div>
-        </>
-      )}
 
-      {/* ===== Chat ===== */}
-      {activeCharacter && activeSessionId && (
-        <ChatPane
-          character={activeCharacter}
-          messages={activeMessages}
-          onSend={channel === "vscode" ? controller.send : handleSendTalk}
-          onOpenPanel={() => setIsPanelOpen(true)}
-          mode={mode}
-          groupContext={mode === "group" ? chatGroupContext : null}
-        />
-      )}
-    </div>
+            <SidebarInset className="relative flex flex-col overflow-hidden">
+              {/* Background */}
+              <div
+                className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-70"
+                style={{
+                  backgroundImage: activeCharacter?.ui?.chatBackground
+                    ? `url('${activeCharacter.ui.chatBackground}')`
+                    : undefined,
+                  filter: "blur(1px) brightness(0.9)",
+                }}
+              />
+
+              {/* Header */}
+              <header className="relative z-20 flex h-16 shrink-0 items-center gap-2 border-b px-4 bg-background/70 backdrop-blur">
+                {activeCharacter?.color?.accent && (
+                  <div
+                    className={`absolute inset-0 -z-10 bg-gradient-to-br opacity-60 ${activeCharacter.color.accent}`}
+                  />
+                )}
+
+                <SidebarTrigger />
+                <Separator orientation="vertical" className="mr-2 h-4" />
+                <div className="min-w-0">
+                  <div className="truncate font-gensou text-sm">
+                    {activeCharacter?.name ?? "キャラを選択"}
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {activeSessionId ? "セッション: " + activeSessionId : "—"}
+                  </div>
+                </div>
+              </header>
+
+              {/* Chat */}
+              <div className="relative z-10 flex-1 overflow-hidden">
+                {activeSessionId ? (
+                  <Thread />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-muted-foreground">
+                    左のサイドバーからキャラを選択してください
+                  </div>
+                )}
+              </div>
+            </SidebarInset>
+          </div>
+        </SidebarProvider>
+      </TouhouUiProvider>
+    </AssistantRuntimeProvider>
   );
 }
 
