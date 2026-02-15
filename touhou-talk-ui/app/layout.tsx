@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
+import { TouhouThemeInit } from "@/components/TouhouThemeInit";
 
 export const metadata: Metadata = {
   title: "Touhou Talk",
@@ -13,7 +14,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ja">
+    <html lang="ja" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -22,7 +23,8 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-dvh bg-black text-neutral-100 antialiased">
+      <body className="min-h-dvh bg-background text-foreground antialiased">
+        <TouhouThemeInit />
         {children}
         <Analytics />
       </body>
