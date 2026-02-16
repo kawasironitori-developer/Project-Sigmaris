@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseBrowser } from "@/lib/supabaseClient";
 import { getSkipMapOnStart } from "@/lib/touhou-settings";
 import TopShell from "@/components/top/TopShell";
 
@@ -22,14 +22,14 @@ export default function TopPage() {
 
   useEffect(() => {
     const fetchUser = async () => {
-      const { data } = await supabase.auth.getUser();
+      const { data } = await supabaseBrowser().auth.getUser();
       setUser(data.user ?? null);
       setAuthChecked(true);
     };
 
     fetchUser();
 
-    const { data: listener } = supabase.auth.onAuthStateChange(() => {
+    const { data: listener } = supabaseBrowser().auth.onAuthStateChange(() => {
       fetchUser();
     });
 

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import type { User } from "@supabase/supabase-js";
 
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseBrowser } from "@/lib/supabaseClient";
 import FogOverlay from "@/components/top/FogOverlay";
 import YinYangLoader from "@/components/top/YinYangLoader";
 
@@ -23,14 +23,14 @@ export default function TopPage() {
 
   useEffect(() => {
     const fetchUser = async () => {
-      const { data } = await supabase.auth.getUser();
+      const { data } = await supabaseBrowser().auth.getUser();
       setUser(data.user ?? null);
       setAuthChecked(true);
     };
 
     fetchUser();
 
-    const { data: listener } = supabase.auth.onAuthStateChange(() => {
+    const { data: listener } = supabaseBrowser().auth.onAuthStateChange(() => {
       fetchUser();
     });
 

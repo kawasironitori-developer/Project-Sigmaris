@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { LayerId, MapLocation, DeviceType } from "@/lib/map/locations";
 import { CHARACTERS } from "@/data/characters";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseBrowser } from "@/lib/supabaseClient";
 
 /* =========================
  * Types
@@ -69,7 +69,7 @@ export default function WorldMap({ layer, backgroundSrc, locations }: Props) {
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getUser().then(({ data }) => {
+    supabaseBrowser().auth.getUser().then(({ data }) => {
       if (!mounted) return;
       setIsLoggedIn(Boolean(data.user));
     });

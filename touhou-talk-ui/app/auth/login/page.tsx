@@ -2,7 +2,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseBrowser } from "@/lib/supabaseClient";
 import TopShell from "@/components/top/TopShell";
 import { SiDiscord, SiGithub, SiGoogle } from "react-icons/si";
 
@@ -40,7 +40,7 @@ export default function LoginPage() {
       };
     }
 
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { error } = await supabaseBrowser().auth.signInWithOAuth({
       provider,
       options,
     });

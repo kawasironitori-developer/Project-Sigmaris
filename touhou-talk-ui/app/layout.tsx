@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { TouhouThemeInit } from "@/components/TouhouThemeInit";
+import { EnvGuard } from "@/components/EnvGuard";
 
 const siteUrl =
   process.env.NEXT_PUBLIC_SITE_URL ||
@@ -54,6 +55,13 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const publicConfig = {
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+    desktopEnvPath: process.env.TOUHOU_DESKTOP_ENV_PATH ?? "",
+    desktopUserDataDir: process.env.TOUHOU_DESKTOP_USERDATA_DIR ?? "",
+  };
+
   return (
     <html lang="ja" suppressHydrationWarning>
       <head>
@@ -63,10 +71,17 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Shippori+Mincho:wght@400;500;600;700&display=swap"
           rel="stylesheet"
         />
+        <script
+          // Expose public runtime config for the desktop build (env from userData file).
+          // This avoids relying on Next's compile-time NEXT_PUBLIC_* in the client bundle.
+          dangerouslySetInnerHTML={{
+            __html: `window.__TOUHOU_PUBLIC=${JSON.stringify(publicConfig)};`,
+          }}
+        />
       </head>
       <body className="min-h-dvh bg-background text-foreground antialiased">
         <TouhouThemeInit />
-        {children}
+        <EnvGuard>{children}</EnvGuard>
         <Analytics />
       </body>
     </html>

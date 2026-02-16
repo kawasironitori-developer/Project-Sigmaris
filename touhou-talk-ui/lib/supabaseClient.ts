@@ -29,6 +29,20 @@ function setDocumentCookie(name: string, value: string, options?: any) {
   document.cookie = parts.join("; ");
 }
 
+function readPublicEnv() {
+  const w = typeof window !== "undefined" ? (window as any) : null;
+  const cfg = w && typeof w.__TOUHOU_PUBLIC === "object" ? (w.__TOUHOU_PUBLIC as any) : null;
+  const url =
+    (cfg && typeof cfg.supabaseUrl === "string" ? cfg.supabaseUrl : "") ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    "";
+  const anon =
+    (cfg && typeof cfg.supabaseAnonKey === "string" ? cfg.supabaseAnonKey : "") ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    "";
+  return { url: String(url), anon: String(anon) };
+}
+
 /**
  * Supabase Browser Client
  *
@@ -37,10 +51,20 @@ function setDocumentCookie(name: string, value: string, options?: any) {
  * - auth / session / callback 対応済み
  * - App Router 正式対応
  */
-export const supabase: SupabaseClient = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  {
+let _client: SupabaseClient | null = null;
+
+export function supabaseBrowser(): SupabaseClient {
+  if (_client) return _client;
+  if (typeof window === "undefined") {
+    throw new Error("[supabaseClient] supabaseBrowser() called on server");
+  }
+
+  const { url, anon } = readPublicEnv();
+  if (!url || !anon) {
+    throw new Error("[supabaseClient] NEXT_PUBLIC_SUPABASE_URL / ANON_KEY missing");
+  }
+
+  _client = createBrowserClient(url, anon, {
     cookies: {
       getAll() {
         return parseDocumentCookies();
@@ -51,5 +75,7 @@ export const supabase: SupabaseClient = createBrowserClient(
         });
       },
     },
-  }
-);
+  });
+
+  return _client;
+}

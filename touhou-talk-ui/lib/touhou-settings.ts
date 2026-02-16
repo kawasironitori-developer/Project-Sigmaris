@@ -1,9 +1,11 @@
 "use client";
 
 export type TouhouTheme = "light" | "dark" | "sigmaris" | "soft";
+export type TouhouChatMode = "partner" | "roleplay" | "coach";
 
 const KEY_SKIP_MAP = "touhouTalk.skipMapOnStart";
 const KEY_THEME = "touhouTalk.theme";
+const KEY_CHAT_MODE = "touhouTalk.chatMode";
 
 export function getSkipMapOnStart(): boolean {
   if (typeof window === "undefined") return false;
@@ -38,3 +40,14 @@ export function applyThemeClass(theme: TouhouTheme) {
   if (theme === "soft") root.classList.add("soft");
 }
 
+export function getDefaultChatMode(): TouhouChatMode {
+  if (typeof window === "undefined") return "partner";
+  const v = window.localStorage.getItem(KEY_CHAT_MODE);
+  if (v === "partner" || v === "roleplay" || v === "coach") return v;
+  return "partner";
+}
+
+export function setDefaultChatMode(mode: TouhouChatMode) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(KEY_CHAT_MODE, mode);
+}

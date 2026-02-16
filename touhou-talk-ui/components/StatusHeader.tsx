@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseBrowser } from "@/lib/supabaseClient";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -16,14 +16,14 @@ export default function StatusHeader() {
 
   useEffect(() => {
     const fetchUser = async () => {
-      const { data } = await supabase.auth.getUser();
+      const { data } = await supabaseBrowser().auth.getUser();
       setUser(data.user ?? null);
       setAuthChecked(true);
     };
 
     fetchUser();
 
-    const { data: listener } = supabase.auth.onAuthStateChange(() => {
+    const { data: listener } = supabaseBrowser().auth.onAuthStateChange(() => {
       fetchUser();
     });
 
@@ -33,7 +33,7 @@ export default function StatusHeader() {
   }, []);
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    await supabaseBrowser().auth.signOut();
     router.push("/");
   };
 

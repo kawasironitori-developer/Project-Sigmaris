@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseBrowser } from "@/lib/supabaseClient";
 import {
   AssistantIf,
   useThreadListItem,
@@ -44,12 +44,12 @@ export const UserBlock: FC<{ className?: string }> = ({ className }) => {
 
   useEffect(() => {
     const fetchUser = async () => {
-      const { data } = await supabase.auth.getUser();
+      const { data } = await supabaseBrowser().auth.getUser();
       setUser(data.user ?? null);
     };
 
     fetchUser();
-    const { data: listener } = supabase.auth.onAuthStateChange(() => {
+    const { data: listener } = supabaseBrowser().auth.onAuthStateChange(() => {
       fetchUser();
     });
 

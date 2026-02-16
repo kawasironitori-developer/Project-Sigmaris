@@ -19,6 +19,9 @@ function clampInt(n: number, lo: number, hi: number) {
 }
 
 function exePath() {
+  const fromEnv = (process.env.AQUESTALK_TTS_EXE_PATH ?? "").trim();
+  if (fromEnv) return path.resolve(fromEnv);
+
   // Built locally via tools/aquestalk_tts_cmd/build.cmd
   return path.resolve(
     process.cwd(),

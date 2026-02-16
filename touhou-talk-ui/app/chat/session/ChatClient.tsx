@@ -25,6 +25,7 @@ import { Separator } from "@/components/ui/separator";
 
 import { CHARACTERS, getCharacterTtsConfig } from "@/data/characters";
 import { getGroupsByLocation, canEnableGroup, GroupDef } from "@/data/group";
+import { getDefaultChatMode } from "@/lib/touhou-settings";
 
 import {
   extractTextFromThreadMessageContent,
@@ -47,6 +48,7 @@ type SessionSummary = {
   mode: "single" | "group";
   layer: string | null;
   location: string | null;
+  chatMode: "partner" | "roleplay" | "coach";
 };
 
 type PanelGroupContext = {
@@ -396,6 +398,7 @@ export default function ChatClient() {
           mode,
           layer: currentLayer,
           location: currentLocationId,
+          chatMode: getDefaultChatMode(),
         }),
       });
 
@@ -404,11 +407,12 @@ export default function ChatClient() {
 
       const newSession: SessionSummary = {
         id: data.sessionId,
-        title: "譁ｰ縺励＞莨夊ｩｱ",
+        title: "新しい会話",
         characterId,
         mode,
         layer: currentLayer,
         location: currentLocationId,
+        chatMode: getDefaultChatMode(),
       };
 
       setSessions((prev) => [newSession, ...prev]);
@@ -432,6 +436,7 @@ export default function ChatClient() {
         mode,
         layer: currentLayer,
         location: currentLocationId,
+        chatMode: getDefaultChatMode(),
       }),
     });
 
@@ -445,6 +450,7 @@ export default function ChatClient() {
       mode,
       layer: currentLayer,
       location: currentLocationId,
+      chatMode: getDefaultChatMode(),
     };
 
     setSessions((prev) => [newSession, ...prev]);

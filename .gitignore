@@ -44,3 +44,5 @@ aquestalk/
 tools/aquestalk_tts_cmd/bin/
 tools/aquestalk_tts_cmd/obj/
 tools/aquestalk_tts_cmd/*.wav
+touhou-talk-ui/tools/desktop/.bundle/
+touhou-talk-ui/dist-desktop/

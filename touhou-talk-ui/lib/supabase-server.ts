@@ -19,8 +19,13 @@ const SUPABASE_ANON_KEY =
 
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  throw new Error("[supabase-server] SUPABASE_URL / ANON_KEY missing");
+function assertSupabaseConfigured() {
+  // IMPORTANT:
+  // Do not throw at module evaluation time. Next.js build may import API routes
+  // while collecting page data. We only enforce configuration at runtime.
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error("[supabase-server] SUPABASE_URL / ANON_KEY missing");
+  }
 }
 
 /* =========================
@@ -32,6 +37,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 export async function supabaseServer(): Promise<SupabaseClient> {
   const cookieStore = await cookies(); // ★ 必ず await
 
+  assertSupabaseConfigured();
   return createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     cookies: {
       getAll() {
@@ -58,6 +64,7 @@ export function supabaseAdmin(): SupabaseClient {
     throw new Error("[supabase-server] Missing SERVICE_ROLE_KEY");
   }
 
+  assertSupabaseConfigured();
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: {
       persistSession: false,

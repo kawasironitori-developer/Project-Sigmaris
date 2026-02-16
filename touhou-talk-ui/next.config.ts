@@ -12,6 +12,7 @@ const isDev = process.env.NODE_ENV !== "production";
 loadEnvConfig(rootDir, isDev);
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   // Ensure public runtime config is always inlined for client components.
   env: {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,

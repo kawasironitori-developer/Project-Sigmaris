@@ -6,20 +6,25 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
   applyThemeClass,
+  getDefaultChatMode,
   getSkipMapOnStart,
   getTheme,
+  setDefaultChatMode,
   setSkipMapOnStart,
   setTheme,
+  type TouhouChatMode,
   type TouhouTheme,
 } from "@/lib/touhou-settings";
 
 export default function SettingsPage() {
   const [skipMap, setSkipMap] = useState(false);
   const [theme, setThemeState] = useState<TouhouTheme>("dark");
+  const [chatMode, setChatMode] = useState<TouhouChatMode>("partner");
 
   useEffect(() => {
     setSkipMap(getSkipMapOnStart());
     setThemeState(getTheme());
+    setChatMode(getDefaultChatMode());
   }, []);
 
   const updateTheme = (t: TouhouTheme) => {
@@ -34,7 +39,7 @@ export default function SettingsPage() {
         <div>
           <h1 className="font-gensou text-2xl">設定</h1>
           <p className="text-muted-foreground text-sm">
-            起動動作とテーマを変更します
+            起動・テーマ・会話モードを調整します。
           </p>
         </div>
         <Button asChild variant="outline">
@@ -47,14 +52,14 @@ export default function SettingsPage() {
       <section className="rounded-2xl border bg-card/60 p-5">
         <h2 className="font-medium">起動</h2>
         <p className="mt-1 text-muted-foreground text-sm">
-          Touhou Talk を開いたときの遷移を設定します。
+          Touhou Talk を起動した直後の画面を設定します。
         </p>
 
         <div className="mt-4 flex items-center justify-between gap-4">
           <div>
             <div className="font-medium text-sm">マップをスキップ</div>
             <div className="text-muted-foreground text-xs">
-              マップ画面を飛ばしてチャット画面へ直行
+              起動後にマップを表示せず、チャット画面へ移動します
             </div>
           </div>
 
@@ -77,7 +82,7 @@ export default function SettingsPage() {
       <section className="rounded-2xl border bg-card/60 p-5">
         <h2 className="font-medium">テーマ</h2>
         <p className="mt-1 text-muted-foreground text-sm">
-          `touhou-test-ui` のテーマに加えて、柔らかいテーマを追加しています。
+          見た目のテーマを切り替えます。
         </p>
 
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -103,6 +108,31 @@ export default function SettingsPage() {
           />
         </div>
       </section>
+
+      <section className="rounded-2xl border bg-card/60 p-5">
+        <h2 className="font-medium">会話モード</h2>
+        <p className="mt-1 text-muted-foreground text-sm">
+          既定の会話モードです（新規セッション作成時に適用されます）。
+        </p>
+
+        <div className="mt-4">
+          <select
+            className="w-full rounded-xl border bg-background/60 px-4 py-3 text-sm outline-none transition focus:border-ring"
+            value={chatMode}
+            onChange={(e) => {
+              const v = e.currentTarget.value;
+              const next: TouhouChatMode =
+                v === "roleplay" ? "roleplay" : v === "coach" ? "coach" : "partner";
+              setChatMode(next);
+              setDefaultChatMode(next);
+            }}
+          >
+            <option value="partner">相棒（バランス）</option>
+            <option value="roleplay">ロールプレイ（再現優先）</option>
+            <option value="coach">コーチ（実用優先）</option>
+          </select>
+        </div>
+      </section>
     </div>
   );
 }
@@ -122,15 +152,11 @@ function ThemeButton({
       onClick={onClick}
       className={[
         "rounded-xl border px-4 py-3 text-left transition",
-        active
-          ? "border-ring bg-accent/70"
-          : "border-border hover:bg-accent/40",
+        active ? "border-ring bg-accent/70" : "border-border hover:bg-accent/40",
       ].join(" ")}
     >
       <div className="font-medium text-sm">{label}</div>
-      <div className="text-muted-foreground text-xs">
-        {active ? "選択中" : " "}
-      </div>
+      <div className="text-muted-foreground text-xs">{active ? "選択中" : " "}</div>
     </button>
   );
 }

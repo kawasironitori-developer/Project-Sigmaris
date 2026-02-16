@@ -7,6 +7,9 @@
     "dev:raw": "next dev",
     "build": "next build",
     "start": "next start",
+    "desktop:dev": "cross-env TOUHOU_DESKTOP_DEV_URL=http://127.0.0.1:3000 electron tools/desktop/main.cjs",
+    "desktop:prepare": "next build && node tools/desktop/prepare-next.cjs",
+    "desktop:dist": "npm run desktop:prepare && electron-builder --win --x64",
     "lint": "eslint"
   },
   "dependencies": {
@@ -48,6 +51,34 @@
     "@types/react": "18.2.66",
     "@types/react-dom": "18.2.22",
     "eslint": "9.1.1",
-    "eslint-config-next": "16.1.4"
+    "eslint-config-next": "16.1.4",
+    "cross-env": "^7.0.3",
+    "electron": "^36.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "main": "tools/desktop/main.cjs",
+  "build": {
+    "appId": "dev.sigmaris.touhou-talk",
+    "productName": "Touhou Talk",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "tools/desktop/main.cjs"
+    ],
+    "extraResources": [
+      {
+        "from": "tools/desktop/.bundle",
+        "to": "bundle",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
   }
 }
