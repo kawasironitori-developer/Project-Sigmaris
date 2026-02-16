@@ -14,6 +14,17 @@ Instead of relying on “whatever the model does inside a chat session”, Sigma
 - Phase02: Temporal identity + subjectivity modes + failure detection (health / stability budget)
 - Phase03: Hybrid intent routing (category + vector) + dialogue state machine + safety override + observability
 
+## Projects (what each folder is)
+
+Sigmaris is split into a backend “engine” and multiple UIs that consume it.
+
+| Project | What it is | Link |
+|---|---|---|
+| `sigmaris_core` | **The core engine** (Persona OS API). Memory/identity/drift/state/safety/observability live here. | `sigmaris_core/README.md` |
+| `sigmaris-os` | **Reference UI** that exposes the core faithfully (chat + dashboards). | `sigmaris-os/README.md` |
+| `touhou-talk-ui` | **Variant UI** to stress-test the engine’s generality (character chat UX, assistant-ui, optional desktop wrapper). | `touhou-talk-ui/README.md` |
+| `supabase` | Unified schema for persistence (`common_*`). | `supabase/RESET_TO_COMMON.sql` |
+
 This repository includes:
 
 - **Backend (Python / FastAPI)**: `POST /persona/chat` (JSON) and `POST /persona/chat/stream` (SSE streaming)

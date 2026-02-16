@@ -1,4 +1,6 @@
-# Touhou Character Chat UI (Prototype)
+**Languages:** English | [日本語](README.ja.md)
+
+# Touhou Character Chat UI (Variant UI)
 
 This repository contains a **fan-made prototype chat UI** inspired by  
 characters from **Touhou Project**.
@@ -14,6 +16,18 @@ smoothly on **desktop, tablet, and mobile devices**.
 A live demo is available on Vercel:
 
 https://touhou-chat.vercel.app/
+
+---
+
+## Position in Project Sigmaris
+
+`touhou-talk-ui` is a **variant UI** for Project Sigmaris:
+
+- It uses `sigmaris-core` as the engine (`/persona/chat` + `/persona/chat/stream`)
+- It intentionally explores a different UX (character chat + assistant-ui components)
+- It exists to validate the engine’s generality (same core, different UI)
+
+If you want the “reference UI” for the engine, see `sigmaris-os/`.
 
 ---
 
@@ -137,3 +151,15 @@ Team Shanghai Alice.
 - Recommended:
   - Set `TOUHOU_ALLOWED_ORIGINS` and `TOUHOU_RATE_LIMIT_MS`
   - Keep Phase04 toggles OFF unless you add allowlists / limits in production
+
+---
+
+## Desktop build (Windows, optional)
+
+This app can be wrapped as a Windows desktop app (Electron).
+
+From `touhou-talk-ui/`:
+
+```bash
+npm run desktop:dist
+```

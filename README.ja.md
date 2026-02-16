@@ -15,6 +15,17 @@ LLMの「応答の賢さ」そのものではなく、次のような **運用�
 - Phase02: 時間構造（inertia / stability budget）+ Subjectivity FSM + Failure Detection
 - Phase03: 意図ルーティング（カテゴリ + ベクトル）+ 会話状態機械（DSM）+ Safety Override + Observability
 
+## 各プロジェクトの位置づけ
+
+Sigmaris は「コア（エンジン）」と、それを利用する複数のUIに分けています。
+
+| プロジェクト | 役割 | リンク |
+|---|---|---|
+| `sigmaris_core` | **すべてのコア**（Persona OS API）。記憶/同一性/ドリフト/状態/安全/可観測性はここに集約。 | `sigmaris_core/README.ja.md` |
+| `sigmaris-os` | **コアを忠実に表に出すUI**（チャット + ダッシュボード）。 | `sigmaris-os/README.ja.md` |
+| `touhou-talk-ui` | **コアをエンジンとして汎用性を試す分岐UI**（キャラチャットUX/assistant-ui/任意でデスクトップ化）。 | `touhou-talk-ui/README.ja.md` |
+| `supabase` | 永続化の統一スキーマ（`common_*`）。 | `supabase/RESET_TO_COMMON.sql` |
+
 このリポジトリに含まれるもの:
 
 - **Backend (Python/FastAPI)**: `POST /persona/chat`（JSON）と `POST /persona/chat/stream`（SSEストリーミング）
