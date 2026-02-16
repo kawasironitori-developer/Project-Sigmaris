@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import StatusHeader from "@/components/StatusHeader";
 import { supabaseServer } from "@/lib/supabase-server";
 
 export default async function ChatLayout({
@@ -16,11 +15,6 @@ export default async function ChatLayout({
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
-      <div className="h-12 shrink-0">
-        <StatusHeader />
-      </div>
-      <main className="flex-1 overflow-hidden">{children}</main>
-    </div>
+    <div className="flex h-screen flex-col overflow-hidden">{children}</div>
   );
 }

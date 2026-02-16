@@ -1,17 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { Map as MapIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import Link from "next/link";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarHeader,
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { ThreadList } from "@/components/assistant-ui/thread-list";
+import { ThreadList, UserBlock } from "@/components/assistant-ui/thread-list";
 
 type Character = {
   id: string;
@@ -45,8 +47,17 @@ export function TouhouSidebar({
   return (
     <Sidebar className={cn(className)} {...props}>
       <SidebarHeader className="border-b px-3 py-3">
-        {isMobile && (
-          <div className="flex justify-end">
+        <div className="flex items-center justify-between gap-2">
+          <Link
+            href="/map/session/gensokyo"
+            onClick={handleClose}
+            className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition"
+          >
+            <MapIcon className="size-4" />
+            マップに戻る
+          </Link>
+
+          {isMobile && (
             <button
               type="button"
               onClick={handleClose}
@@ -55,8 +66,8 @@ export function TouhouSidebar({
             >
               <X className="size-4" />
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         <div className="px-1">
           <h1 className="font-gensou text-lg tracking-wide text-sidebar-foreground">
@@ -117,6 +128,10 @@ export function TouhouSidebar({
       </SidebarContent>
 
       <SidebarRail />
+
+      <SidebarFooter className="border-t p-3">
+        <UserBlock className="bg-background/80" />
+      </SidebarFooter>
     </Sidebar>
   );
 }

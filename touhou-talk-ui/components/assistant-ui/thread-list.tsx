@@ -29,7 +29,6 @@ export const ThreadList: FC = () => {
   return (
     <ThreadListPrimitive.Root className="aui-root aui-thread-list-root flex flex-col gap-1">
       <ThreadListNew />
-      <UserBlock />
       <AssistantIf condition={({ threads }) => threads.isLoading}>
         <ThreadListSkeleton />
       </AssistantIf>
@@ -40,7 +39,7 @@ export const ThreadList: FC = () => {
   );
 };
 
-const UserBlock: FC = () => {
+export const UserBlock: FC<{ className?: string }> = ({ className }) => {
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
@@ -79,7 +78,12 @@ const UserBlock: FC = () => {
   const email = user?.email ?? "";
 
   return (
-    <div className="my-2 rounded-xl border bg-background/60 px-3 py-3 text-foreground">
+    <div
+      className={cn(
+        "rounded-xl border bg-background/60 px-3 py-3 text-foreground",
+        className,
+      )}
+    >
       <div className="flex items-center gap-3">
         <Avatar className="size-9">
           <AvatarImage src={avatarUrl ?? undefined} alt="User avatar" />
