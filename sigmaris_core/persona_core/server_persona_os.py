@@ -62,7 +62,7 @@ log = get_logger(__name__)
 # `.env` から Supabase/モデル設定を読み込めるようにする（環境変数が優先）
 load_dotenv(override=False)
 
-DEFAULT_MODEL = os.getenv("SIGMARIS_PERSONA_MODEL", "gpt-4.1")
+DEFAULT_MODEL = os.getenv("SIGMARIS_PERSONA_MODEL", "gpt-5.2")
 DEFAULT_EMBEDDING_MODEL = os.getenv("SIGMARIS_EMBEDDING_MODEL", "text-embedding-3-small")
 DEFAULT_USER_ID = os.getenv("SIGMARIS_DEFAULT_USER_ID", "default-user")
 

@@ -52,7 +52,7 @@ def analyze_image_bytes(
         _env("SIGMARIS_IMAGE_VISION_MODEL")
         or _env("SIGMARIS_VISION_MODEL")
         or _env("OPENAI_VISION_MODEL")
-        or "gpt-4o-mini"
+        or "gpt-5-mini"
     )
 
     b64 = base64.b64encode(data).decode("ascii")
@@ -81,7 +81,7 @@ def analyze_image_bytes(
         resp = client.chat.completions.create(
             model=model,
             temperature=0.2,
-            max_tokens=int(max_tokens),
+            max_completion_tokens=int(max_tokens),
             messages=[
                 {"role": "system", "content": system},
                 {
@@ -123,4 +123,3 @@ def analyze_image_bytes(
                 notes.append(x.strip())
 
     return {"caption": caption[:400], "detected_text": detected_text[:4000], "objects": objects, "notes": notes}
-

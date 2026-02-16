@@ -52,7 +52,7 @@ export class MetaReflectionEngine {
        * 2) LLM 呼び出し
        * ------------------------------------- */
       const res = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-5-mini",
         temperature: 0.4,
         messages: [
           {

@@ -4,7 +4,7 @@ import OpenAI from "openai";
 
 // 任意: .env で上書き
 const TRY_COOLDOWN_MS = Number(process.env.TRY_COOLDOWN_MS || 15000);
-const TRY_MODEL = process.env.TRY_MODEL || "gpt-4o-mini";
+const TRY_MODEL = process.env.TRY_MODEL || "gpt-5-mini";
 
 // メモリ簡易レートリミット（サーバレスだと弱い＝ソフトガード）
 const recentMap = new Map<string, number>();
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
         { role: "user", content: userText },
       ],
       temperature: 0.7,
-      max_tokens: 320,
+      max_completion_tokens: 320,
     });
 
     const raw =

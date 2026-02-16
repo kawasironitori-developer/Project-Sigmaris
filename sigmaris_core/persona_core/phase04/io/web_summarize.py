@@ -42,7 +42,7 @@ def summarize_text(
     if not api_key:
         raise WebSummarizeError("OPENAI_API_KEY missing")
 
-    model = _env("SIGMARIS_WEB_FETCH_SUMMARY_MODEL") or "gpt-4o-mini"
+    model = _env("SIGMARIS_WEB_FETCH_SUMMARY_MODEL") or "gpt-5-mini"
     client = OpenAI(api_key=api_key, timeout=float(os.getenv("SIGMARIS_WEB_FETCH_SUMMARY_TIMEOUT_SEC", "60") or "60"))
 
     # Trim input to a bounded size to control cost
@@ -74,7 +74,7 @@ def summarize_text(
         resp = client.chat.completions.create(
             model=model,
             temperature=0.2,
-            max_tokens=int(max_tokens),
+            max_completion_tokens=int(max_tokens),
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -125,4 +125,3 @@ def summarize_text(
         confidence = 1.0
 
     return {"summary": summary[:1200], "key_points": key_points, "entities": entities, "confidence": confidence}
-

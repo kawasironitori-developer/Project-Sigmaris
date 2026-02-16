@@ -106,12 +106,12 @@ function selectModel(
     0.2 * lengthScore +
     0.1 * intentScore;
 
-  let model = "gpt-4o-mini";
-  if (load >= 0.7) model = "gpt-5";
+  let model = "gpt-5-mini";
+  if (load >= 0.7) model = "gpt-5.2";
   else if (load >= 0.45) model = "gpt-5-mini";
 
-  const temperature = model === "gpt-5" ? 0.6 : 0.7;
-  const max_tokens = model === "gpt-5" ? 320 : 220;
+  const temperature = model === "gpt-5.2" ? 0.6 : 0.7;
+  const max_tokens = model === "gpt-5.2" ? 320 : 220;
 
   return {
     model,
@@ -270,7 +270,7 @@ export async function POST(req: Request) {
       ],
       temperature: samplingTemperature, // PersonaOS の推奨温度を優先
       top_p: samplingTopP,
-      max_tokens: sel.max_tokens,
+      max_completion_tokens: sel.max_tokens,
     });
 
     const draft =

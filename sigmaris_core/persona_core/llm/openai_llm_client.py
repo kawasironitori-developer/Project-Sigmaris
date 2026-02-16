@@ -43,7 +43,7 @@ class OpenAILLMClient(LLMClientLike):
     def __init__(
         self,
         *,
-        model: str = "gpt-4.1",
+        model: str = "gpt-5.2",
         temperature: float = 0.7,
         max_tokens: int = 1200,
         max_tokens_cap: Optional[int] = None,

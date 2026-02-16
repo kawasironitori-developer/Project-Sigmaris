@@ -145,7 +145,7 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
 
       // === LLM 呼び出し ===
       const res = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-5-mini",
         messages: [
           {
             role: "system",
@@ -308,7 +308,7 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
       ].join("\n");
 
       const res = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-5-mini",
         messages: [
           {
             role: "system",
@@ -318,7 +318,7 @@ curiosity: ${(persona.curiosity ?? 0.5).toFixed(2)}
           { role: "user", content: prompt },
         ],
         temperature: 0.7,
-        max_tokens: 320,
+        max_completion_tokens: 320,
       });
 
       const reflectionText =

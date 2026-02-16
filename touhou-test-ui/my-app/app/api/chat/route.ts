@@ -96,7 +96,7 @@ ${system ?? ""}
 `;
 
   const result = streamText({
-    model: openai.responses("gpt-5-nano"),
+    model: openai.responses("gpt-5.2"),
     messages: await convertToModelMessages(messages),
     system: mergedSystem,
     tools: {
