@@ -31,7 +31,7 @@ from fastapi import Header
 from fastapi import Depends, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from persona_core.storage.env_loader import load_dotenv
 from persona_core.controller.persona_controller import PersonaController, PersonaControllerConfig
@@ -456,7 +456,14 @@ class InMemoryPersonaDB:
 class ChatRequest(BaseModel):
     user_id: Optional[str] = None
     session_id: Optional[str] = None
-    message: str
+    # Backward compatible: clients may send either `message` or `messages` (Vercel AI SDK style).
+    message: str = ""
+    # Optional: Vercel AI SDK style messages (UIMessage-like dicts). If provided, core extracts the latest user message.
+    messages: Optional[List[Dict[str, Any]]] = None
+    # Optional: short-term chat history for better immediate continuity (list of {role,content} or UIMessage-like dicts).
+    history: Optional[List[Dict[str, Any]]] = None
+    # Optional: additional system prompt injection (treated as external persona/system, never replaces core OS prompt).
+    system: Optional[str] = None
 
     # Optional character/persona injection (safe, ignored unless provided)
     character_id: Optional[str] = None
@@ -472,10 +479,255 @@ class ChatRequest(BaseModel):
     # Phase04: attachment metadata references (bytes are uploaded separately)
     attachments: Optional[List[Dict[str, Any]]] = None
 
+    @model_validator(mode="after")
+    def _require_message_or_messages(self) -> "ChatRequest":
+        has_message = isinstance(self.message, str) and bool((self.message or "").strip())
+        has_messages = isinstance(self.messages, list) and len(self.messages) > 0
+        if not has_message and not has_messages:
+            raise ValueError("Either `message` or `messages` is required")
+        return self
+
 
 class ChatResponse(BaseModel):
     reply: str
     meta: Dict[str, Any]
+
+def _safe_str(v: Any) -> str:
+    try:
+        return str(v)
+    except Exception:
+        return ""
+
+
+def _extract_text_from_ui_content(content: Any) -> str:
+    """
+    Best-effort extraction of plain text from Vercel AI SDK style message content.
+    Accepts:
+      - string
+      - list of parts: {"type":"text","text":"..."} or {"text":"..."} or mixed
+      - dict with "text" or "content"
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        if isinstance(content.get("text"), str):
+            return content.get("text") or ""
+        if isinstance(content.get("content"), str):
+            return content.get("content") or ""
+        # Some UIs nest as { type, ... } - ignore non-text here.
+        return ""
+    if isinstance(content, list):
+        parts: List[str] = []
+        for p in content:
+            if isinstance(p, str):
+                if p.strip():
+                    parts.append(p)
+                continue
+            if isinstance(p, dict):
+                # Common shapes:
+                # - { type: "text", text: "..." }
+                # - { text: "..." }
+                # - { type: "input_text", text: "..." }
+                t = p.get("text")
+                if isinstance(t, str) and t.strip():
+                    parts.append(t)
+                    continue
+                # fallback keys
+                c = p.get("content")
+                if isinstance(c, str) and c.strip():
+                    parts.append(c)
+                    continue
+        return "\n".join(parts).strip()
+    return ""
+
+
+def _normalize_history_items(items: Any) -> List[Dict[str, str]]:
+    out: List[Dict[str, str]] = []
+    if not isinstance(items, list):
+        return out
+    for m in items:
+        if not isinstance(m, dict):
+            continue
+        role = _safe_str(m.get("role") or "").strip().lower()
+        if role in ("ai",):
+            role = "assistant"
+        if role not in ("user", "assistant"):
+            continue
+        content = _extract_text_from_ui_content(m.get("content"))
+        if not content.strip():
+            # some sources use "text" directly
+            content = _safe_str(m.get("text") or "")
+        content = content.strip()
+        if not content:
+            continue
+        out.append({"role": role, "content": content})
+    return out
+
+
+def _derive_message_and_history(req: ChatRequest) -> tuple[str, List[Dict[str, str]]]:
+    """
+    Derive (effective_message, client_history) from request fields.
+    Priority:
+      - effective_message: req.message if non-empty else last user message in req.messages
+      - client_history: req.history if provided else derived from req.messages (excluding the effective user message)
+    """
+    eff_message = (req.message or "").strip()
+    msgs_norm = _normalize_history_items(req.messages)
+    if not eff_message and msgs_norm:
+        # pick the last user message as the effective turn
+        for m in reversed(msgs_norm):
+            if m.get("role") == "user" and m.get("content", "").strip():
+                eff_message = m["content"].strip()
+                break
+
+    history_norm = _normalize_history_items(req.history)
+    if not history_norm and msgs_norm:
+        history_norm = msgs_norm[:]
+        # drop trailing effective user message if present
+        if history_norm and history_norm[-1].get("role") == "user":
+            tail = (history_norm[-1].get("content") or "").strip()
+            if tail and eff_message and tail == eff_message:
+                history_norm = history_norm[:-1]
+
+    # clamp
+    max_msgs = int(os.getenv("SIGMARIS_CLIENT_HISTORY_MAX_MESSAGES", "16") or "16")
+    if max_msgs > 0 and len(history_norm) > max_msgs:
+        history_norm = history_norm[-max_msgs:]
+    max_chars = int(os.getenv("SIGMARIS_CLIENT_HISTORY_MAX_CHARS_PER_MESSAGE", "1200") or "1200")
+    if max_chars > 0:
+        for m in history_norm:
+            c = (m.get("content") or "").strip()
+            if len(c) > max_chars:
+                m["content"] = c[: max(0, max_chars - 1)] + "…"
+
+    return eff_message, history_norm
+
+
+def _merge_external_system(persona_system: Optional[str], system: Optional[str]) -> Optional[str]:
+    a = (persona_system or "").strip()
+    b = (system or "").strip()
+    if a and b:
+        return a + "\n\n" + b
+    return a or b or None
+
+
+def _attachment_excerpt_from_parsed(parsed: Any) -> str:
+    if not isinstance(parsed, dict):
+        return ""
+    for k in ("parsed_excerpt", "raw_excerpt", "text_excerpt", "content_summary", "excerpt_summary"):
+        v = parsed.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    # image OCR shape
+    ocr = parsed.get("ocr")
+    if isinstance(ocr, dict):
+        v = ocr.get("detected_text")
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _build_attachments_context(
+    *,
+    attachments: Optional[List[Dict[str, Any]]],
+    auth: Optional[AuthContext],
+) -> str:
+    """
+    Convert attachments metadata into a bounded context block.
+    If SIGMARIS_CHAT_AUTO_PARSE_ATTACHMENTS is enabled, attempts to parse missing excerpts via attachment_id.
+    """
+    atts = attachments if isinstance(attachments, list) else []
+    if not atts:
+        return ""
+
+    auto_parse = os.getenv("SIGMARIS_CHAT_AUTO_PARSE_ATTACHMENTS", "").strip().lower() in ("1", "true", "yes", "on")
+    max_items = int(os.getenv("SIGMARIS_CHAT_ATTACHMENTS_MAX_ITEMS", "3") or "3")
+    max_excerpt = int(os.getenv("SIGMARIS_CHAT_ATTACHMENTS_MAX_EXCERPT_CHARS", "1200") or "1200")
+
+    from persona_core.phase04.parsing.file_parser import parse_file_bytes  # local import
+
+    lines: List[str] = ["# Attachments (Phase04)"]
+    count = 0
+    for raw in atts[: max(0, max_items)]:
+        if not isinstance(raw, dict):
+            continue
+        attachment_id = raw.get("attachment_id")
+        if not isinstance(attachment_id, str) or not attachment_id.strip():
+            continue
+
+        file_name = _safe_str(raw.get("file_name") or raw.get("name") or "").strip()
+        mime_type = _safe_str(raw.get("mime_type") or "").strip()
+        kind_hint = _safe_str(raw.get("kind") or "").strip() or None
+
+        excerpt = ""
+        parsed_excerpt = raw.get("parsed_excerpt")
+        if isinstance(parsed_excerpt, str) and parsed_excerpt.strip():
+            excerpt = parsed_excerpt.strip()
+        elif auto_parse:
+            # Best-effort: download bytes and parse here (same auth rules as /io/parse).
+            try:
+                data: Optional[bytes] = None
+                meta: Dict[str, Any] = {}
+                if _supabase is not None and _storage is not None and auth is not None:
+                    persona_db = SupabasePersonaDB(_supabase)
+                    row = persona_db.load_attachment(attachment_id=str(attachment_id))
+                    if not row:
+                        raise RuntimeError("attachment not found")
+                    owner = row.get("user_id")
+                    if owner and str(owner) != str(auth.user_id):
+                        raise RuntimeError("forbidden")
+                    bucket_id = str(row.get("bucket_id") or _storage_bucket)
+                    object_path = str(row.get("object_path") or "")
+                    if not object_path:
+                        raise RuntimeError("missing object_path")
+                    data = _storage.download(bucket_id=bucket_id, object_path=object_path)
+                    meta = row if isinstance(row, dict) else {}
+                else:
+                    base_dir = os.getenv("SIGMARIS_UPLOAD_DIR") or os.path.join("sigmaris_core", "data", "uploads")
+                    path = os.path.join(base_dir, str(attachment_id))
+                    meta_path = path + ".json"
+                    if not os.path.exists(path) or not os.path.isfile(path):
+                        raise RuntimeError("attachment not found")
+                    if _auth_required and auth is not None and os.path.exists(meta_path):
+                        try:
+                            with open(meta_path, "r", encoding="utf-8") as f:
+                                meta = json.load(f) or {}
+                            owner = meta.get("user_id")
+                            if owner and str(owner) != str(auth.user_id):
+                                raise RuntimeError("forbidden")
+                        except Exception:
+                            pass
+                    with open(path, "rb") as f:
+                        data = f.read()
+                if data is not None:
+                    pk, parsed = parse_file_bytes(
+                        data=data,
+                        file_name=file_name or _safe_str(meta.get("file_name") or ""),
+                        mime_type=mime_type or _safe_str(meta.get("mime_type") or ""),
+                        kind=kind_hint,
+                    )
+                    _ = pk
+                    excerpt = _attachment_excerpt_from_parsed(parsed)
+            except Exception:
+                excerpt = ""
+
+        count += 1
+        head = f"[{count}] {file_name or '(unnamed)'}"
+        if mime_type:
+            head += f" ({mime_type})"
+        head += f" id={attachment_id}"
+        lines.append(head)
+        if excerpt:
+            ex = excerpt.strip()
+            if max_excerpt > 0 and len(ex) > max_excerpt:
+                ex = ex[: max(0, max_excerpt - 1)] + "…"
+            lines.append(ex)
+
+    if count <= 0:
+        return ""
+    return "\n".join(lines).strip()
 
 
 # =============================================================
@@ -761,17 +1013,24 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
     user_id = (auth.user_id if auth is not None else (req.user_id or DEFAULT_USER_ID))
     session_id = req.session_id or f"{user_id}:{uuid.uuid4().hex}"
 
-    overload_score = _estimate_overload_score(req.message)
+    effective_message, client_history = _derive_message_and_history(req)
+    external_system = _merge_external_system(req.persona_system, req.system)
+    attachments_ctx = _build_attachments_context(attachments=req.attachments, auth=auth)
+    if attachments_ctx:
+        effective_message = (effective_message + "\n\n" + attachments_ctx).strip()
+
+    overload_score = _estimate_overload_score(effective_message)
 
     preq = PersonaRequest(
         user_id=user_id,
         session_id=session_id,
-        message=req.message,
+        message=effective_message,
         context={
             "_trace_id": trace_id,
             **({"character_id": req.character_id} if req.character_id else {}),
-            **({"persona_system": req.persona_system} if req.persona_system else {}),
+            **({"persona_system": external_system} if external_system else {}),
             **({"gen": req.gen} if isinstance(req.gen, dict) and req.gen else {}),
+            **({"client_history": client_history} if client_history else {}),
         },
     )
 
@@ -930,8 +1189,8 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
         fields={
             "user_id": user_id,
             "session_id": session_id,
-            "message_len": len(req.message or ""),
-            "message_preview": preview_text(req.message) if TRACE_INCLUDE_TEXT else "",
+            "message_len": len(effective_message or ""),
+            "message_preview": preview_text(effective_message) if TRACE_INCLUDE_TEXT else "",
             "overload_score": overload_score,
             "safety_flag": safety.safety_flag,
             "risk_score": safety.risk_score,
@@ -955,7 +1214,7 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
         phase04_meta = rt.run_for_turn(
             user_id=user_id,
             session_id=session_id,
-            message=req.message,
+            message=effective_message,
             trace_id=trace_id,
             persist=phase04_db,
             attachments=req.attachments if isinstance(req.attachments, list) else None,
@@ -1049,17 +1308,24 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
 
     user_id = (auth.user_id if auth is not None else (req.user_id or DEFAULT_USER_ID))
     session_id = req.session_id or f"{user_id}:{uuid.uuid4().hex}"
-    overload_score = _estimate_overload_score(req.message)
+    effective_message, client_history = _derive_message_and_history(req)
+    external_system = _merge_external_system(req.persona_system, req.system)
+    attachments_ctx = _build_attachments_context(attachments=req.attachments, auth=auth)
+    if attachments_ctx:
+        effective_message = (effective_message + "\n\n" + attachments_ctx).strip()
+
+    overload_score = _estimate_overload_score(effective_message)
 
     preq = PersonaRequest(
         user_id=user_id,
         session_id=session_id,
-        message=req.message,
+        message=effective_message,
         context={
             "_trace_id": trace_id,
             **({"character_id": req.character_id} if req.character_id else {}),
-            **({"persona_system": req.persona_system} if req.persona_system else {}),
+            **({"persona_system": external_system} if external_system else {}),
             **({"gen": req.gen} if isinstance(req.gen, dict) and req.gen else {}),
+            **({"client_history": client_history} if client_history else {}),
         },
     )
 
@@ -1242,7 +1508,7 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
                         "v0": v0,
                         "controller_meta": result.meta,
                         "io": {
-                            "message_preview": preview_text(req.message) if TRACE_INCLUDE_TEXT else "",
+                            "message_preview": preview_text(effective_message) if TRACE_INCLUDE_TEXT else "",
                             "reply_preview": preview_text(reply_text) if TRACE_INCLUDE_TEXT else "",
                         },
                         "phase04": None,
@@ -1253,7 +1519,7 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
                         meta["phase04"] = rt.run_for_turn(
                             user_id=user_id,
                             session_id=session_id,
-                            message=req.message,
+                            message=effective_message,
                             trace_id=trace_id,
                             persist=phase04_db,
                             attachments=req.attachments if isinstance(req.attachments, list) else None,

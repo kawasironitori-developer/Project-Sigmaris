@@ -48,6 +48,22 @@ function coreBaseUrl() {
   return String(raw).replace(/\/+$/, "");
 }
 
+function enforceOrigin(req: Request) {
+  const allowedRaw = String(process.env.SIGMARIS_ALLOWED_ORIGINS ?? "").trim();
+  const reqOrigin = req.headers.get("origin");
+  const sameOrigin = new URL(req.url).origin;
+
+  if (!reqOrigin) return;
+
+  const allowed = allowedRaw
+    ? allowedRaw.split(",").map((s) => s.trim()).filter(Boolean)
+    : [sameOrigin];
+
+  if (!allowed.includes(reqOrigin)) {
+    throw new Error(`Origin not allowed: ${reqOrigin}`);
+  }
+}
+
 function clampText(s: string, n: number) {
   const t = String(s ?? "");
   if (t.length <= n) return t;
@@ -522,6 +538,12 @@ export async function POST(req: Request) {
   const step: any = { phase: "start" };
 
   try {
+    try {
+      enforceOrigin(req);
+    } catch {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const contentType = req.headers.get("content-type") ?? "";
     let rawUserText = "";
     let lang: string | null = null;
@@ -557,6 +579,35 @@ export async function POST(req: Request) {
 
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized", step }, { status: 401 });
+    }
+
+    // Basic per-user rate limit (best-effort).
+    const minIntervalMsRaw = Number(process.env.SIGMARIS_RATE_LIMIT_MS ?? "800");
+    const minIntervalMs = Number.isFinite(minIntervalMsRaw)
+      ? Math.max(0, Math.min(60_000, minIntervalMsRaw))
+      : 800;
+    if (minIntervalMs > 0) {
+      try {
+        const sb = getSupabaseServer();
+        const { data } = await sb
+          .from("common_messages")
+          .select("created_at")
+          .eq("user_id", user.id)
+          .eq("app", "sigmaris")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const lastIso = (data as any)?.created_at;
+        const lastTs = typeof lastIso === "string" ? Date.parse(lastIso) : NaN;
+        if (Number.isFinite(lastTs) && Date.now() - lastTs < minIntervalMs) {
+          return NextResponse.json(
+            { error: "Rate limited" },
+            { status: 429, headers: { "Retry-After": String(Math.ceil(minIntervalMs / 1000)) } }
+          );
+        }
+      } catch {
+        // ignore
+      }
     }
 
     const {

@@ -26,9 +26,7 @@
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "dump_all_code.ts", "scripts", "tools"]
+  "exclude": ["node_modules", ".next", "dump_all_code.ts", "scripts", "tools"]
 }

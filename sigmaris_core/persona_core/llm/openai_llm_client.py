@@ -101,11 +101,29 @@ class OpenAILLMClient(LLMClientLike):
     # Generation helpers
     # --------------------------
 
-    def _build_messages(self, *, system_prompt: str, user_text: str) -> List[Dict[str, str]]:
-        return [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_text},
-        ]
+    def _build_messages(
+        self,
+        *,
+        system_prompt: str,
+        user_text: str,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> List[Dict[str, str]]:
+        msgs: List[Dict[str, str]] = [{"role": "system", "content": (system_prompt or "").strip()}]
+        if isinstance(history, list) and history:
+            for m in history:
+                if not isinstance(m, dict):
+                    continue
+                role = str(m.get("role") or "").strip().lower()
+                if role in ("ai",):
+                    role = "assistant"
+                if role not in ("user", "assistant"):
+                    continue
+                content = str(m.get("content") or "").strip()
+                if not content:
+                    continue
+                msgs.append({"role": role, "content": content})
+        msgs.append({"role": "user", "content": (user_text or "").strip()})
+        return msgs
 
     def _phase03_dialogue_instructions(self, state: Optional[str]) -> Optional[str]:
         """
@@ -528,6 +546,15 @@ class OpenAILLMClient(LLMClientLike):
             system_prompt_with_persona = system_prompt_with_persona + "\n\n# External Persona System\n" + extra_system.strip()
 
         user_text = req.message or ""
+
+        client_history: List[Dict[str, str]] = []
+        try:
+            ch = (getattr(req, "metadata", None) or {}).get("client_history")
+            if isinstance(ch, list):
+                client_history = ch  # expected normalized: [{role, content}]
+        except Exception:
+            client_history = []
+
         if global_state.state == PersonaGlobalState.SILENT:
             user_text = "（SILENTモード）\n\n" + user_text
 
@@ -567,7 +594,11 @@ class OpenAILLMClient(LLMClientLike):
                         quality_mode=quality_mode,
                     )
 
-                messages = self._build_messages(system_prompt=system_prompt_with_persona, user_text=user_text)
+                messages = self._build_messages(
+                    system_prompt=system_prompt_with_persona,
+                    user_text=user_text,
+                    history=client_history,
+                )
                 return self._complete_with_continuations(messages=messages, temperature=temperature, max_tokens=max_tokens)
 
             except Exception as e:
@@ -646,6 +677,15 @@ class OpenAILLMClient(LLMClientLike):
             system_prompt_with_persona = system_prompt_with_persona + "\n\n# External Persona System\n" + extra_system.strip()
 
         user_text = req.message or ""
+
+        client_history: List[Dict[str, str]] = []
+        try:
+            ch = (getattr(req, "metadata", None) or {}).get("client_history")
+            if isinstance(ch, list):
+                client_history = ch  # expected normalized: [{role, content}]
+        except Exception:
+            client_history = []
+
         if global_state.state == PersonaGlobalState.SILENT:
             user_text = "（SILENTモード）\n\n" + user_text
 
@@ -704,7 +744,11 @@ class OpenAILLMClient(LLMClientLike):
 
         for attempt in range(self._max_retries):
             try:
-                base_messages = self._build_messages(system_prompt=system_prompt_with_persona, user_text=user_text)
+                base_messages = self._build_messages(
+                    system_prompt=system_prompt_with_persona,
+                    user_text=user_text,
+                    history=client_history,
+                )
 
                 def _stream_once(msgs: List[Dict[str, str]]) -> tuple[str, Optional[str]]:
                     parts: List[str] = []

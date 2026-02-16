@@ -4,31 +4,56 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import TopShell from "@/components/top/TopShell";
+import { SiDiscord, SiGithub, SiGoogle } from "react-icons/si";
+
+type Provider = "google" | "github" | "discord";
+
+const providerIcon: Record<
+  Provider,
+  React.ComponentType<{ className?: string; size?: number }>
+> = {
+  google: SiGoogle,
+  github: SiGithub,
+  discord: SiDiscord,
+};
 
 export default function LoginPage() {
   const router = useRouter();
-  const [loading, setLoading] = React.useState(false);
+  const [loadingProvider, setLoadingProvider] = React.useState<Provider | null>(
+    null
+  );
   const [error, setError] = React.useState<string | null>(null);
 
-  async function signInWithGoogle() {
-    setLoading(true);
+  async function signInWithOAuth(provider: Provider) {
+    if (loadingProvider) return;
     setError(null);
+    setLoadingProvider(provider);
+
+    const options: Record<string, any> = {
+      redirectTo: `${window.location.origin}/auth/callback`,
+    };
+    if (provider === "google") {
+      options.queryParams = {
+        prompt: "select_account",
+        access_type: "offline",
+        response_type: "code",
+      };
+    }
 
     const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-        queryParams: {
-          prompt: "select_account",
-          access_type: "offline",
-          response_type: "code",
-        },
-      },
+      provider,
+      options,
     });
 
     if (error) setError(error.message);
-    setLoading(false);
+    setLoadingProvider(null);
   }
+
+  const providers: Array<{ id: Provider; label: string }> = [
+    { id: "google", label: "Googleでログイン" },
+    { id: "github", label: "GitHubでログイン" },
+    { id: "discord", label: "Discordでログイン" },
+  ];
 
   return (
     <TopShell>
@@ -36,18 +61,32 @@ export default function LoginPage() {
         <h1 className="mb-4 text-lg font-medium">ログイン</h1>
 
         <p className="mb-4 text-sm text-white/80">
-          Sigmaris（`sigmaris-os`）と同じく、Supabase Auth の Google ログインを使います。
+          Supabase Auth の OAuth でログインします。
         </p>
 
         {error && <p className="mb-2 text-sm text-red-400">{error}</p>}
 
-        <button
-          onClick={signInWithGoogle}
-          disabled={loading}
-          className="w-full rounded-lg bg-white px-4 py-2 text-sm text-black disabled:opacity-50"
-        >
-          {loading ? "リダイレクト中…" : "Googleでログイン"}
-        </button>
+        <div className="grid gap-2">
+          {providers.map(({ id, label }) => {
+            const Icon = providerIcon[id];
+            const isLoading = loadingProvider === id;
+            return (
+              <button
+                key={id}
+                onClick={() => signInWithOAuth(id)}
+                disabled={Boolean(loadingProvider)}
+                className={
+                  id === "google"
+                    ? "w-full rounded-lg bg-white px-4 py-2 text-sm text-black disabled:opacity-50 flex items-center justify-center gap-2"
+                    : "w-full rounded-lg bg-white/90 px-4 py-2 text-sm text-black disabled:opacity-50 flex items-center justify-center gap-2"
+                }
+              >
+                <Icon className="h-4 w-4" aria-hidden />
+                <span>{isLoading ? "リダイレクト中…" : label}</span>
+              </button>
+            );
+          })}
+        </div>
 
         <button
           onClick={() => router.push("/")}
@@ -59,4 +98,3 @@ export default function LoginPage() {
     </TopShell>
   );
 }
-

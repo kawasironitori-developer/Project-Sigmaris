@@ -57,6 +57,41 @@ function toSse(event: string, data: unknown) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
+async function loadCoreHistory(params: {
+  supabase: Awaited<ReturnType<typeof supabaseServer>>;
+  sessionId: string;
+  userId: string;
+  limit?: number;
+}): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
+  const limit = typeof params.limit === "number" ? params.limit : 16;
+  try {
+    const { data } = await params.supabase
+      .from("common_messages")
+      .select("role, content, created_at")
+      .eq("session_id", params.sessionId)
+      .eq("user_id", params.userId)
+      .eq("app", "touhou")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    const rows = Array.isArray(data) ? (data as any[]) : [];
+    const mapped = rows
+      .map((r) => {
+        const roleRaw = typeof r?.role === "string" ? String(r.role) : "";
+        const content = typeof r?.content === "string" ? String(r.content) : "";
+        const role =
+          roleRaw === "user" ? "user" : roleRaw === "ai" ? "assistant" : null;
+        if (!role || !content.trim()) return null;
+        return { role, content };
+      })
+      .filter(Boolean) as Array<{ role: "user" | "assistant"; content: string }>;
+
+    return mapped.reverse();
+  } catch {
+    return [];
+  }
+}
+
 function clampText(s: string, n: number) {
   const t = String(s ?? "");
   if (t.length <= n) return t;
@@ -541,12 +576,43 @@ function wantsStream(req: NextRequest) {
   return url.searchParams.get("stream") === "1";
 }
 
+function envFlag(name: string, defaultValue: boolean) {
+  const raw = String(process.env[name] ?? "").trim().toLowerCase();
+  if (!raw) return defaultValue;
+  if (raw === "1" || raw === "true" || raw === "yes" || raw === "on") return true;
+  if (raw === "0" || raw === "false" || raw === "no" || raw === "off") return false;
+  return defaultValue;
+}
+
+function enforceOrigin(req: NextRequest) {
+  const allowedRaw = String(process.env.TOUHOU_ALLOWED_ORIGINS ?? "").trim();
+  const reqOrigin = req.headers.get("origin");
+  const sameOrigin = new URL(req.url).origin;
+
+  // If Origin header is missing, treat as same-origin (some clients / SSR fetches).
+  if (!reqOrigin) return;
+
+  const allowed = allowedRaw
+    ? allowedRaw.split(",").map((s) => s.trim()).filter(Boolean)
+    : [sameOrigin];
+
+  if (!allowed.includes(reqOrigin)) {
+    throw new Error(`Origin not allowed: ${reqOrigin}`);
+  }
+}
+
 // Character persona is injected via `persona_system` (system-side) to avoid dilution over long chats.
 
 export async function POST(
   req: NextRequest,
   context: { params: Promise<{ sessionId: string }> }
 ) {
+  try {
+    enforceOrigin(req);
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { sessionId } = await context.params;
   if (!sessionId || typeof sessionId !== "string") {
     return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
@@ -559,12 +625,42 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const supabase = await supabaseServer();
+
+  // Basic per-user rate limit (best-effort).
+  const minIntervalMsRaw = Number(process.env.TOUHOU_RATE_LIMIT_MS ?? "1200");
+  const minIntervalMs = Number.isFinite(minIntervalMsRaw)
+    ? Math.max(0, Math.min(60_000, minIntervalMsRaw))
+    : 1200;
+  if (minIntervalMs > 0) {
+    try {
+      const { data } = await supabase
+        .from("common_messages")
+        .select("created_at")
+        .eq("user_id", userId)
+        .eq("app", "touhou")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const lastIso = (data as any)?.created_at;
+      const lastTs = typeof lastIso === "string" ? Date.parse(lastIso) : NaN;
+      if (Number.isFinite(lastTs) && Date.now() - lastTs < minIntervalMs) {
+        return NextResponse.json(
+          { error: "Rate limited" },
+          { status: 429, headers: { "Retry-After": String(Math.ceil(minIntervalMs / 1000)) } }
+        );
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   let accessToken: string | null = null;
   try {
-    const sb = await supabaseServer();
     const {
       data: { session },
-    } = await sb.auth.getSession();
+    } = await supabase.auth.getSession();
     accessToken = session?.access_token ?? null;
   } catch {
     accessToken = null;
@@ -593,8 +689,6 @@ export async function POST(
   const files = formData.getAll("files").filter((f): f is File => f instanceof File);
   const urls = extractUrls(text);
 
-  const supabase = await supabaseServer();
-
   // ownership check
   const { data: conv, error: convError } = await supabase
     .from("common_sessions")
@@ -615,12 +709,25 @@ export async function POST(
     );
   }
 
+  const coreHistory = await loadCoreHistory({ supabase, sessionId, userId, limit: 16 });
   const base = coreBaseUrl();
-  const phase04Uploads = await uploadAndParseFiles({ base, accessToken, files });
-  const phase04Links =
-    urls.length > 0
-      ? await analyzeLinks({ base, accessToken, urls })
-      : await autoBrowseFromText({ base, accessToken, userText: text.trim() });
+  const isProd = process.env.NODE_ENV === "production";
+  const uploadsEnabled = envFlag("TOUHOU_UPLOAD_ENABLED", !isProd);
+  const linkAnalysisEnabled = envFlag("TOUHOU_LINK_ANALYSIS_ENABLED", !isProd);
+  const autoBrowseEnabled = envFlag("TOUHOU_AUTO_BROWSE_ENABLED", false);
+
+  const phase04Uploads = uploadsEnabled
+    ? await uploadAndParseFiles({ base, accessToken, files })
+    : [];
+
+  let phase04Links: Phase04LinkAnalysis[] = [];
+  if (linkAnalysisEnabled && urls.length > 0) {
+    phase04Links = await analyzeLinks({ base, accessToken, urls });
+  } else if (autoBrowseEnabled) {
+    phase04Links = await autoBrowseFromText({ base, accessToken, userText: text.trim() });
+  } else {
+    phase04Links = [];
+  }
   const augmentedText = buildAugmentedMessage({
     userText: text.trim(),
     uploads: phase04Uploads,
@@ -681,6 +788,7 @@ export async function POST(
         user_id: userId,
         session_id: sessionId,
         message: augmentedText,
+        history: coreHistory,
         character_id: characterId,
         persona_system: personaSystemWithRetrieval,
         gen,
@@ -752,6 +860,7 @@ export async function POST(
       user_id: userId,
       session_id: sessionId,
       message: augmentedText,
+      history: coreHistory,
       character_id: characterId,
       persona_system: personaSystemWithRetrieval,
       gen,
