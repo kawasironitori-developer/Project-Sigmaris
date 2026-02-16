@@ -175,6 +175,16 @@ export default function TopPage() {
             )}
           </div>
         )}
+
+        {/* 二次創作表記 */}
+        <div className="mt-8 max-w-xl text-pretty text-xs leading-relaxed text-white/70 drop-shadow-[0_2px_10px_rgba(0,0,0,0.55)]">
+          <p>
+            本サイトは「東方Project」の二次創作（ファンメイド）です。原作・公式とは一切関係ありません。
+          </p>
+          <p className="mt-2">
+            本作は上海アリス幻樂団様および関係者様とは無関係です。権利者様からの申し立てがあった場合は速やかに対応します。
+          </p>
+        </div>
       </div>
     </TopShell>
   );
