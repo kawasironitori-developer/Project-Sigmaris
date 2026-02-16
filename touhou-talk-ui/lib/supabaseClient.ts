@@ -29,6 +29,20 @@ function setDocumentCookie(name: string, value: string, options?: any) {
   document.cookie = parts.join("; ");
 }
 
+function readPublicEnv() {
+  const w = typeof window !== "undefined" ? (window as any) : null;
+  const cfg = w && typeof w.__TOUHOU_PUBLIC === "object" ? (w.__TOUHOU_PUBLIC as any) : null;
+  const url =
+    (cfg && typeof cfg.supabaseUrl === "string" ? cfg.supabaseUrl : "") ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    "";
+  const anon =
+    (cfg && typeof cfg.supabaseAnonKey === "string" ? cfg.supabaseAnonKey : "") ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    "";
+  return { url: String(url), anon: String(anon) };
+}
+
 /**
  * Supabase Browser Client
  *
@@ -45,8 +59,7 @@ export function supabaseBrowser(): SupabaseClient {
     throw new Error("[supabaseClient] supabaseBrowser() called on server");
   }
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const { url, anon } = readPublicEnv();
   if (!url || !anon) {
     throw new Error("[supabaseClient] NEXT_PUBLIC_SUPABASE_URL / ANON_KEY missing");
   }
