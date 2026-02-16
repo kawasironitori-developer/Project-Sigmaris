@@ -13,7 +13,7 @@ smoothly on **desktop, tablet, and mobile devices**.
 
 A live demo is available on Vercel:
 
-https://touhou-talk.vercel.app/
+https://touhou-chat.vercel.app/
 
 ---
 
