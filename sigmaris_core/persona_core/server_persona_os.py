@@ -1467,6 +1467,7 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
         embedding_model = llm_client
         persona_db = SupabasePersonaDB(_supabase)
         phase04_db = persona_db
+        init_states = await _load_supabase_initial_states(persona_db=persona_db, user_id=user_id)
 
         # Phase02: operator overrides (best-effort)
         try:
