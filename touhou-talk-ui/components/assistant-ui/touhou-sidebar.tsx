@@ -131,7 +131,7 @@ export function TouhouSidebar({
       <SidebarRail />
 
       <SidebarFooter className="border-t p-3">
-        <UserBlock className="bg-background/80" />
+        <UserBlock className="bg-background" />
       </SidebarFooter>
     </Sidebar>
   );

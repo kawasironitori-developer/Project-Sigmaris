@@ -176,6 +176,23 @@
 }
 
 /* =========================
+   Sidebar: opaque on touch devices
+   - Avoid translucent sidebar on mobile/tablet where background scroll + keyboard makes it distracting.
+========================= */
+
+@media (max-width: 1024px) {
+  :root {
+    --sidebar: var(--background);
+  }
+  .dark {
+    --sidebar: var(--background);
+  }
+  .soft {
+    --sidebar: var(--background);
+  }
+}
+
+/* =========================
    Soft Theme (Light)
 ========================= */
 
