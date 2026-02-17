@@ -14,6 +14,8 @@ import math
 import os
 import random
 import time
+import hashlib
+import threading
 from typing import Any, Dict, Iterable, List, Optional
 
 import openai
@@ -77,16 +79,55 @@ class OpenAILLMClient(LLMClientLike):
             self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"), timeout=self._timeout_sec)
 
         self._fallback_dim = 1536
+        self._embed_cache_ttl_sec = float(os.getenv("SIGMARIS_EMBED_CACHE_TTL_SEC", "15") or "15")
+        self._embed_cache_max = int(os.getenv("SIGMARIS_EMBED_CACHE_MAX", "512") or "512")
+        self._embed_cache_max = max(0, min(10000, self._embed_cache_max))
+        self._embed_cache: Dict[str, Dict[str, Any]] = {}  # key -> {"ts": float, "emb": list[float]}
+        self._embed_cache_lock = threading.Lock()
 
     # --------------------------
     # Embeddings
     # --------------------------
 
     def encode(self, text: str) -> List[float]:
+        t = (text or "").strip()
+        k: Optional[str] = None
+
+        if t and self._embed_cache_ttl_sec > 0 and self._embed_cache_max > 0:
+            try:
+                k = hashlib.sha256(t.encode("utf-8", errors="ignore")).hexdigest()
+                now = time.time()
+                with self._embed_cache_lock:
+                    hit = self._embed_cache.get(k)
+                    if isinstance(hit, dict):
+                        ts = hit.get("ts")
+                        emb = hit.get("emb")
+                        if isinstance(ts, (int, float)) and (now - float(ts)) <= float(self._embed_cache_ttl_sec):
+                            if isinstance(emb, list) and emb:
+                                return [float(x) for x in emb]
+                        else:
+                            self._embed_cache.pop(k, None)
+            except Exception:
+                k = None
+
         try:
-            res = self.client.embeddings.create(model=self.embedding_model, input=text)
+            res = self.client.embeddings.create(model=self.embedding_model, input=(t or text))
             emb = res.data[0].embedding
             self._fallback_dim = len(emb)
+
+            if t and k and self._embed_cache_ttl_sec > 0 and self._embed_cache_max > 0:
+                try:
+                    with self._embed_cache_lock:
+                        self._embed_cache[k] = {"ts": float(time.time()), "emb": emb}
+                        if len(self._embed_cache) > self._embed_cache_max:
+                            items = list(self._embed_cache.items())
+                            items.sort(key=lambda kv: float((kv[1] or {}).get("ts") or 0.0))
+                            drop_n = max(1, int(self._embed_cache_max * 0.1))
+                            for dk, _ in items[:drop_n]:
+                                self._embed_cache.pop(dk, None)
+                except Exception:
+                    pass
+
             return emb
         except Exception:
             return [0.0] * self._fallback_dim

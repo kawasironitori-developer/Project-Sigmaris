@@ -23,6 +23,8 @@ import time
 import uuid
 import hashlib
 import sys
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -188,6 +190,102 @@ class AuthContext(BaseModel):
     email: Optional[str] = None
 
 
+"""
+Performance helpers (TTFT)
+- Parallelize independent Supabase REST calls (urllib is blocking)
+- Optional short-lived caching for auth/state loads (disabled by default)
+"""
+
+_state_load_workers = int(os.getenv("SIGMARIS_STATE_LOAD_WORKERS", "6") or "6")
+_state_load_workers = max(2, min(32, _state_load_workers))
+_STATE_LOAD_POOL: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=_state_load_workers)
+
+_state_cache_ttl_sec = float(os.getenv("SIGMARIS_STATE_CACHE_TTL_SEC", "0") or "0")
+_state_cache_max = int(os.getenv("SIGMARIS_STATE_CACHE_MAX", "256") or "256")
+_state_cache_max = max(0, min(5000, _state_cache_max))
+_state_cache: Dict[str, Dict[str, Any]] = {}  # user_id -> {"ts": float, ...payload}
+
+_auth_cache_ttl_sec = float(os.getenv("SIGMARIS_AUTH_CACHE_TTL_SEC", "0") or "0")
+_auth_cache_max = int(os.getenv("SIGMARIS_AUTH_CACHE_MAX", "1024") or "1024")
+_auth_cache_max = max(0, min(10000, _auth_cache_max))
+_auth_cache: Dict[str, Dict[str, Any]] = {}  # token_hash -> {"ts": float, "ctx": AuthContext}
+
+
+async def _to_thread(fn, *args, **kwargs):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_STATE_LOAD_POOL, lambda: fn(*args, **kwargs))
+
+
+def _cache_get(cache: Dict[str, Dict[str, Any]], key: str, ttl_sec: float) -> Optional[Dict[str, Any]]:
+    if ttl_sec <= 0:
+        return None
+    v = cache.get(key)
+    if not isinstance(v, dict):
+        return None
+    ts = v.get("ts")
+    if not isinstance(ts, (int, float)):
+        cache.pop(key, None)
+        return None
+    if (time.time() - float(ts)) > float(ttl_sec):
+        cache.pop(key, None)
+        return None
+    return v
+
+
+def _cache_put(cache: Dict[str, Dict[str, Any]], key: str, payload: Dict[str, Any], *, max_items: int) -> None:
+    if max_items <= 0:
+        return
+    payload = dict(payload)
+    payload["ts"] = float(time.time())
+    cache[key] = payload
+    if len(cache) <= max_items:
+        return
+    # best-effort eviction: drop ~10% oldest-ish entries without heavy LRU bookkeeping
+    try:
+        items = list(cache.items())
+        items.sort(key=lambda kv: float((kv[1] or {}).get("ts") or 0.0))
+        drop_n = max(1, int(max_items * 0.1))
+        for k, _ in items[:drop_n]:
+            cache.pop(k, None)
+    except Exception:
+        cache.clear()
+
+
+async def _load_supabase_initial_states(
+    *,
+    persona_db: "SupabasePersonaDB",
+    user_id: str,
+) -> Dict[str, Any]:
+    cached = _cache_get(_state_cache, user_id, _state_cache_ttl_sec)
+    if isinstance(cached, dict):
+        return cached
+
+    tasks = [
+        _to_thread(persona_db.load_last_operator_override, user_id=user_id, kind="ops_mode_set"),
+        _to_thread(persona_db.load_last_value_state, user_id=user_id),
+        _to_thread(persona_db.load_last_trait_state, user_id=user_id),
+        _to_thread(persona_db.load_last_ego_state, user_id=user_id),
+        _to_thread(persona_db.load_last_temporal_identity_state, user_id=user_id),
+    ]
+    op, value, trait, ego, tid = await asyncio.gather(*tasks, return_exceptions=True)
+
+    if isinstance(value, Exception) or not isinstance(value, ValueState):
+        value = ValueState()
+    if isinstance(trait, Exception) or not isinstance(trait, TraitState):
+        trait = TraitState()
+    if isinstance(op, Exception):
+        op = None
+    if isinstance(ego, Exception):
+        ego = None
+    if isinstance(tid, Exception):
+        tid = None
+
+    payload = {"op": op, "value": value, "trait": trait, "ego": ego, "tid": tid}
+    if _state_cache_ttl_sec > 0 and _state_cache_max > 0:
+        _cache_put(_state_cache, user_id, payload, max_items=_state_cache_max)
+    return payload
+
+
 def _auth_api_key() -> Optional[str]:
     """
     Prefer ANON key for auth calls if present, otherwise fall back to service role key.
@@ -220,13 +318,32 @@ def get_auth_context(authorization: Optional[str] = Header(default=None)) -> Opt
         raise HTTPException(status_code=500, detail="Auth required but SUPABASE_ANON_KEY is not configured")
 
     try:
+        token = None
+        try:
+            s = str(authorization or "").strip()
+            if s.lower().startswith("bearer "):
+                token = s[7:].strip() or None
+        except Exception:
+            token = None
+
+        if token and _auth_cache_ttl_sec > 0 and _auth_cache_max > 0:
+            th = hashlib.sha256(token.encode("utf-8", errors="ignore")).hexdigest()
+            cached = _cache_get(_auth_cache, th, _auth_cache_ttl_sec)
+            if isinstance(cached, dict):
+                ctx = cached.get("ctx")
+                if isinstance(ctx, AuthContext):
+                    return ctx
+
         u = resolve_user_from_bearer(
             supabase_url=_supabase_cfg.url,
             supabase_api_key=api_key,
             authorization=authorization,
             timeout_sec=_auth_timeout_sec,
         )
-        return AuthContext(user_id=u.user_id, email=u.email)
+        ctx = AuthContext(user_id=u.user_id, email=u.email)
+        if token and _auth_cache_ttl_sec > 0 and _auth_cache_max > 0:
+            _cache_put(_auth_cache, th, {"ctx": ctx}, max_items=_auth_cache_max)
+        return ctx
     except SupabaseAuthError as e:
         raise HTTPException(status_code=401, detail=str(e))
 
@@ -1059,12 +1176,13 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
 
         persona_db = SupabasePersonaDB(_supabase)
         phase04_db = persona_db
+        init_states = await _load_supabase_initial_states(persona_db=persona_db, user_id=user_id)
 
         # Phase02: operator overrides (best-effort). These affect *behavior*, not stored identity directly.
         # - subjectivity_mode: force mode (S0..S3) or "AUTO"
         # - freeze_updates: force drift freeze on this request
         try:
-            op = persona_db.load_last_operator_override(user_id=user_id, kind="ops_mode_set")
+            op = init_states.get("op")
             payload = (op or {}).get("payload") if isinstance(op, dict) else None
             if isinstance(payload, dict):
                 mode = payload.get("subjectivity_mode")
@@ -1077,11 +1195,12 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
             pass
 
         # 直近スナップショットから状態を復元（初回は default）
-        init_value = persona_db.load_last_value_state(user_id=user_id) or ValueState()
-        init_trait = persona_db.load_last_trait_state(user_id=user_id) or TraitState()
+        init_states = await _load_supabase_initial_states(persona_db=persona_db, user_id=user_id)
+        init_value = init_states.get("value") if isinstance(init_states.get("value"), ValueState) else ValueState()
+        init_trait = init_states.get("trait") if isinstance(init_states.get("trait"), TraitState) else TraitState()
         init_ego: Optional[EgoContinuityState] = None
         try:
-            st = persona_db.load_last_ego_state(user_id=user_id)
+            st = init_states.get("ego")
             if isinstance(st, dict):
                 init_ego = EgoContinuityState.from_dict(st)
         except Exception:
@@ -1089,7 +1208,7 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
 
         init_tid: Optional[TemporalIdentityState] = None
         try:
-            st = persona_db.load_last_temporal_identity_state(user_id=user_id)
+            st = init_states.get("tid")
             if isinstance(st, dict):
                 init_tid = TemporalIdentityState.from_dict(st)
         except Exception:
@@ -1351,7 +1470,7 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
 
         # Phase02: operator overrides (best-effort)
         try:
-            op = persona_db.load_last_operator_override(user_id=user_id, kind="ops_mode_set")
+            op = init_states.get("op")
             payload = (op or {}).get("payload") if isinstance(op, dict) else None
             if isinstance(payload, dict):
                 mode = payload.get("subjectivity_mode")
@@ -1363,18 +1482,18 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
         except Exception:
             pass
 
-        init_value = persona_db.load_last_value_state(user_id=user_id) or ValueState()
-        init_trait = persona_db.load_last_trait_state(user_id=user_id) or TraitState()
+        init_value = init_states.get("value") if isinstance(init_states.get("value"), ValueState) else ValueState()
+        init_trait = init_states.get("trait") if isinstance(init_states.get("trait"), TraitState) else TraitState()
         init_ego: Optional[EgoContinuityState] = None
         try:
-            st = persona_db.load_last_ego_state(user_id=user_id)
+            st = init_states.get("ego")
             if isinstance(st, dict):
                 init_ego = EgoContinuityState.from_dict(st)
         except Exception:
             init_ego = None
         init_tid: Optional[TemporalIdentityState] = None
         try:
-            st = persona_db.load_last_temporal_identity_state(user_id=user_id)
+            st = init_states.get("tid")
             if isinstance(st, dict):
                 init_tid = TemporalIdentityState.from_dict(st)
         except Exception:
