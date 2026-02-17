@@ -25,6 +25,8 @@ export function ViewportVars() {
 
     const update = () => {
       const innerH = window.innerHeight || 0;
+      const clientH = document.documentElement?.clientHeight || 0;
+      const baseH = Math.max(innerH, clientH);
 
       if (!vv) {
         setVar("--touhou-vv-height", innerH);
@@ -33,8 +35,12 @@ export function ViewportVars() {
       }
 
       const vvHeight = vv.height || 0;
-      const offsetTop = vv.offsetTop || 0;
-      const keyboard = Math.max(0, innerH - vvHeight - offsetTop);
+
+      // Keyboard estimation notes:
+      // - `visualViewport.height` shrinks when the software keyboard opens.
+      // - Small diffs can happen due to browser UI (address bar). We threshold to avoid jitter.
+      const raw = Math.max(0, baseH - vvHeight);
+      const keyboard = raw >= 120 ? raw : 0;
 
       setVar("--touhou-vv-height", vvHeight);
       setVar("--touhou-kbd", keyboard);
@@ -57,4 +63,3 @@ export function ViewportVars() {
 
   return null;
 }
-
