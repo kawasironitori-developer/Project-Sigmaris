@@ -63,7 +63,7 @@ export const Thread: FC = () => {
           }}
         />
 
-        <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mx-auto mt-auto flex w-full max-w-(--thread-max-width) flex-col gap-4 overflow-visible rounded-t-3xl pb-[calc(env(safe-area-inset-bottom)+1rem)] md:pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
+        <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mx-auto mt-auto flex w-full max-w-(--thread-max-width) flex-col gap-4 overflow-visible rounded-t-3xl pb-[env(safe-area-inset-bottom)] lg:pb-[calc(env(safe-area-inset-bottom)+1rem)]">
           <ThreadScrollToBottom />
           <Composer />
         </ThreadPrimitive.ViewportFooter>
