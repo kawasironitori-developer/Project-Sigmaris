@@ -37,7 +37,95 @@ import {
 } from "lucide-react";
 import type { FC } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAui } from "@assistant-ui/react";
+import { useAui, useMessage } from "@assistant-ui/react";
+
+type Phase04UploadMeta = {
+  attachment_id: string;
+  file_name?: string;
+  mime_type?: string;
+  kind?: string;
+  parsed_excerpt?: string;
+};
+
+const UserMessagePersistedUploads: FC = () => {
+  const hasAuiAttachments = useMessage(
+    (s) => (s.attachments?.length ?? 0) > 0,
+  );
+  const custom = useMessage((s) => s.metadata?.custom) as Record<
+    string,
+    unknown
+  > | null;
+
+  if (hasAuiAttachments) return null;
+
+  const phase04 = (custom?.phase04 ?? null) as Record<string, unknown> | null;
+  const uploadsRaw = phase04?.uploads ?? null;
+  const uploads = Array.isArray(uploadsRaw)
+    ? (uploadsRaw as Phase04UploadMeta[])
+    : [];
+
+  if (uploads.length === 0) return null;
+
+  const visible = uploads
+    .filter((u) => u && typeof u.attachment_id === "string" && u.attachment_id)
+    .slice(0, 3);
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="aui-user-message-persisted-uploads flex flex-col gap-2">
+      {visible.map((u) => {
+        const mime = typeof u.mime_type === "string" ? u.mime_type : "";
+        const isImage = mime.startsWith("image/");
+        const name =
+          typeof u.file_name === "string" && u.file_name ? u.file_name : "upload";
+        const id = u.attachment_id;
+        const url = `/api/io/attachment/${encodeURIComponent(id)}`;
+
+        const excerpt =
+          typeof u.parsed_excerpt === "string" && u.parsed_excerpt.trim()
+            ? u.parsed_excerpt.trim()
+            : "";
+
+        if (isImage) {
+          return (
+            <div
+              key={id}
+              className="overflow-hidden rounded-xl border bg-muted/30"
+              title={name}
+            >
+              <a href={url} target="_blank" rel="noreferrer" className="block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={url}
+                  alt={name}
+                  className="max-h-64 w-full object-contain"
+                  loading="lazy"
+                />
+              </a>
+              {excerpt ? (
+                <div className="border-t px-3 py-2 text-xs text-muted-foreground">
+                  {excerpt.length > 320 ? excerpt.slice(0, 320) + "…" : excerpt}
+                </div>
+              ) : null}
+            </div>
+          );
+        }
+
+        return (
+          <a
+            key={id}
+            href={`${url}?download=1`}
+            className="flex items-center justify-between gap-2 rounded-xl border bg-muted/30 px-3 py-2 text-sm hover:bg-muted/50"
+            title={name}
+          >
+            <span className="truncate">{name}</span>
+            <DownloadIcon className="size-4 shrink-0 opacity-80" />
+          </a>
+        );
+      })}
+    </div>
+  );
+};
 
 export const Thread: FC = () => {
   return (
@@ -460,6 +548,7 @@ const UserMessage: FC = () => {
       className="aui-user-message-root fade-in slide-in-from-bottom-1 mx-auto grid w-full max-w-(--thread-max-width) animate-in auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] content-start gap-y-2 px-2 py-3 duration-150 [&:where(>*)]:col-start-2"
       data-role="user"
     >
+      <UserMessagePersistedUploads />
       <UserMessageAttachments />
 
       <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">

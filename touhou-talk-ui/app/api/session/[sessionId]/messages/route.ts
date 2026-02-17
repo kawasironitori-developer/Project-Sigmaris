@@ -16,6 +16,7 @@ type MessageRow = {
   content: string;
   speaker_id: string | null;
   created_at: string;
+  meta: Record<string, unknown> | null;
 };
 
 type MessagesResponse = {
@@ -43,10 +44,10 @@ export async function GET(
       return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
     }
 
-    console.log(
-      "[/api/session/[id]/messages][GET] cookie:",
-      req.headers.get("cookie"),
-    );
+    // console.log(
+    //   "[/api/session/[id]/messages][GET] cookie:",
+    //   req.headers.get("cookie"),
+    // );
 
     /* =========================
        ② Auth
@@ -87,7 +88,7 @@ export async function GET(
 
     const { data, error } = await supabase
       .from("common_messages")
-      .select("id, role, content, speaker_id, created_at")
+      .select("id, role, content, speaker_id, created_at, meta")
       .eq("session_id", sessionId)
       .eq("user_id", userId)
       .eq("app", "touhou")

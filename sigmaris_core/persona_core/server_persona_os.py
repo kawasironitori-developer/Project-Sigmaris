@@ -30,7 +30,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi import Header
 from fastapi import Depends, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel, field_validator, model_validator
 
 from persona_core.storage.env_loader import load_dotenv
@@ -1723,118 +1723,198 @@ async def io_parse(
 
         try:
             data = _storage.download(bucket_id=bucket_id, object_path=object_path)
-            parsed_kind, parsed = parse_file_bytes(
-                data=data,
-                file_name=str(row.get("file_name") or ""),
-                mime_type=str(row.get("mime_type") or ""),
-                kind=req.kind,
-            )
+        except (SupabaseStorageError, Exception) as e:
             try:
                 if _is_uuid(str(auth.user_id)):
+                    persona_db.insert_io_event(
+                        user_id=str(auth.user_id),
+                        session_id=session_id,
+                        trace_id=trace_id,
+                        event_type="parse",
+                        cache_key=None,
+                        ok=False,
+                        error=str(e),
+                        request={"attachment_id": str(req.attachment_id), "kind": req.kind},
+                        response={},
+                        source_urls=[],
+                        content_sha256=None,
+                        meta={"config_hash": CONFIG_HASH, "build_sha": BUILD_SHA, "storage": "supabase"},
+                    )
+            except Exception:
+                pass
+            raise HTTPException(status_code=502, detail=f"storage download failed: {e}")
+
+        parsed_kind, parsed = parse_file_bytes(
+            data=data,
+            file_name=str(row.get("file_name") or ""),
+            mime_type=str(row.get("mime_type") or ""),
+            kind=req.kind,
+        )
+        try:
+            if _is_uuid(str(auth.user_id)):
+                parsed_excerpt = ""
+                if isinstance(parsed, dict):
+                    for k in ("raw_excerpt", "text", "summary"):
+                        v = parsed.get(k)
+                        if isinstance(v, str) and v.strip():
+                            parsed_excerpt = v.strip()
+                            break
+                if parsed_excerpt and _io_audit_excerpt_chars() > 0:
+                    parsed_excerpt = parsed_excerpt[: _io_audit_excerpt_chars()]
+                else:
                     parsed_excerpt = ""
-                    if isinstance(parsed, dict):
-                        for k in ("raw_excerpt", "text", "summary"):
-                            v = parsed.get(k)
-                            if isinstance(v, str) and v.strip():
-                                parsed_excerpt = v.strip()
-                                break
-                    if parsed_excerpt and _io_audit_excerpt_chars() > 0:
-                        parsed_excerpt = parsed_excerpt[: _io_audit_excerpt_chars()]
-                    else:
-                        parsed_excerpt = ""
-                    persona_db.insert_io_event(
-                        user_id=str(auth.user_id),
-                        session_id=session_id,
-                        trace_id=trace_id,
-                        event_type="parse",
-                        cache_key=None,
-                        ok=True,
-                        error=None,
-                        request={"attachment_id": str(req.attachment_id), "kind": req.kind},
-                        response={"kind": parsed_kind, "excerpt": parsed_excerpt, "sha256": _sha256_json(parsed) if isinstance(parsed, dict) else None},
-                        source_urls=[],
-                        content_sha256=_sha256_json(parsed) if isinstance(parsed, dict) else None,
-                        meta={"config_hash": CONFIG_HASH, "build_sha": BUILD_SHA, "storage": "supabase"},
-                    )
-            except Exception:
-                pass
-            return ParseResponse(ok=True, kind=parsed_kind, parsed=parsed)
-        except SupabaseStorageError as e:
-            try:
-                if _is_uuid(str(auth.user_id)):
-                    persona_db.insert_io_event(
-                        user_id=str(auth.user_id),
-                        session_id=session_id,
-                        trace_id=trace_id,
-                        event_type="parse",
-                        cache_key=None,
-                        ok=False,
-                        error=str(e),
-                        request={"attachment_id": str(req.attachment_id), "kind": req.kind},
-                        response={},
-                        source_urls=[],
-                        content_sha256=None,
-                        meta={"config_hash": CONFIG_HASH, "build_sha": BUILD_SHA, "storage": "supabase"},
-                    )
-            except Exception:
-                pass
-            raise HTTPException(status_code=502, detail=str(e))
-        except Exception as e:
-            try:
-                if _is_uuid(str(auth.user_id)):
-                    persona_db.insert_io_event(
-                        user_id=str(auth.user_id),
-                        session_id=session_id,
-                        trace_id=trace_id,
-                        event_type="parse",
-                        cache_key=None,
-                        ok=False,
-                        error=str(e),
-                        request={"attachment_id": str(req.attachment_id), "kind": req.kind},
-                        response={},
-                        source_urls=[],
-                        content_sha256=None,
-                        meta={"config_hash": CONFIG_HASH, "build_sha": BUILD_SHA, "storage": "supabase"},
-                    )
-            except Exception:
-                pass
-            raise HTTPException(status_code=500, detail=f"parse failed: {e}")
+                persona_db.insert_io_event(
+                    user_id=str(auth.user_id),
+                    session_id=session_id,
+                    trace_id=trace_id,
+                    event_type="parse",
+                    cache_key=None,
+                    ok=True,
+                    error=None,
+                    request={"attachment_id": str(req.attachment_id), "kind": req.kind},
+                    response={"kind": parsed_kind, "excerpt": parsed_excerpt, "sha256": _sha256_json(parsed) if isinstance(parsed, dict) else None},
+                    source_urls=[],
+                    content_sha256=_sha256_json(parsed) if isinstance(parsed, dict) else None,
+                    meta={"config_hash": CONFIG_HASH, "build_sha": BUILD_SHA, "storage": "supabase"},
+                )
+        except Exception:
+            pass
+
+        return ParseResponse(ok=True, kind=parsed_kind, parsed=parsed)
 
     # Demo fallback: local disk
     base_dir = os.getenv("SIGMARIS_UPLOAD_DIR") or os.path.join("sigmaris_core", "data", "uploads")
     path = os.path.join(base_dir, str(req.attachment_id))
     meta_path = path + ".json"
-    if not os.path.exists(path) or not os.path.isfile(path):
+    if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="attachment not found")
 
+    file_name = str(req.attachment_id)
+    mime_type = "application/octet-stream"
     try:
-        meta = {}
         if os.path.exists(meta_path):
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f) or {}
-        owner = meta.get("user_id")
-        if _auth_required and auth is not None and owner and str(owner) != str(auth.user_id):
-            raise HTTPException(status_code=403, detail="Forbidden")
-    except HTTPException:
-        raise
+            file_name = str(meta.get("file_name") or file_name)
+            mime_type = str(meta.get("mime_type") or mime_type)
     except Exception:
-        meta = {}
+        pass
 
     try:
         with open(path, "rb") as f:
             data = f.read()
-        parsed_kind, parsed = parse_file_bytes(
-            data=data,
-            file_name=str(meta.get("file_name") or ""),
-            mime_type=str(meta.get("mime_type") or ""),
-            kind=req.kind,
-        )
-        return ParseResponse(ok=True, kind=parsed_kind, parsed=parsed)
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"parse failed: {e}")
 
+    parsed_kind, parsed = parse_file_bytes(data=data, file_name=file_name, mime_type=mime_type, kind=req.kind)
+    return ParseResponse(ok=True, kind=parsed_kind, parsed=parsed)
+
+
+@app.get("/io/attachment/{attachment_id}")
+async def io_attachment_get(
+    attachment_id: str,
+    auth: Optional[AuthContext] = Depends(get_auth_context),
+    x_sigmaris_trace_id: Optional[str] = Header(default=None, alias="x-sigmaris-trace-id"),
+    x_sigmaris_session_id: Optional[str] = Header(default=None, alias="x-sigmaris-session-id"),
+):
+    """
+    Phase04 MVP: download an uploaded attachment.
+    - When Supabase Storage is configured, downloads from the stored bucket/object_path.
+    - Otherwise, reads from local disk (demo fallback).
+    """
+    if auth is None and _auth_required:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    trace_id = str((x_sigmaris_trace_id or "").strip() or new_trace_id())
+    session_id = str((x_sigmaris_session_id or "").strip() or "") or None
+
+    # Prefer Supabase Storage when available.
+    if _supabase is not None and _storage is not None and auth is not None:
+        persona_db = SupabasePersonaDB(_supabase)
+        row = None
+        try:
+            row = persona_db.load_attachment(attachment_id=str(attachment_id))
+        except Exception:
+            row = None
+        if not row:
+            raise HTTPException(status_code=404, detail="attachment not found")
+        owner = row.get("user_id")
+        if owner and str(owner) != str(auth.user_id):
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+        bucket_id = str(row.get("bucket_id") or _storage_bucket)
+        object_path = str(row.get("object_path") or "")
+        if not object_path:
+            raise HTTPException(status_code=500, detail="attachment missing object_path")
+
+        try:
+            data = _storage.download(bucket_id=bucket_id, object_path=object_path)
+        except (SupabaseStorageError, Exception) as e:
+            raise HTTPException(status_code=502, detail=f"storage download failed: {e}")
+
+        mime_type = str(row.get("mime_type") or "application/octet-stream")
+        file_name = str(row.get("file_name") or f"{attachment_id}")
+
+        try:
+            if _is_uuid(str(auth.user_id)):
+                persona_db.insert_io_event(
+                    user_id=str(auth.user_id),
+                    session_id=session_id,
+                    trace_id=trace_id,
+                    event_type="download",
+                    cache_key=None,
+                    ok=True,
+                    error=None,
+                    request={"attachment_id": str(attachment_id)},
+                    response={"mime_type": mime_type, "file_name": file_name, "bucket_id": bucket_id, "object_path": object_path},
+                    source_urls=[],
+                    content_sha256=None,
+                    meta={"config_hash": CONFIG_HASH, "build_sha": BUILD_SHA, "storage": "supabase"},
+                )
+        except Exception:
+            pass
+
+        return Response(
+            content=data,
+            media_type=mime_type,
+            headers={
+                "x-sigmaris-file-name": file_name,
+                "Content-Disposition": f'inline; filename="{file_name}"',
+            },
+        )
+
+    # Demo fallback: local disk
+    base_dir = os.getenv("SIGMARIS_UPLOAD_DIR") or os.path.join("sigmaris_core", "data", "uploads")
+    path = os.path.join(base_dir, str(attachment_id))
+    meta_path = path + ".json"
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="attachment not found")
+
+    file_name = str(attachment_id)
+    mime_type = "application/octet-stream"
+    try:
+        if os.path.exists(meta_path):
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f) or {}
+            file_name = str(meta.get("file_name") or file_name)
+            mime_type = str(meta.get("mime_type") or mime_type)
+    except Exception:
+        pass
+
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"download failed: {e}")
+
+    return Response(
+        content=data,
+        media_type=mime_type,
+        headers={
+            "x-sigmaris-file-name": file_name,
+            "Content-Disposition": f'inline; filename="{file_name}"',
+        },
+    )
 
 @app.post("/io/web/search", response_model=WebSearchResponse)
 async def io_web_search(

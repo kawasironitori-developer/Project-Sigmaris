@@ -138,7 +138,7 @@ def parse_image_bytes(*, data: bytes, file_name: str, mime_type: str) -> Dict[st
         vision_caption = ""
         vision_text = ""
         vision_objects: List[str] = []
-        vision_note = "ocr_not_enabled"
+        vision_note = "vision_disabled"
         try:
             enabled = (os.getenv("SIGMARIS_IMAGE_VISION_ENABLED", "").strip().lower() in ("1", "true", "yes", "on"))
         except Exception:
@@ -159,6 +159,8 @@ def parse_image_bytes(*, data: bytes, file_name: str, mime_type: str) -> Dict[st
                 vision_note = f"vision_failed:{_safe_str(e)}"
             except Exception as e:
                 vision_note = f"vision_failed:{type(e).__name__}"
+        else:
+            excerpt = f"{excerpt} (OCR disabled; set SIGMARIS_IMAGE_VISION_ENABLED=1)"
 
         return {
             "file_type": "image",
