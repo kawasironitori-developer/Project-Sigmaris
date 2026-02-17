@@ -13,8 +13,13 @@ sigmaris-os/.next/
 touhou-talk-ui/node_modules/
 touhou-talk-ui/.next/
 touhou-talk-ui/out/
+sigmaris-os/
+touhou-talk-ui/
+touhou-test-ui/
+private-assets/
+supabase/
+tools/
 aquestalk/
 tools/**/.cache/
 *.log
 *.sqlite
-
