@@ -1465,8 +1465,6 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
 
     if intent == "weather":
         try:
-            import json
-
             from persona_core.phase04.tools.weather_api import weather_api_flow
 
             tool_weather = weather_api_flow(effective_message)
@@ -1484,8 +1482,6 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
             web_ctx, web_sources, web_meta = (None, None, None)
     elif intent == "comparison":
         try:
-            import json
-
             from persona_core.phase04.tools.comparison_flow import comparison_flow
 
             tool_comparison = comparison_flow(effective_message)
@@ -1890,8 +1886,6 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
 
     if intent == "weather":
         try:
-            import json
-
             from persona_core.phase04.tools.weather_api import weather_api_flow
 
             tool_weather = weather_api_flow(effective_message)
@@ -1909,8 +1903,6 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
             web_ctx, web_sources, web_meta = (None, None, None)
     elif intent == "comparison":
         try:
-            import json
-
             from persona_core.phase04.tools.comparison_flow import comparison_flow
 
             tool_comparison = comparison_flow(effective_message)
