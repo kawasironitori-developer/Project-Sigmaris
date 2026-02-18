@@ -1462,6 +1462,13 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
     except Exception:
         intent = "general"
 
+    # Fallback: explicit search requests should still trigger Web RAG when enabled.
+    try:
+        if intent == "general" and _web_rag_enabled() and _web_rag_explicit_request(effective_message):
+            intent = "realtime_fact"
+    except Exception:
+        pass
+
     web_ctx = None
     web_sources = None
     web_meta = None
@@ -1953,6 +1960,13 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
         intent = classify_intent(effective_message)
     except Exception:
         intent = "general"
+
+    # Fallback: explicit search requests should still trigger Web RAG when enabled.
+    try:
+        if intent == "general" and _web_rag_enabled() and _web_rag_explicit_request(effective_message):
+            intent = "realtime_fact"
+    except Exception:
+        pass
 
     web_ctx = None
     web_sources = None
