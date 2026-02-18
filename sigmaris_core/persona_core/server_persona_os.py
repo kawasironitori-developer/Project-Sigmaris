@@ -743,10 +743,14 @@ def _web_rag_explicit_request(message: str) -> bool:
     s = (message or "")
     # Explicit user intent (Japanese + common English)
     keywords = [
+        "最新",
+        "直近",
+        "最近",
         "ニュース",
         "記事",
         "話題",
         "見出し",
+        "探して",
         "引っ張って",
         "拾って",
         "障害",
@@ -759,6 +763,8 @@ def _web_rag_explicit_request(message: str) -> bool:
         "ステータス",
         "検索",
         "調べて",
+        "検索して",
+        "確認して",
         "ソース",
         "出典",
         "引用元",
@@ -1462,6 +1468,7 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
 
     tool_weather = None
     tool_comparison = None
+    personalization_hint: Optional[Dict[str, Any]] = None
 
     if intent == "weather":
         try:
@@ -1521,11 +1528,80 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
         except Exception:
             tool_comparison = None
             web_ctx, web_sources, web_meta = (None, None, None)
-    elif intent == "realtime_fact":
+    elif intent == "personalized_realtime":
         try:
+            forced_gen: Optional[Dict[str, Any]] = None
+            try:
+                g0 = req.gen if isinstance(req.gen, dict) else {}
+                forced_gen = dict(g0)
+                web_cfg = forced_gen.get("web_rag")
+                if isinstance(web_cfg, dict):
+                    forced_gen["web_rag"] = {**web_cfg, "enabled": True}
+                else:
+                    forced_gen["web_rag"] = {"enabled": True}
+            except Exception:
+                forced_gen = (req.gen if isinstance(req.gen, dict) else None)
+
             web_ctx, web_sources, web_meta = await _maybe_web_rag_for_turn(
                 message=effective_message,
-                gen=(req.gen if isinstance(req.gen, dict) else None),
+                gen=forced_gen,
+                trace_id=trace_id,
+                session_id=session_id,
+                user_id=str(user_id),
+                persona_db=(SupabasePersonaDB(_supabase) if (_supabase is not None and _is_uuid(str(user_id))) else None),
+            )
+        except Exception:
+            web_ctx, web_sources, web_meta = (None, None, None)
+
+        # Attach a lightweight personalization hint (best-effort; no impact to persona logic).
+        try:
+            hint_profile: Dict[str, Any] = {"user_id": str(user_id)}
+            if _supabase is not None and _is_uuid(str(user_id)):
+                try:
+                    persona_db2 = SupabasePersonaDB(_supabase)
+                    vs = persona_db2.load_last_value_state(user_id=str(user_id))
+                    ts = persona_db2.load_last_trait_state(user_id=str(user_id))
+                    if vs is not None:
+                        hint_profile["value_state"] = vs.to_dict()
+                    if ts is not None:
+                        hint_profile["trait_state"] = ts.to_dict()
+                except Exception:
+                    pass
+
+            project_type: Optional[str] = None
+            try:
+                if isinstance(req.gen, dict):
+                    for k in ("project_type", "app", "channel", "client"):
+                        v = req.gen.get(k)
+                        if isinstance(v, str) and v.strip():
+                            project_type = v.strip()
+                            break
+            except Exception:
+                project_type = None
+
+            personalization_hint = {
+                "user_profile": hint_profile,
+                "project_type": project_type,
+            }
+        except Exception:
+            personalization_hint = None
+    elif intent == "realtime_fact":
+        try:
+            forced_gen: Optional[Dict[str, Any]] = None
+            try:
+                g0 = req.gen if isinstance(req.gen, dict) else {}
+                forced_gen = dict(g0)
+                web_cfg = forced_gen.get("web_rag")
+                if isinstance(web_cfg, dict):
+                    forced_gen["web_rag"] = {**web_cfg, "enabled": True}
+                else:
+                    forced_gen["web_rag"] = {"enabled": True}
+            except Exception:
+                forced_gen = (req.gen if isinstance(req.gen, dict) else None)
+
+            web_ctx, web_sources, web_meta = await _maybe_web_rag_for_turn(
+                message=effective_message,
+                gen=forced_gen,
                 trace_id=trace_id,
                 session_id=session_id,
                 user_id=str(user_id),
@@ -1541,6 +1617,7 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
         context={
             "_trace_id": trace_id,
             "_intent": intent,
+            **({"_personalization_hint": personalization_hint} if isinstance(personalization_hint, dict) and personalization_hint else {}),
             **({"_tool_weather": tool_weather} if isinstance(tool_weather, dict) and tool_weather else {}),
             **({"_comparison": tool_comparison} if isinstance(tool_comparison, dict) and tool_comparison else {}),
             **({"character_id": req.character_id} if req.character_id else {}),
@@ -1883,6 +1960,7 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
 
     tool_weather = None
     tool_comparison = None
+    personalization_hint: Optional[Dict[str, Any]] = None
 
     if intent == "weather":
         try:
@@ -1941,11 +2019,79 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
         except Exception:
             tool_comparison = None
             web_ctx, web_sources, web_meta = (None, None, None)
-    elif intent == "realtime_fact":
+    elif intent == "personalized_realtime":
         try:
+            forced_gen: Optional[Dict[str, Any]] = None
+            try:
+                g0 = req.gen if isinstance(req.gen, dict) else {}
+                forced_gen = dict(g0)
+                web_cfg = forced_gen.get("web_rag")
+                if isinstance(web_cfg, dict):
+                    forced_gen["web_rag"] = {**web_cfg, "enabled": True}
+                else:
+                    forced_gen["web_rag"] = {"enabled": True}
+            except Exception:
+                forced_gen = (req.gen if isinstance(req.gen, dict) else None)
+
             web_ctx, web_sources, web_meta = await _maybe_web_rag_for_turn(
                 message=effective_message,
-                gen=(req.gen if isinstance(req.gen, dict) else None),
+                gen=forced_gen,
+                trace_id=trace_id,
+                session_id=session_id,
+                user_id=str(user_id),
+                persona_db=(SupabasePersonaDB(_supabase) if (_supabase is not None and _is_uuid(str(user_id))) else None),
+            )
+        except Exception:
+            web_ctx, web_sources, web_meta = (None, None, None)
+
+        try:
+            hint_profile: Dict[str, Any] = {"user_id": str(user_id)}
+            if _supabase is not None and _is_uuid(str(user_id)):
+                try:
+                    persona_db2 = SupabasePersonaDB(_supabase)
+                    vs = persona_db2.load_last_value_state(user_id=str(user_id))
+                    ts = persona_db2.load_last_trait_state(user_id=str(user_id))
+                    if vs is not None:
+                        hint_profile["value_state"] = vs.to_dict()
+                    if ts is not None:
+                        hint_profile["trait_state"] = ts.to_dict()
+                except Exception:
+                    pass
+
+            project_type: Optional[str] = None
+            try:
+                if isinstance(req.gen, dict):
+                    for k in ("project_type", "app", "channel", "client"):
+                        v = req.gen.get(k)
+                        if isinstance(v, str) and v.strip():
+                            project_type = v.strip()
+                            break
+            except Exception:
+                project_type = None
+
+            personalization_hint = {
+                "user_profile": hint_profile,
+                "project_type": project_type,
+            }
+        except Exception:
+            personalization_hint = None
+    elif intent == "realtime_fact":
+        try:
+            forced_gen: Optional[Dict[str, Any]] = None
+            try:
+                g0 = req.gen if isinstance(req.gen, dict) else {}
+                forced_gen = dict(g0)
+                web_cfg = forced_gen.get("web_rag")
+                if isinstance(web_cfg, dict):
+                    forced_gen["web_rag"] = {**web_cfg, "enabled": True}
+                else:
+                    forced_gen["web_rag"] = {"enabled": True}
+            except Exception:
+                forced_gen = (req.gen if isinstance(req.gen, dict) else None)
+
+            web_ctx, web_sources, web_meta = await _maybe_web_rag_for_turn(
+                message=effective_message,
+                gen=forced_gen,
                 trace_id=trace_id,
                 session_id=session_id,
                 user_id=str(user_id),
@@ -1961,6 +2107,7 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
         context={
             "_trace_id": trace_id,
             "_intent": intent,
+            **({"_personalization_hint": personalization_hint} if isinstance(personalization_hint, dict) and personalization_hint else {}),
             **({"_tool_weather": tool_weather} if isinstance(tool_weather, dict) and tool_weather else {}),
             **({"_comparison": tool_comparison} if isinstance(tool_comparison, dict) and tool_comparison else {}),
             **({"character_id": req.character_id} if req.character_id else {}),
