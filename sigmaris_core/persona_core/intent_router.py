@@ -36,6 +36,10 @@ def classify_intent(user_text: str) -> IntentType:
     # Realtime fact: time-sensitive / news / outage / cite/search words.
     realtime_keywords = (
         "最新",
+        "直近",
+        "最近",
+        "現時点",
+        "今現在",
         "今日",
         "昨日",
         "今週",
@@ -78,4 +82,3 @@ def classify_intent(user_text: str) -> IntentType:
         return "realtime_fact"
 
     return "general"
-
