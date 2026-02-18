@@ -465,40 +465,12 @@ function buildAugmentedMessage(params: {
     msg += "\n\n" + lines.join("\n");
   }
 
-  if (params.linkAnalyses.length > 0) {
-    const lines: string[] = [];
-    lines.push("[リンク解析（自動）]");
-    lines.push("※このブロックはサーバー側でWeb検索/取得した結果です。根拠として使えます。");
-    for (const a of params.linkAnalyses.slice(0, 3)) {
-      lines.push(`- ${a.url}`);
-      for (const r of (a.results ?? []).slice(0, 3)) {
-        if (a.provider === "github_repo_search") {
-          const label = [r.owner, r.name].filter(Boolean).join("/") || "(repo)";
-          const desc = r.snippet ? ` — ${clampText(r.snippet, 160)}` : "";
-          lines.push(
-            `  - ${label}${desc}${r.repository_url ? ` (${r.repository_url})` : ""}`
-          );
-        } else {
-          const title = r.title ? clampText(r.title, 120) : "(result)";
-          const snip = r.snippet ? ` — ${clampText(r.snippet, 160)}` : "";
-          lines.push(`  - ${title}${snip}${r.url ? ` (${r.url})` : ""}`);
-        }
-      }
-    }
-    msg += "\n\n" + lines.join("\n");
-  }
-
   return clampText(msg, 12000);
 }
 
 function retrievalSystemHint(params: { linkAnalyses: Phase04LinkAnalysis[] }) {
-  if (!params.linkAnalyses || params.linkAnalyses.length === 0) return "";
-  return [
-    "Retrieval Mode: ON",
-    "- Web/GitHub retrieval results may be provided in the user message under [リンク解析（自動）].",
-    "- If that block exists, do NOT claim you cannot browse the web. Use the provided results.",
-    "- When you reference facts from the results, include the URL shown in parentheses as the source.",
-  ].join("\n");
+  void params;
+  return "";
 }
 
 function toStateSnapshotRow(params: {

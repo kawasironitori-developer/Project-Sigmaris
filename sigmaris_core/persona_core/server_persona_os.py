@@ -1448,20 +1448,95 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
 
     overload_score = _estimate_overload_score(effective_message)
 
+    # Intent Router (core-side)
+    try:
+        from persona_core.intent_router import classify_intent
+
+        intent = classify_intent(effective_message)
+    except Exception:
+        intent = "general"
+
     web_ctx = None
     web_sources = None
     web_meta = None
-    try:
-        web_ctx, web_sources, web_meta = await _maybe_web_rag_for_turn(
-            message=effective_message,
-            gen=(req.gen if isinstance(req.gen, dict) else None),
-            trace_id=trace_id,
-            session_id=session_id,
-            user_id=str(user_id),
-            persona_db=(SupabasePersonaDB(_supabase) if (_supabase is not None and _is_uuid(str(user_id))) else None),
-        )
-    except Exception:
-        web_ctx, web_sources, web_meta = (None, None, None)
+
+    tool_weather = None
+    tool_comparison = None
+
+    if intent == "weather":
+        try:
+            import json
+
+            from persona_core.phase04.tools.weather_api import weather_api_flow
+
+            tool_weather = weather_api_flow(effective_message)
+            web_ctx = (
+                "External Tool Context (weather_api).\n"
+                "Usage rules:\n"
+                "- Use this as supporting evidence.\n\n"
+                "tool.weather:\n"
+                + json.dumps(tool_weather, ensure_ascii=False, separators=(",", ":"))
+            )
+            web_sources = []
+            web_meta = {"intent": "weather", "provider": "weather_api"}
+        except Exception:
+            tool_weather = None
+            web_ctx, web_sources, web_meta = (None, None, None)
+    elif intent == "comparison":
+        try:
+            import json
+
+            from persona_core.phase04.tools.comparison_flow import comparison_flow
+
+            tool_comparison = comparison_flow(effective_message)
+
+            # Remove URLs from injected context; keep sources in metadata only.
+            safe = {}
+            try:
+                if isinstance(tool_comparison, dict):
+                    ia = tool_comparison.get("item_a") if isinstance(tool_comparison.get("item_a"), dict) else None
+                    ib = tool_comparison.get("item_b") if isinstance(tool_comparison.get("item_b"), dict) else None
+                    safe = {
+                        "item_a": {
+                            "name": (ia or {}).get("name"),
+                            "summary": ((ia or {}).get("result") or {}).get("summary") if isinstance((ia or {}).get("result"), dict) else None,
+                            "key_points": ((ia or {}).get("result") or {}).get("key_points") if isinstance((ia or {}).get("result"), dict) else None,
+                        },
+                        "item_b": {
+                            "name": (ib or {}).get("name"),
+                            "summary": ((ib or {}).get("result") or {}).get("summary") if isinstance((ib or {}).get("result"), dict) else None,
+                            "key_points": ((ib or {}).get("result") or {}).get("key_points") if isinstance((ib or {}).get("result"), dict) else None,
+                        },
+                        "differences": tool_comparison.get("differences") if isinstance(tool_comparison.get("differences"), list) else [],
+                    }
+            except Exception:
+                safe = {}
+
+            web_ctx = (
+                "External Tool Context (comparison_flow).\n"
+                "Usage rules:\n"
+                "- Use this as supporting evidence.\n"
+                "- Do NOT invent specs not present.\n\n"
+                "tool.comparison:\n"
+                + json.dumps(safe, ensure_ascii=False, separators=(",", ":"))
+            )
+            web_sources = []
+            web_meta = {"intent": "comparison", "provider": "comparison_flow"}
+        except Exception:
+            tool_comparison = None
+            web_ctx, web_sources, web_meta = (None, None, None)
+    elif intent == "realtime_fact":
+        try:
+            web_ctx, web_sources, web_meta = await _maybe_web_rag_for_turn(
+                message=effective_message,
+                gen=(req.gen if isinstance(req.gen, dict) else None),
+                trace_id=trace_id,
+                session_id=session_id,
+                user_id=str(user_id),
+                persona_db=(SupabasePersonaDB(_supabase) if (_supabase is not None and _is_uuid(str(user_id))) else None),
+            )
+        except Exception:
+            web_ctx, web_sources, web_meta = (None, None, None)
 
     preq = PersonaRequest(
         user_id=user_id,
@@ -1469,6 +1544,9 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
         message=effective_message,
         context={
             "_trace_id": trace_id,
+            "_intent": intent,
+            **({"_tool_weather": tool_weather} if isinstance(tool_weather, dict) and tool_weather else {}),
+            **({"_comparison": tool_comparison} if isinstance(tool_comparison, dict) and tool_comparison else {}),
             **({"character_id": req.character_id} if req.character_id else {}),
             **({"persona_system": external_system} if external_system else {}),
             **({"_external_knowledge": web_ctx} if isinstance(web_ctx, str) and web_ctx.strip() else {}),
@@ -1709,11 +1787,32 @@ async def persona_chat(req: ChatRequest, auth: Optional[AuthContext] = Depends(g
 
     # Web RAG observability (best-effort; safe to expose)
     try:
+        sources_out: List[Dict[str, Any]] = []
+        try:
+            if isinstance(web_sources, list):
+                for idx, s in enumerate(web_sources, start=1):
+                    if not isinstance(s, dict):
+                        continue
+                    u = str(s.get("final_url") or s.get("url") or "").strip()
+                    if not u:
+                        continue
+                    sources_out.append(
+                        {
+                            "id": int(idx),
+                            "title": str(s.get("title") or "").strip(),
+                            "url": u,
+                            "confidence": float(s.get("confidence")) if isinstance(s.get("confidence"), (int, float)) else None,
+                        }
+                    )
+        except Exception:
+            sources_out = []
+
         meta["web_rag"] = {
             "enabled": bool(_web_rag_enabled()),
             "injected": bool(isinstance(web_ctx, str) and web_ctx.strip()),
             "sources_count": int(len(web_sources)) if isinstance(web_sources, list) else 0,
             "meta": (web_meta if isinstance(web_meta, dict) else {}),
+            "sources": sources_out,
         }
     except Exception:
         pass
@@ -1774,20 +1873,94 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
 
     overload_score = _estimate_overload_score(effective_message)
 
+    # Intent Router (core-side)
+    try:
+        from persona_core.intent_router import classify_intent
+
+        intent = classify_intent(effective_message)
+    except Exception:
+        intent = "general"
+
     web_ctx = None
     web_sources = None
     web_meta = None
-    try:
-        web_ctx, web_sources, web_meta = await _maybe_web_rag_for_turn(
-            message=effective_message,
-            gen=(req.gen if isinstance(req.gen, dict) else None),
-            trace_id=trace_id,
-            session_id=session_id,
-            user_id=str(user_id),
-            persona_db=(SupabasePersonaDB(_supabase) if (_supabase is not None and _is_uuid(str(user_id))) else None),
-        )
-    except Exception:
-        web_ctx, web_sources, web_meta = (None, None, None)
+
+    tool_weather = None
+    tool_comparison = None
+
+    if intent == "weather":
+        try:
+            import json
+
+            from persona_core.phase04.tools.weather_api import weather_api_flow
+
+            tool_weather = weather_api_flow(effective_message)
+            web_ctx = (
+                "External Tool Context (weather_api).\n"
+                "Usage rules:\n"
+                "- Use this as supporting evidence.\n\n"
+                "tool.weather:\n"
+                + json.dumps(tool_weather, ensure_ascii=False, separators=(",", ":"))
+            )
+            web_sources = []
+            web_meta = {"intent": "weather", "provider": "weather_api"}
+        except Exception:
+            tool_weather = None
+            web_ctx, web_sources, web_meta = (None, None, None)
+    elif intent == "comparison":
+        try:
+            import json
+
+            from persona_core.phase04.tools.comparison_flow import comparison_flow
+
+            tool_comparison = comparison_flow(effective_message)
+
+            safe = {}
+            try:
+                if isinstance(tool_comparison, dict):
+                    ia = tool_comparison.get("item_a") if isinstance(tool_comparison.get("item_a"), dict) else None
+                    ib = tool_comparison.get("item_b") if isinstance(tool_comparison.get("item_b"), dict) else None
+                    safe = {
+                        "item_a": {
+                            "name": (ia or {}).get("name"),
+                            "summary": ((ia or {}).get("result") or {}).get("summary") if isinstance((ia or {}).get("result"), dict) else None,
+                            "key_points": ((ia or {}).get("result") or {}).get("key_points") if isinstance((ia or {}).get("result"), dict) else None,
+                        },
+                        "item_b": {
+                            "name": (ib or {}).get("name"),
+                            "summary": ((ib or {}).get("result") or {}).get("summary") if isinstance((ib or {}).get("result"), dict) else None,
+                            "key_points": ((ib or {}).get("result") or {}).get("key_points") if isinstance((ib or {}).get("result"), dict) else None,
+                        },
+                        "differences": tool_comparison.get("differences") if isinstance(tool_comparison.get("differences"), list) else [],
+                    }
+            except Exception:
+                safe = {}
+
+            web_ctx = (
+                "External Tool Context (comparison_flow).\n"
+                "Usage rules:\n"
+                "- Use this as supporting evidence.\n"
+                "- Do NOT invent specs not present.\n\n"
+                "tool.comparison:\n"
+                + json.dumps(safe, ensure_ascii=False, separators=(",", ":"))
+            )
+            web_sources = []
+            web_meta = {"intent": "comparison", "provider": "comparison_flow"}
+        except Exception:
+            tool_comparison = None
+            web_ctx, web_sources, web_meta = (None, None, None)
+    elif intent == "realtime_fact":
+        try:
+            web_ctx, web_sources, web_meta = await _maybe_web_rag_for_turn(
+                message=effective_message,
+                gen=(req.gen if isinstance(req.gen, dict) else None),
+                trace_id=trace_id,
+                session_id=session_id,
+                user_id=str(user_id),
+                persona_db=(SupabasePersonaDB(_supabase) if (_supabase is not None and _is_uuid(str(user_id))) else None),
+            )
+        except Exception:
+            web_ctx, web_sources, web_meta = (None, None, None)
 
     preq = PersonaRequest(
         user_id=user_id,
@@ -1795,6 +1968,9 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
         message=effective_message,
         context={
             "_trace_id": trace_id,
+            "_intent": intent,
+            **({"_tool_weather": tool_weather} if isinstance(tool_weather, dict) and tool_weather else {}),
+            **({"_comparison": tool_comparison} if isinstance(tool_comparison, dict) and tool_comparison else {}),
             **({"character_id": req.character_id} if req.character_id else {}),
             **({"persona_system": external_system} if external_system else {}),
             **({"_external_knowledge": web_ctx} if isinstance(web_ctx, str) and web_ctx.strip() else {}),
@@ -2010,11 +2186,32 @@ async def persona_chat_stream(req: ChatRequest, auth: Optional[AuthContext] = De
 
                     # Web RAG observability (best-effort; safe to expose)
                     try:
+                        sources_out: List[Dict[str, Any]] = []
+                        try:
+                            if isinstance(web_sources, list):
+                                for idx, s in enumerate(web_sources, start=1):
+                                    if not isinstance(s, dict):
+                                        continue
+                                    u = str(s.get("final_url") or s.get("url") or "").strip()
+                                    if not u:
+                                        continue
+                                    sources_out.append(
+                                        {
+                                            "id": int(idx),
+                                            "title": str(s.get("title") or "").strip(),
+                                            "url": u,
+                                            "confidence": float(s.get("confidence")) if isinstance(s.get("confidence"), (int, float)) else None,
+                                        }
+                                    )
+                        except Exception:
+                            sources_out = []
+
                         meta["web_rag"] = {
                             "enabled": bool(_web_rag_enabled()),
                             "injected": bool(isinstance(web_ctx, str) and web_ctx.strip()),
                             "sources_count": int(len(web_sources)) if isinstance(web_sources, list) else 0,
                             "meta": (web_meta if isinstance(web_meta, dict) else {}),
+                            "sources": sources_out,
                         }
                     except Exception:
                         pass

@@ -574,25 +574,24 @@ def build_web_rag(
     lines.append("")
     lines.append("Usage rules:")
     lines.append("- Use this as supporting evidence only; do not quote long passages.")
-    lines.append("- If you use a claim from a source, include the source URL in your reply.")
+    lines.append("- If you use a claim from a source, reference its source_id in your reply.")
     lines.append("- Prefer Japanese sources when available; mention recency if relevant.")
     lines.append("")
     lines.append("Sources:")
     for idx, s in enumerate(picked, start=1):
         title = s.title or "(no title)"
-        url = s.final_url or s.url
         summ = (s.summary or "").strip()
         if not summ:
             summ = (s.snippet or "").strip()
         summ = summ[:800]
         lines.append(f"[{idx}] {title}")
+        lines.append(f"- source_id: {idx}")
         if summ:
             lines.append(f"- summary: {summ}")
         if isinstance(s.key_points, list) and s.key_points:
             kp = [str(x).strip() for x in s.key_points if isinstance(x, str) and x.strip()]
             if kp:
                 lines.append(f"- key_points: {', '.join(kp[:6])}")
-        lines.append(f"- url: {url}")
         lines.append("")
 
     meta = {

@@ -47,6 +47,82 @@ type Phase04UploadMeta = {
   parsed_excerpt?: string;
 };
 
+type WebRagSourceMeta = {
+  id: number;
+  title?: string;
+  url: string;
+  confidence?: number | null;
+};
+
+function faviconUrlForLink(urlStr: string) {
+  try {
+    const u = new URL(urlStr);
+    const host = u.hostname;
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
+  } catch {
+    return null;
+  }
+}
+
+const AssistantMessageSourcesBadges: FC = () => {
+  const custom = useMessage((s) => s.metadata?.custom) as Record<
+    string,
+    unknown
+  > | null;
+
+  const webRag = (custom?.web_rag ?? null) as Record<string, unknown> | null;
+  const sourcesRaw = webRag?.sources ?? null;
+  const sources = Array.isArray(sourcesRaw)
+    ? (sourcesRaw as WebRagSourceMeta[])
+    : [];
+
+  const visible = sources
+    .filter((s) => s && typeof s.url === "string" && s.url)
+    .slice(0, 6);
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="absolute right-2 bottom-2 flex flex-wrap items-center justify-end gap-1.5">
+      {visible.map((s) => {
+        const url = String(s.url);
+        const icon = faviconUrlForLink(url);
+        const label =
+          typeof s.title === "string" && s.title.trim()
+            ? s.title.trim()
+            : (() => {
+                try {
+                  return new URL(url).hostname;
+                } catch {
+                  return url;
+                }
+              })();
+
+        return (
+          <a
+            key={`${s.id}:${url}`}
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="group inline-flex max-w-[220px] items-center gap-1.5 rounded-full border bg-muted/70 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur hover:bg-muted"
+            title={label}
+          >
+            {icon ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={icon}
+                alt=""
+                className="size-3.5 shrink-0 rounded-sm"
+                loading="lazy"
+              />
+            ) : null}
+            <span className="truncate">{label}</span>
+          </a>
+        );
+      })}
+    </div>
+  );
+};
+
 const UserMessagePersistedUploads: FC = () => {
   const hasAuiAttachments = useMessage(
     (s) => (s.attachments?.length ?? 0) > 0,
@@ -464,6 +540,7 @@ const AssistantMessage: FC = () => {
           className="
         aui-assistant-message-content
         wrap-break-word
+        relative
         rounded-2xl
         bg-background/80
         backdrop-blur-md
@@ -481,6 +558,7 @@ const AssistantMessage: FC = () => {
             }}
           />
           <MessageError />
+          <AssistantMessageSourcesBadges />
         </div>
 
         {/* ===== Footer ===== */}
