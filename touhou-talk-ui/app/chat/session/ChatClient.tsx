@@ -989,7 +989,7 @@ export default function ChatClient() {
               </header>
 
               {/* Chat */}
-              <div className="relative z-10 flex min-h-0 flex-1 overflow-hidden">
+              <div className="relative z-10 min-h-0 flex-1 overflow-hidden">
                 {activeSessionId ? (
                   <Thread />
                 ) : (
