@@ -5,6 +5,7 @@ import {
   startTransition,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -940,13 +941,15 @@ export default function ChatClient() {
   const runtime = useExternalStoreRuntime(store);
 
   const viewportRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
 
     const vv = window.visualViewport ?? null;
     const set = () => {
-      const h = vv?.height ?? window.innerHeight;
+      const fromVv = vv?.height ?? 0;
+      const h =
+        Number.isFinite(fromVv) && fromVv > 200 ? fromVv : window.innerHeight;
       el.style.setProperty("--vvh100", `${h}px`);
     };
 
@@ -974,7 +977,8 @@ export default function ChatClient() {
         <SidebarProvider>
           <div
             ref={viewportRef}
-            className="flex h-[var(--vvh100,100svh)] w-full min-h-0 overflow-hidden bg-background text-foreground transition-colors duration-300"
+            className="flex w-full min-h-0 overflow-hidden bg-background text-foreground transition-colors duration-300"
+            style={{ height: "var(--vvh100, 100svh)" }}
           >
             <TouhouSidebar
               visibleCharacters={visibleCharacters}
