@@ -947,7 +947,7 @@ export default function ChatClient() {
     const vv = window.visualViewport ?? null;
     const set = () => {
       const h = vv?.height ?? window.innerHeight;
-      el.style.setProperty("--vvh", `${h * 0.01}px`);
+      el.style.setProperty("--vvh100", `${h}px`);
     };
 
     set();
@@ -974,7 +974,7 @@ export default function ChatClient() {
         <SidebarProvider>
           <div
             ref={viewportRef}
-            className="flex h-[calc(var(--vvh,1vh)*100)] w-full min-h-0 overflow-hidden bg-background text-foreground transition-colors duration-300"
+            className="flex h-[var(--vvh100,100svh)] w-full min-h-0 overflow-hidden bg-background text-foreground transition-colors duration-300"
           >
             <TouhouSidebar
               visibleCharacters={visibleCharacters}
