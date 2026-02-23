@@ -1,9 +1,14 @@
 ﻿"use client";
 
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRef } from "react";
-import { startTransition } from "react";
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   AssistantRuntimeProvider,
@@ -934,6 +939,29 @@ export default function ChatClient() {
 
   const runtime = useExternalStoreRuntime(store);
 
+  const viewportRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+
+    const vv = window.visualViewport ?? null;
+    const set = () => {
+      const h = vv?.height ?? window.innerHeight;
+      el.style.setProperty("--vvh", `${h * 0.01}px`);
+    };
+
+    set();
+    vv?.addEventListener("resize", set);
+    vv?.addEventListener("scroll", set);
+    window.addEventListener("resize", set);
+
+    return () => {
+      vv?.removeEventListener("resize", set);
+      vv?.removeEventListener("scroll", set);
+      window.removeEventListener("resize", set);
+    };
+  }, []);
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <TouhouUiProvider
@@ -944,14 +972,17 @@ export default function ChatClient() {
         }}
       >
         <SidebarProvider>
-          <div className="flex h-svh w-full overflow-hidden bg-background text-foreground transition-colors duration-300">
+          <div
+            ref={viewportRef}
+            className="flex h-[calc(var(--vvh,1vh)*100)] w-full min-h-0 overflow-hidden bg-background text-foreground transition-colors duration-300"
+          >
             <TouhouSidebar
               visibleCharacters={visibleCharacters}
               activeCharacterId={activeCharacterId}
               onSelectCharacter={selectCharacter}
             />
 
-            <SidebarInset className="relative flex flex-col overflow-hidden">
+            <SidebarInset className="relative flex min-h-0 flex-col overflow-hidden">
               {/* Background */}
               <div
                 className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-70"
@@ -984,7 +1015,7 @@ export default function ChatClient() {
               </header>
 
               {/* Chat */}
-              <div className="relative z-10 flex-1 overflow-hidden">
+              <div className="relative z-10 flex min-h-0 flex-1 overflow-hidden">
                 {activeSessionId ? (
                   <Thread />
                 ) : (
