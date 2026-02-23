@@ -15,6 +15,8 @@ export default async function ChatLayout({
   }
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden">{children}</div>
+    <div className="flex h-dvh flex-col overflow-hidden max-lg:fixed max-lg:inset-0 max-lg:overscroll-none">
+      {children}
+    </div>
   );
 }

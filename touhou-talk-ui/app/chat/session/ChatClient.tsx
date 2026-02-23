@@ -1,9 +1,14 @@
 ﻿"use client";
 
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRef } from "react";
-import { startTransition } from "react";
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   AssistantRuntimeProvider,
@@ -934,6 +939,25 @@ export default function ChatClient() {
 
   const runtime = useExternalStoreRuntime(store);
 
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    const prevPosition = document.body.style.position;
+    const prevWidth = document.body.style.width;
+    const prevHeight = document.body.style.height;
+
+    document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.width = "100%";
+    document.body.style.height = "100%";
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.position = prevPosition;
+      document.body.style.width = prevWidth;
+      document.body.style.height = prevHeight;
+    };
+  }, []);
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <TouhouUiProvider
@@ -944,7 +968,7 @@ export default function ChatClient() {
         }}
       >
         <SidebarProvider>
-          <div className="flex h-dvh w-full min-h-0 overflow-hidden bg-background text-foreground transition-colors duration-300">
+          <div className="flex h-full w-full min-h-0 overflow-hidden bg-background text-foreground transition-colors duration-300">
             <TouhouSidebar
               visibleCharacters={visibleCharacters}
               activeCharacterId={activeCharacterId}
