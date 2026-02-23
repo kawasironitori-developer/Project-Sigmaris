@@ -5,7 +5,6 @@ import {
   startTransition,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -940,31 +939,6 @@ export default function ChatClient() {
 
   const runtime = useExternalStoreRuntime(store);
 
-  const viewportRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-
-    const vv = window.visualViewport ?? null;
-    const set = () => {
-      const fromVv = vv?.height ?? 0;
-      const h =
-        Number.isFinite(fromVv) && fromVv > 200 ? fromVv : window.innerHeight;
-      el.style.setProperty("--vvh100", `${h}px`);
-    };
-
-    set();
-    vv?.addEventListener("resize", set);
-    vv?.addEventListener("scroll", set);
-    window.addEventListener("resize", set);
-
-    return () => {
-      vv?.removeEventListener("resize", set);
-      vv?.removeEventListener("scroll", set);
-      window.removeEventListener("resize", set);
-    };
-  }, []);
-
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <TouhouUiProvider
@@ -975,11 +949,7 @@ export default function ChatClient() {
         }}
       >
         <SidebarProvider>
-          <div
-            ref={viewportRef}
-            className="flex w-full min-h-0 overflow-hidden bg-background text-foreground transition-colors duration-300"
-            style={{ height: "var(--vvh100, 100svh)" }}
-          >
+          <div className="flex h-dvh w-full min-h-0 overflow-hidden bg-background text-foreground transition-colors duration-300">
             <TouhouSidebar
               visibleCharacters={visibleCharacters}
               activeCharacterId={activeCharacterId}
