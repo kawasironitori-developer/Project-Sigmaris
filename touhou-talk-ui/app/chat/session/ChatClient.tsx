@@ -321,14 +321,48 @@ export default function ChatClient() {
     const sp = typeof ui.chatBackgroundSP === "string" ? ui.chatBackgroundSP.trim() : "";
     const legacy = typeof ui.chatBackground === "string" ? ui.chatBackground.trim() : "";
 
-    // Prefer explicit PC/SP backgrounds when either is present.
-    // Only fall back to legacy chatBackground when both are missing.
-    if (pc || sp) {
-      if (isMobile) return sp || pc || null;
-      return pc || sp || null;
+    const preferred = isMobile ? sp || pc : pc || sp;
+    return preferred || legacy || null;
+  }, [activeCharacter?.ui, isMobile]);
+
+  const [resolvedChatBackground, setResolvedChatBackground] = useState<string | null>(null);
+
+  useEffect(() => {
+    const ui = activeCharacter?.ui;
+    if (!ui) {
+      setResolvedChatBackground(null);
+      return;
     }
 
-    return legacy || null;
+    const pc = typeof ui.chatBackgroundPC === "string" ? ui.chatBackgroundPC.trim() : "";
+    const sp = typeof ui.chatBackgroundSP === "string" ? ui.chatBackgroundSP.trim() : "";
+    const legacy = typeof ui.chatBackground === "string" ? ui.chatBackground.trim() : "";
+
+    const preferred = isMobile ? sp || pc : pc || sp;
+    const fallback = legacy || null;
+
+    // If no preferred is configured, just use legacy (if any).
+    if (!preferred) {
+      setResolvedChatBackground(fallback);
+      return;
+    }
+
+    // Try to load preferred. If it 404s (image not yet added), fall back to legacy.
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (cancelled) return;
+      setResolvedChatBackground(preferred);
+    };
+    img.onerror = () => {
+      if (cancelled) return;
+      setResolvedChatBackground(fallback);
+    };
+    img.src = preferred;
+
+    return () => {
+      cancelled = true;
+    };
   }, [activeCharacter?.ui, isMobile]);
 
   /* =========================
@@ -1084,8 +1118,8 @@ export default function ChatClient() {
               <div
                 className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-70"
                 style={{
-                  backgroundImage: effectiveChatBackground
-                    ? `url('${effectiveChatBackground}')`
+                  backgroundImage: (resolvedChatBackground ?? effectiveChatBackground)
+                    ? `url('${resolvedChatBackground ?? effectiveChatBackground}')`
                     : undefined,
                   filter: "blur(1px) brightness(0.9)",
                 }}
