@@ -314,17 +314,6 @@ export default function ChatClient() {
     return CHARACTERS[activeCharacterId] ?? null;
   }, [activeCharacterId]);
 
-  const effectiveChatBackground = useMemo(() => {
-    const ui = activeCharacter?.ui;
-    if (!ui) return null;
-    const pc = typeof ui.chatBackgroundPC === "string" ? ui.chatBackgroundPC.trim() : "";
-    const sp = typeof ui.chatBackgroundSP === "string" ? ui.chatBackgroundSP.trim() : "";
-    const legacy = typeof ui.chatBackground === "string" ? ui.chatBackground.trim() : "";
-
-    const preferred = isMobile ? sp || pc : pc || sp;
-    return preferred || legacy || null;
-  }, [activeCharacter?.ui, isMobile]);
-
   const [resolvedChatBackground, setResolvedChatBackground] = useState<string | null>(null);
 
   useEffect(() => {
@@ -341,9 +330,11 @@ export default function ChatClient() {
     const preferred = isMobile ? sp || pc : pc || sp;
     const fallback = legacy || null;
 
+    // Always show fallback immediately to avoid a "blank" background while checking preferred existence.
+    setResolvedChatBackground(fallback);
+
     // If no preferred is configured, just use legacy (if any).
     if (!preferred) {
-      setResolvedChatBackground(fallback);
       return;
     }
 
@@ -363,7 +354,7 @@ export default function ChatClient() {
     return () => {
       cancelled = true;
     };
-  }, [activeCharacter?.ui, isMobile]);
+  }, [activeCharacterId, activeCharacter?.ui, isMobile]);
 
   /* =========================
      Character filter
@@ -1118,8 +1109,8 @@ export default function ChatClient() {
               <div
                 className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-70"
                 style={{
-                  backgroundImage: (resolvedChatBackground ?? effectiveChatBackground)
-                    ? `url('${resolvedChatBackground ?? effectiveChatBackground}')`
+                  backgroundImage: resolvedChatBackground
+                    ? `url('${resolvedChatBackground}')`
                     : undefined,
                   filter: "blur(1px) brightness(0.9)",
                 }}
