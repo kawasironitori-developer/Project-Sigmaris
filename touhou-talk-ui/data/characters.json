@@ -14,8 +14,8 @@
       "avatar": "/avatar/reimu.png",
       "chatBackground": "/background/reimu.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/background/reimu.png",
-      "chatBackgroundSP": "/background/reimu.png"
+      "chatBackgroundPC": "/background/reimu-pc.png",
+      "chatBackgroundSP": "/background/reimu-sp.png"
     },
     "tts": {
       "voice": "f1",
@@ -37,8 +37,8 @@
       "avatar": "/avatar/marisa.png",
       "chatBackground": "/background/marisa.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/background/marisa.png",
-      "chatBackgroundSP": "/background/marisa.png"
+      "chatBackgroundPC": "/background/marisa-pc.png",
+      "chatBackgroundSP": "/background/marisa-sp.png"
     },
     "tts": {
       "voice": "f2",
@@ -60,8 +60,8 @@
       "avatar": "/avatar/alice.png",
       "chatBackground": "/background/arisu.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/background/arisu.png",
-      "chatBackgroundSP": "/background/arisu.png"
+      "chatBackgroundPC": "/background/arisu-pc.png",
+      "chatBackgroundSP": "/background/arisu-sp.png"
     },
     "tts": {
       "voice": "f3",
@@ -83,8 +83,8 @@
       "avatar": "/avatar/aya.png",
       "chatBackground": "/background/aya.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/background/aya.png",
-      "chatBackgroundSP": "/background/aya.png"
+      "chatBackgroundPC": "/background/aya-pc.png",
+      "chatBackgroundSP": "/background/aya-sp.png"
     },
     "tts": {
       "voice": "f2",
@@ -106,8 +106,8 @@
       "avatar": "/avatar/momiji.png",
       "chatBackground": "/background/momiji.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/background/momiji.png",
-      "chatBackgroundSP": "/background/momiji.png"
+      "chatBackgroundPC": "/background/momiji-pc.png",
+      "chatBackgroundSP": "/background/momiji-sp.png"
     },
     "tts": {
       "voice": "f3",
@@ -129,8 +129,8 @@
       "avatar": "/avatar/nitori.png",
       "chatBackground": "/background/nitori.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/background/nitori.png",
-      "chatBackgroundSP": "/background/nitori.png"
+      "chatBackgroundPC": "/background/nitori-pc.png",
+      "chatBackgroundSP": "/background/nitori-sp.png"
     },
     "tts": {
       "voice": "f2",
@@ -152,8 +152,8 @@
       "avatar": "/avatar/youmu.png",
       "chatBackground": "/background/youmu.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/background/youmu.png",
-      "chatBackgroundSP": "/background/youmu.png"
+      "chatBackgroundPC": "/background/youmu-pc.png",
+      "chatBackgroundSP": "/background/youmu-sp.png"
     },
     "tts": {
       "voice": "f3",
@@ -175,8 +175,8 @@
       "avatar": "/avatar/remilia.png",
       "chatBackground": "/background/remilia.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/background/remilia.png",
-      "chatBackgroundSP": "/background/remilia.png"
+      "chatBackgroundPC": "/background/remilia-pc.png",
+      "chatBackgroundSP": "/background/remilia-sp.png"
     },
     "tts": {
       "voice": "f2",
@@ -198,8 +198,8 @@
       "avatar": "/avatar/sakuya.png",
       "chatBackground": "/background/sakuya.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/background/sakuya.png",
-      "chatBackgroundSP": "/background/sakuya.png"
+      "chatBackgroundPC": "/background/sakuya-pc.png",
+      "chatBackgroundSP": "/background/sakuya-sp.png"
     },
     "tts": {
       "voice": "f3",
@@ -221,8 +221,8 @@
       "avatar": "/avatar/flandre.png",
       "chatBackground": "/background/flandre.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/background/flandre.png",
-      "chatBackgroundSP": "/background/flandre.png"
+      "chatBackgroundPC": "/background/flandre-pc.png",
+      "chatBackgroundSP": "/background/flandre-sp.png"
     },
     "tts": {
       "voice": "f2",
@@ -244,8 +244,8 @@
       "avatar": "/avatar/satori.png",
       "chatBackground": "/background/satori.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/background/satori.png",
-      "chatBackgroundSP": "/background/satori.png"
+      "chatBackgroundPC": "/background/satori-pc.png",
+      "chatBackgroundSP": "/background/satori-sp.png"
     },
     "tts": {
       "voice": "f3",
@@ -267,8 +267,8 @@
       "avatar": "/avatar/koishi.png",
       "chatBackground": "/background/koishi.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/background/koishi.png",
-      "chatBackgroundSP": "/background/koishi.png"
+      "chatBackgroundPC": "/background/koishi-pc.png",
+      "chatBackgroundSP": "/background/koishi-sp.png"
     },
     "tts": {
       "voice": "f2",
@@ -291,8 +291,8 @@
       "avatar": "/avatar/sanae.png",
       "chatBackground": "/maps/sanae.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/gensokyo-pc.png",
-      "chatBackgroundSP": "/maps/gensokyo-sp.png"
+      "chatBackgroundPC": "/maps/sanae-pc.png",
+      "chatBackgroundSP": "/maps/sanae-sp.png"
     }
   },
   "kanako": {
@@ -311,8 +311,8 @@
       "avatar": "/avatar/kanako.png",
       "chatBackground": "/maps/kanako-pc.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/gensokyo-pc.png",
-      "chatBackgroundSP": "/maps/gensokyo-sp.png"
+      "chatBackgroundPC": "/maps/kanako-pc.png",
+      "chatBackgroundSP": "/maps/kanako-sp.png"
     }
   },
   "suwako": {
@@ -331,8 +331,8 @@
       "avatar": "/avatar/suwako.png",
       "chatBackground": "/maps/suwako.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/gensokyo-pc.png",
-      "chatBackgroundSP": "/maps/gensokyo-sp.png"
+      "chatBackgroundPC": "/maps/suwako-pc.png",
+      "chatBackgroundSP": "/maps/suwako-sp.png"
     }
   },
   "meiling": {
@@ -351,8 +351,8 @@
       "avatar": "/avatar/meiling.png",
       "chatBackground": "/background/meiling.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/gensokyo-pc.png",
-      "chatBackgroundSP": "/maps/gensokyo-sp.png"
+      "chatBackgroundPC": "/background/meiling-pc.png",
+      "chatBackgroundSP": "/background/meiling-sp.png"
     }
   },
   "patchouli": {
@@ -371,8 +371,8 @@
       "avatar": "/avatar/patchouli.png",
       "chatBackground": "/background/patchouli.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/gensokyo-pc.png",
-      "chatBackgroundSP": "/maps/gensokyo-sp.png"
+      "chatBackgroundPC": "/background/patchouli-pc.png",
+      "chatBackgroundSP": "/background/patchouli-sp.png"
     }
   },
   "koakuma": {
@@ -391,8 +391,8 @@
       "avatar": "/avatar/koakuma.png",
       "chatBackground": "/background/koakuma.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/gensokyo-pc.png",
-      "chatBackgroundSP": "/maps/gensokyo-sp.png"
+      "chatBackgroundPC": "/background/koakuma-pc.png",
+      "chatBackgroundSP": "/background/koakuma-sp.png"
     }
   },
   "kaguya": {
@@ -431,8 +431,8 @@
       "avatar": "/avatar/eirin.png",
       "chatBackground": "/maps/kaguya.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/gensokyo-pc.png",
-      "chatBackgroundSP": "/maps/gensokyo-sp.png"
+      "chatBackgroundPC": "/maps/kaguya-sp.png",
+      "chatBackgroundSP": "/maps/kaguya-pc.png"
     }
   },
   "reisen": {
@@ -451,8 +451,8 @@
       "avatar": "/avatar/reisen.png",
       "chatBackground": "/maps/reisen.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/gensokyo-pc.png",
-      "chatBackgroundSP": "/maps/gensokyo-sp.png"
+      "chatBackgroundPC": "/maps/reisen-pc.png",
+      "chatBackgroundSP": "/maps/reisen-sp.png"
     }
   },
   "tewi": {
@@ -471,8 +471,8 @@
       "avatar": "/avatar/tewi.png",
       "chatBackground": "/maps/tewi.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/gensokyo-pc.png",
-      "chatBackgroundSP": "/maps/gensokyo-sp.png"
+      "chatBackgroundPC": "/maps/tewi-pc.png",
+      "chatBackgroundSP": "/maps/tewi-sp.png"
     }
   },
   "mokou": {
@@ -491,8 +491,8 @@
       "avatar": "/avatar/mokou.png",
       "chatBackground": "/maps/mokou.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/gensokyo-pc.png",
-      "chatBackgroundSP": "/maps/gensokyo-sp.png"
+      "chatBackgroundPC": "/maps/mokou-pc.png",
+      "chatBackgroundSP": "/maps/mokou-sp.png"
     }
   },
   "keine": {
@@ -511,8 +511,8 @@
       "avatar": "/avatar/keine.png",
       "chatBackground": "/maps/keine.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/gensokyo-pc.png",
-      "chatBackgroundSP": "/maps/gensokyo-sp.png"
+      "chatBackgroundPC": "/maps/keine-pc.png",
+      "chatBackgroundSP": "/maps/keine-sp.png"
     }
   },
   "rin": {
@@ -531,7 +531,7 @@
       "avatar": "/avatar/rin.png",
       "chatBackground": "/background/rin.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/deep-pc.png",
+      "chatBackgroundPC": "/background/rin-pc.png",
       "chatBackgroundSP": "/background/rin-sp.png"
     }
   },
@@ -551,8 +551,8 @@
       "avatar": "/avatar/okuu.png",
       "chatBackground": "/background/okuu.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/deep-pc.png",
-      "chatBackgroundSP": "/maps/deep-sp.png"
+      "chatBackgroundPC": "/background/okuu-pc.png",
+      "chatBackgroundSP": "/background/okuu-sp.png"
     }
   },
   "yuugi": {
@@ -571,8 +571,8 @@
       "avatar": "/avatar/yuugi.png",
       "chatBackground": "/maps/yuugi.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/deep-pc.png",
-      "chatBackgroundSP": "/maps/deep-sp.png"
+      "chatBackgroundPC": "/maps/yuugi-pc.png",
+      "chatBackgroundSP": "/maps/yuugi-sp.png"
     }
   },
   "parsee": {
@@ -591,8 +591,8 @@
       "avatar": "/avatar/parsee.png",
       "chatBackground": "/maps/parsee.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/deep-pc.png",
-      "chatBackgroundSP": "/maps/deep-sp.png"
+      "chatBackgroundPC": "/maps/parsee-pc.png",
+      "chatBackgroundSP": "/maps/parsee-sp.png"
     }
   },
   "yamame": {
@@ -611,8 +611,8 @@
       "avatar": "/avatar/yamame.png",
       "chatBackground": "/maps/yamame.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/deep-pc.png",
-      "chatBackgroundSP": "/maps/deep-sp.png"
+      "chatBackgroundPC": "/maps/yamame-pc.png",
+      "chatBackgroundSP": "/maps/yamame-sp.png"
     }
   },
   "yuyuko": {
@@ -631,8 +631,8 @@
       "avatar": "/avatar/yuyuko.png",
       "chatBackground": "/maps/yuyuk.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/higan-pc.png",
-      "chatBackgroundSP": "/maps/higan-sp.png"
+      "chatBackgroundPC": "/maps/yuyuk-pc.png",
+      "chatBackgroundSP": "/maps/yuyuk-sp.png"
     }
   },
   "komachi": {
@@ -651,8 +651,8 @@
       "avatar": "/avatar/komachi.png",
       "chatBackground": "/maps/komachi.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/higan-pc.png",
-      "chatBackgroundSP": "/maps/higan-sp.png"
+      "chatBackgroundPC": "/maps/komachi-pc.png",
+      "chatBackgroundSP": "/maps/komachi-sp.png"
     }
   },
   "eiki": {
@@ -671,8 +671,8 @@
       "avatar": "/avatar/eiki.png",
       "chatBackground": "/maps/eiki.png",
       "placeholder": "話しかける",
-      "chatBackgroundPC": "/maps/higan-pc.png",
-      "chatBackgroundSP": "/maps/higan-sp.png"
+      "chatBackgroundPC": "/maps/eiki-pc.png",
+      "chatBackgroundSP": "/maps/eiki-sp.png"
     }
   }
 }
