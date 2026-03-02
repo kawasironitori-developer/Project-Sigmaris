@@ -121,13 +121,39 @@ export default function EntryHeroSection() {
         <div
           className={`absolute inset-0 fixed ${style.page} ${visible ? style["page--visible"] : ""} top-0 aspect-[3/2] lg:w-full lg:max-w-6xl`}
         >
+          <div className="absolute inset-0 grid grid-cols-3">
+            <div className="relative h-full w-full overflow-hidden">
           <Image
             src="/entry/hero.png"
             alt="魔理沙・霊夢・アリス"
             fill
             priority
-            className="object-contain"
+            sizes="(max-width: 1024px) 33vw, 33vw"
+            className="object-cover object-left"
           />
+
+            </div>
+            <div className="relative h-full w-full overflow-hidden">
+              <Image
+                src="/entry/hero.png"
+                alt=""
+                fill
+                priority
+                sizes="(max-width: 1024px) 33vw, 33vw"
+                className="object-cover object-center"
+              />
+            </div>
+            <div className="relative h-full w-full overflow-hidden">
+              <Image
+                src="/entry/hero.png"
+                alt=""
+                fill
+                priority
+                sizes="(max-width: 1024px) 33vw, 33vw"
+                className="object-cover object-right"
+              />
+            </div>
+          </div>
 
           <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 px-6 sm:px-10">
             <div className="mx-auto grid w-full grid-cols-3 gap-2 sm:grid-cols-[1fr_minmax(0,14rem)_1fr_minmax(0,14rem)_1fr_minmax(0,14rem)_1fr] sm:gap-0">
