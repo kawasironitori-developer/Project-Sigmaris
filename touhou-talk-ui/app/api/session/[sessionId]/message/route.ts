@@ -124,6 +124,46 @@ function sanitizeReplyByContext(params: {
     }
   }
 
+  // 3) Reimu: “賽銭” jokes are fine, but throttle when they become repetitive or turn into coercion.
+  if (params.chatMode === "roleplay" && params.characterId === "reimu") {
+    const saisenWord = "(?:賽銭箱|お賽銭|賽銭)";
+    const saisenRe = new RegExp(saisenWord);
+    const userMentionsSaisen = saisenRe.test(lowerRecentUser);
+
+    // If user didn't bring it up and it was used recently, drop saisen sentences to avoid spam.
+    if (!userMentionsSaisen && saisenRe.test(out)) {
+      const recentAssistantText = params.history
+        .filter((m) => m.role === "assistant")
+        .slice(-3)
+        .map((m) => String(m.content ?? ""))
+        .join("\n");
+
+      if (saisenRe.test(recentAssistantText)) {
+        const before = out;
+        out = out.replace(
+          new RegExp(`[^。！？\\n]*${saisenWord}[^。！？\\n]*[。！？]?`, "g"),
+          "",
+        );
+        out = out.replace(/\n{3,}/g, "\n\n").trim();
+        if (!out) out = before;
+      }
+    }
+
+    // If a “saisen as leverage” sentence slips in (and user didn't ask for it), remove that sentence.
+    if (!userMentionsSaisen) {
+      const before = out;
+      out = out.replace(
+        new RegExp(
+          `[^。！？\\n]*${saisenWord}[^。！？\\n]*(?:出せ|出しな|出して|払え|寄越せ|よこせ|出さないと|出さなきゃ)[^。！？\\n]*[。！？]?`,
+          "g",
+        ),
+        "",
+      );
+      out = out.replace(/\n{3,}/g, "\n\n").trim();
+      if (!out) out = before;
+    }
+  }
+
   // Collapse excessive blank lines produced by removals.
   out = out.replace(/\n{3,}/g, "\n\n").trim();
   return out ? out : String(params.reply ?? "");
