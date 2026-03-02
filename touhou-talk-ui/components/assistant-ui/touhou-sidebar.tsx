@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight, Users, X } from "lucide-react";
+import Link from "next/link";
+import { ChevronLeft, ChevronRight, Home, Users, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -70,6 +71,15 @@ export function TouhouSidebar({
           <p className="mt-1 text-xs text-sidebar-foreground/60">
             キャラ選択 / セッション
           </p>
+          <div className="mt-3">
+            <Link
+              href="/"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-sidebar-border bg-sidebar-accent/40 px-3 py-2 text-xs font-medium text-sidebar-foreground/90 transition hover:bg-sidebar-accent"
+            >
+              <Home className="size-4" />
+              サイトトップへ
+            </Link>
+          </div>
         </div>
       </SidebarHeader>
 
