@@ -950,6 +950,41 @@ def _intent_fast_path(user_text: str) -> Optional[PersonaIntentResponse]:
     t = (user_text or "").strip()
     if not t:
         return PersonaIntentResponse(intent="unclear", confidence=0.0, output_style="normal", needs_clarify=True)
+    # Phatic / greetings / check-ins (avoid misclassifying as "unclear")
+    # Examples: "元気？", "こんにちは", "最近どう？", "暇？"
+    try:
+        phatic = re.sub(r"\s+", "", t)
+        if len(phatic) <= 24:
+            if re.match(
+                r"^(?:霊夢[、,]?)?(?:元気|げんき|調子(?:どう)?|最近どう|最近どうよ|こんにちは|こんばんは|おはよう|おはよ|やあ|やっほ(?:ー)?|もしもし|どうも|暇|ひま)(?:[？\?!！。．…]*)$",
+                phatic,
+                flags=re.IGNORECASE,
+            ):
+                return PersonaIntentResponse(
+                    intent="chitchat",
+                    confidence=1.0,
+                    output_style="normal",
+                    allowed_humor=True,
+                    urgency="low",
+                    needs_clarify=False,
+                    safety_risk="none",
+                )
+            if re.match(
+                r"^(?:了解|りょうかい|OK|ok|おけ|わかった|分かった|ありがと(?:う)?|サンキュー|thanks|thx)(?:[！!。．…]*)$",
+                phatic,
+                flags=re.IGNORECASE,
+            ):
+                return PersonaIntentResponse(
+                    intent="chitchat",
+                    confidence=0.9,
+                    output_style="normal",
+                    allowed_humor=True,
+                    urgency="low",
+                    needs_clarify=False,
+                    safety_risk="none",
+                )
+    except Exception:
+        pass
     if _SAFETY_RE.search(t):
         return PersonaIntentResponse(
             intent="safety",
@@ -1050,6 +1085,18 @@ async def persona_intent(req: PersonaIntentRequest, auth: Optional[AuthContext] 
 
     if parsed is None:
         parsed = PersonaIntentResponse(intent="unclear", confidence=0.0, output_style="normal", needs_clarify=True)
+
+    # Character-scoped polish: keep clarify question in-character when possible (no extra inference).
+    try:
+        if parsed.needs_clarify and (req.character_id or "").strip() == "reimu" and (req.chat_mode or "").strip() == "roleplay":
+            q = (parsed.clarify_question or "").strip()
+            if not q or q == "もう少しだけ状況を教えて。何が起きてるの？":
+                q = "で、何があったのよ？"
+            if not q.endswith(("？", "?")):
+                q = q + "？"
+            parsed.clarify_question = q
+    except Exception:
+        pass
 
     _intent_cache_put(key, parsed)
     return parsed
