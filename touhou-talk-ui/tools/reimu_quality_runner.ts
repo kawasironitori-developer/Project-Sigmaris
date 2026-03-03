@@ -81,7 +81,11 @@ function outputStyleBlock(style: OutputStyle, intent: IntentResponse): string {
       "- それ以外の行（前置き/後置き/空行）は禁止。",
     ].join("\n");
   }
-  return ["# Output style (FORCED)", "- 1〜10文（短め）。長文/解説は禁止。"].join("\n");
+  return [
+    "# Output style (FORCED)",
+    "- 1〜7文（短め）。長文/解説は禁止。",
+    "- 箇条書き/候補列挙は最大3つまで（それ以上は1文でまとめる）。",
+  ].join("\n");
 }
 
 function reimuDirectorOverlay(intent: IntentResponse): string {
@@ -102,6 +106,9 @@ function reimuDirectorOverlay(intent: IntentResponse): string {
   ];
   if (!intent.allowed_humor) base.push("", "# Humor gate (FORCED)", "- このターンは冗談/煽り/賽銭の小突きは入れない。");
   if (intent.needs_clarify && intent.clarify_question?.trim()) base.push("", "# Clarify question (FORCED)", `- 出力する質問はこれ：${intent.clarify_question.trim()}`);
+  if (intent.intent === "incident") base.push("", "# Incident constraint (FORCED)", "- 原因候補の列挙は最大3つまで（長い羅列・番号リスト禁止）。");
+  if (intent.intent === "advice" || intent.intent === "task") base.push("", "# Advice constraint (FORCED)", "- 手順/候補列挙は最大3つ。4つ以上は出さない。");
+  if (intent.intent === "advice" || intent.intent === "task") base.push("", "# Question constraint (FORCED)", "- 質問は1つだけ。心情の二択/三択で分類させない（事実を1つ聞く）。");
   return base.join("\n").trim();
 }
 
@@ -151,6 +158,15 @@ function coerceToForcedStyle(params: { style: OutputStyle; intent: IntentRespons
 
   if (params.intent.needs_clarify && (params.intent.clarify_question || "").trim()) {
     return { reply: String(params.intent.clarify_question).trim(), applied: true };
+  }
+
+  if (style === "normal") {
+    const lines = raw.split("\n").map((s) => s.trim()).filter(Boolean);
+    if (lines.length > 10) {
+      const compact = lines.join(" ").replace(/\s+/g, " ").trim();
+      return { reply: compact, applied: compact !== raw };
+    }
+    return { reply: raw, applied: false };
   }
 
   if (style === "bullet_3") {
@@ -300,7 +316,7 @@ function parseArgs(argv: string[]) {
   return out;
 }
 
-type Case = { id: string; text: string };
+type Case = { id: string; text?: string; turns?: string[] };
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -309,6 +325,8 @@ async function main() {
   const userId = typeof args["user-id"] === "string" ? String(args["user-id"]) : "bench-user";
   const characterId = "reimu";
   const chatMode: TouhouChatMode = "roleplay";
+  const maxTurnsRaw = typeof args["max-turns"] === "string" ? Number(args["max-turns"]) : 120;
+  const maxTurns = Number.isFinite(maxTurnsRaw) && maxTurnsRaw > 0 ? Math.floor(maxTurnsRaw) : 120;
 
   const artifactsDir = join(process.cwd(), "touhou-talk-ui", "artifacts", "reimu_quality", nowStamp());
   mkdirSync(artifactsDir, { recursive: true });
@@ -322,105 +340,163 @@ async function main() {
   const md: string[] = [];
   const jsonl: string[] = [];
 
-  md.push(`# 霊夢 品質テスト (cases)`, `- core: ${base}`, `- cases: ${casesPath}`, `- count: ${targetCases.length}`, "");
+  md.push(
+    `# 霊夢 品質テスト (cases)`,
+    `- core: ${base}`,
+    `- cases: ${casesPath}`,
+    `- cases_count: ${targetCases.length}`,
+    `- max_turns: ${maxTurns}`,
+    "",
+  );
 
   let rewrites = 0;
   let lintFails = 0;
   const intentCounts: Record<string, number> = {};
   const styleCounts: Record<string, number> = {};
+  let turnCount = 0;
 
-  for (let idx = 0; idx < targetCases.length; idx++) {
-    const c = targetCases[idx];
-    const sessionId = `reimu_quality_${Date.now()}_${idx}_${Math.random().toString(16).slice(2)}`;
+  for (let caseIdx = 0; caseIdx < targetCases.length; caseIdx++) {
+    if (turnCount >= maxTurns) break;
+
+    const c = targetCases[caseIdx];
+    const sessionId = `reimu_quality_${Date.now()}_${caseIdx}_${Math.random().toString(16).slice(2)}`;
     const history: Msg[] = [];
+    const turns =
+      Array.isArray(c.turns) && c.turns.length > 0
+        ? c.turns
+        : [String(c.text ?? "")].filter((t) => t.trim().length > 0);
+    if (turns.length === 0) continue;
 
-    const userText = c.text;
-    const t0 = performance.now();
-    const intent = await fetchIntent({
-      base,
-      accessToken,
-      sessionId,
-      characterId,
-      chatMode,
-      message: userText,
-      history,
-    });
-    const tIntent = performance.now();
+    md.push(`## Case ${caseIdx + 1}. ${c.id}`);
 
-    intentCounts[intent.intent] = (intentCounts[intent.intent] ?? 0) + 1;
-    styleCounts[intent.output_style] = (styleCounts[intent.output_style] ?? 0) + 1;
+    for (let turnIdx = 0; turnIdx < turns.length; turnIdx++) {
+      if (turnCount >= maxTurns) break;
+      const userText = String(turns[turnIdx] ?? "").trim();
+      if (!userText) continue;
+      turnCount++;
 
-    const isSeedTurn = true;
-    const personaSystemBase = buildTouhouPersonaSystem(characterId, {
-      chatMode,
-      includeExamples: isSeedTurn,
-      includeRoleplayExamples: isSeedTurn,
-    });
+      const t0 = performance.now();
+      const intent = await fetchIntent({
+        base,
+        accessToken,
+        sessionId,
+        characterId,
+        chatMode,
+        message: userText,
+        history,
+      });
+      const tIntent = performance.now();
 
-    // mimic UI: basic saisen cooldown (no history in this runner, so only cap)
-    const turnTuningLines: string[] = [];
-    if (chatMode === "roleplay" && characterId === "reimu") {
-      turnTuningLines.push("- 賽銭/寄付ネタは最大1文まで（連発しない）。");
-    }
+      intentCounts[intent.intent] = (intentCounts[intent.intent] ?? 0) + 1;
+      styleCounts[intent.output_style] = (styleCounts[intent.output_style] ?? 0) + 1;
 
-    const directorOverlay = reimuDirectorOverlay(intent);
-    const personaSystem = [personaSystemBase, `# Turn constraints\n${turnTuningLines.join("\n")}`, directorOverlay].filter(Boolean).join("\n\n");
+      const isSeedTurn = !history.some((m) => m.role === "assistant" && String(m.content ?? "").trim());
+      const personaSystemBase = buildTouhouPersonaSystem(characterId, {
+        chatMode,
+        includeExamples: isSeedTurn,
+        includeRoleplayExamples: isSeedTurn,
+      });
 
-    const gen = genParamsFor(characterId);
-    const data: ChatResponse = intent.needs_clarify && intent.clarify_question?.trim()
-      ? { reply: intent.clarify_question.trim() }
-      : await chatOnce({
-          base,
-          accessToken,
-          userId,
-          sessionId,
-          characterId,
-          chatMode,
-          message: userText,
-          history,
-          personaSystem,
-          gen,
-        });
-    const tChat = performance.now();
-
-    let replyFinal = String(data.reply ?? "").trim();
-    const style = effectiveOutputStyle(intent);
-    const lint1 = lintOutputStyle({ style, intent, reply: replyFinal });
-    let forcedOk = lint1.ok;
-    let forcedReason = lint1.reason;
-    let didRewrite = false;
-
-    if (!lint1.ok) {
-      lintFails++;
-      const coerced = coerceToForcedStyle({ style, intent, reply: replyFinal });
-      if (coerced.applied) {
-        replyFinal = coerced.reply.trim();
-        const lint2 = lintOutputStyle({ style, intent, reply: replyFinal });
-        forcedOk = lint2.ok;
-        forcedReason = lint2.reason ? `coerce_${lint2.reason}` : "";
+      const turnTuningLines: string[] = [];
+      if (chatMode === "roleplay" && characterId === "reimu") {
+        turnTuningLines.push("- 賽銭/寄付ネタは最大1文まで（連発しない）。");
       }
+
+      const directorOverlay = reimuDirectorOverlay(intent);
+      const personaSystem = [personaSystemBase, turnTuningLines.length ? `# Turn constraints\n${turnTuningLines.join("\n")}` : null, directorOverlay]
+        .filter(Boolean)
+        .join("\n\n");
+
+      const gen = genParamsFor(characterId);
+      const data: ChatResponse =
+        intent.needs_clarify && intent.clarify_question?.trim()
+          ? { reply: intent.clarify_question.trim() }
+          : await chatOnce({
+              base,
+              accessToken,
+              userId,
+              sessionId,
+              characterId,
+              chatMode,
+              message: userText,
+              history,
+              personaSystem,
+              gen,
+            });
+      const tChat = performance.now();
+
+      let replyFinal = String(data.reply ?? "").trim();
+      const style = effectiveOutputStyle(intent);
+      const lint1 = lintOutputStyle({ style, intent, reply: replyFinal });
+      let forcedOk = lint1.ok;
+      let forcedReason = lint1.reason;
+
+      if (!lint1.ok) {
+        lintFails++;
+        const coerced = coerceToForcedStyle({ style, intent, reply: replyFinal });
+        if (coerced.applied) {
+          replyFinal = coerced.reply.trim();
+          const lint2 = lintOutputStyle({ style, intent, reply: replyFinal });
+          forcedOk = lint2.ok;
+          forcedReason = lint2.reason ? `coerce_${lint2.reason}` : "";
+        }
+      }
+
+      const t1 = performance.now();
+      const rec = {
+        turn: turnCount,
+        case_id: c.id,
+        case_index: caseIdx,
+        turn_index: turnIdx,
+        session_id: sessionId,
+        user: userText,
+        intent,
+        style_effective: style,
+        forced_ok: forcedOk,
+        forced_reason: forcedReason,
+        rewrite: false,
+        ms: { intent: Math.round(tIntent - t0), chat: Math.round(tChat - tIntent), total: Math.round(t1 - t0) },
+        reply: replyFinal,
+      };
+      jsonl.push(JSON.stringify(rec));
+
+      md.push(
+        `### Turn ${turnIdx + 1} (global ${turnCount})`,
+        `- intent: ${intent.intent} (conf=${intent.confidence?.toFixed?.(2) ?? intent.confidence})`,
+        `- output_style: ${intent.output_style} (effective=${style})`,
+        `- needs_clarify: ${intent.needs_clarify ? "true" : "false"}`,
+        `- forced_ok: ${forcedOk ? "true" : "false"}${forcedReason ? ` (${forcedReason})` : ""}`,
+        `- ms: intent=${rec.ms.intent}, chat=${rec.ms.chat}, total=${rec.ms.total}`,
+        "",
+        `User: ${userText}`,
+        "",
+        `Assistant: ${replyFinal}`,
+        "",
+      );
+
+      history.push({ role: "user", content: userText });
+      history.push({ role: "assistant", content: replyFinal });
     }
-
-    const t1 = performance.now();
-    const rec = {
-      idx,
-      case_id: c.id,
-      session_id: sessionId,
-      user: userText,
-      intent,
-      style_effective: style,
-      forced_ok: forcedOk,
-      forced_reason: forcedReason,
-      rewrite: didRewrite,
-      ms: { intent: Math.round(tIntent - t0), chat: Math.round(tChat - tIntent), total: Math.round(t1 - t0) },
-      reply: replyFinal,
-    };
-    jsonl.push(JSON.stringify(rec));
-
-    md.push(`## ${idx + 1}. ${c.id}`, `- intent: ${intent.intent} (conf=${intent.confidence?.toFixed?.(2) ?? intent.confidence})`, `- output_style: ${intent.output_style} (effective=${style})`, `- needs_clarify: ${intent.needs_clarify ? "true" : "false"}`, `- forced_ok: ${forcedOk ? "true" : "false"}${forcedReason ? ` (${forcedReason})` : ""}`, `- rewrite: ${didRewrite ? "true" : "false"}`, `- ms: intent=${rec.ms.intent}, chat=${rec.ms.chat}, total=${rec.ms.total}`, "", `User: ${userText}`, "", `Assistant: ${replyFinal}`, "");
   }
 
-  md.push("## Summary", `- cases: ${targetCases.length}`, `- lint_fails: ${lintFails}`, `- rewrites: ${rewrites}`, "", "### Intent counts", "```json", JSON.stringify(intentCounts, null, 2), "```", "", "### Output style counts", "```json", JSON.stringify(styleCounts, null, 2), "```", "");
+  md.push(
+    "## Summary",
+    `- cases: ${targetCases.length}`,
+    `- turns: ${turnCount}`,
+    `- lint_fails: ${lintFails}`,
+    `- rewrites: ${rewrites}`,
+    "",
+    "### Intent counts",
+    "```json",
+    JSON.stringify(intentCounts, null, 2),
+    "```",
+    "",
+    "### Output style counts",
+    "```json",
+    JSON.stringify(styleCounts, null, 2),
+    "```",
+    "",
+  );
 
   const mdPath = join(artifactsDir, "run.md");
   const jsonlPath = join(artifactsDir, "run.jsonl");

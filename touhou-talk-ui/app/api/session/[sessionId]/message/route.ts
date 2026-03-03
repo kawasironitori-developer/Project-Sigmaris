@@ -153,7 +153,8 @@ function outputStyleBlock(style: PersonaOutputStyle, intent: PersonaIntentRespon
   }
   return [
     "# Output style (FORCED)",
-    "- 1〜10文（短め）。長文/解説は禁止。",
+    "- 1〜7文（短め）。長文/解説は禁止。",
+    "- 箇条書き/候補列挙は最大3つまで（それ以上は1文でまとめる）。",
   ].join("\n");
 }
 
@@ -194,6 +195,7 @@ function reimuDirectorOverlay(intent: PersonaIntentResponse): string {
       "# Incident handling",
       "- 「また異変？」の低テンションから入って、最小3手で片付け方を出す。",
       "- 断言しすぎない。足りない情報は質問1つで補う。",
+      "- 原因候補の列挙は最大3つまで（長い羅列・番号リスト禁止）。",
     );
   } else if (intent.intent === "lore") {
     base.push(
@@ -214,6 +216,8 @@ function reimuDirectorOverlay(intent: PersonaIntentResponse): string {
       "",
       "# Advice/task handling",
       "- 実務的に。3手まで。感情の断定/心理分析/長文はしない。",
+      "- 候補列挙や手順は最大3つ。4つ以上は出さない。",
+      "- 質問は1つだけ。心情の二択/三択で分類させない（事実を1つ聞く）。",
     );
   } else if (intent.intent === "banter") {
     base.push(
@@ -302,6 +306,18 @@ function coerceToForcedStyle(params: {
     return { reply: String(params.intent.clarify_question).trim(), applied: true };
   }
 
+  if (style === "normal") {
+    const lines = raw
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (lines.length > 10) {
+      const compact = lines.join(" ").replace(/\s+/g, " ").trim();
+      return { reply: compact, applied: compact !== raw };
+    }
+    return { reply: raw, applied: false };
+  }
+
   if (style === "bullet_3") {
     const lines = raw
       .split("\n")
@@ -340,70 +356,6 @@ function coerceToForcedStyle(params: {
   }
 
   return { reply: raw, applied: false };
-}
-
-async function rewriteToForcedStyle(params: {
-  base: string;
-  accessToken: string | null;
-  userId: string;
-  sessionId: string;
-  characterId: string;
-  chatMode: TouhouChatMode;
-  personaSystem: string;
-  gen: Record<string, unknown>;
-  attachments: Record<string, unknown>[];
-  history: Array<{ role: "user" | "assistant"; content: string }>;
-  originalUserText: string;
-  draftReply: string;
-  intent: PersonaIntentResponse;
-}): Promise<PersonaChatResponse | null> {
-  const style = effectiveOutputStyle(params.intent);
-  const fix = [
-    "# Output style fix (FORCED, internal)",
-    "- The previous reply violated the forced output style.",
-    "- Rewrite the DRAFT to match the forced style exactly.",
-    "- Preserve meaning as much as possible; do not add new facts.",
-    "- Do NOT mention rewriting, DRAFT, or internal rules.",
-    "- Output only the final reply text.",
-    "",
-    outputStyleBlock(style, params.intent),
-  ].join("\n");
-
-  const rewriteMessage = [
-    "【内部】次のDRAFTを、指示に従って書き換えてください。",
-    "ユーザーの発話（参考）:",
-    clampText(params.originalUserText, 600),
-    "",
-    "DRAFT:",
-    clampText(params.draftReply, 1500),
-  ].join("\n");
-
-  try {
-    const r = await fetch(`${params.base}/persona/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(params.accessToken ? { Authorization: `Bearer ${params.accessToken}` } : {}),
-      },
-      body: JSON.stringify({
-        user_id: params.userId,
-        session_id: params.sessionId,
-        message: rewriteMessage,
-        history: params.history,
-        character_id: params.characterId,
-        chat_mode: params.chatMode,
-        persona_system: `${params.personaSystem}\n\n${fix}`,
-        gen: params.gen,
-        attachments: params.attachments,
-      }),
-    });
-    if (!r.ok) return null;
-    const data = (await r.json()) as PersonaChatResponse;
-    if (!data || typeof data.reply !== "string") return null;
-    return data;
-  } catch {
-    return null;
-  }
 }
 
 /* =========================================================
@@ -488,6 +440,19 @@ function sanitizeReplyByContext(params: {
       );
       out = out.replace(/\n{3,}/g, "\n\n").trim();
       if (!out) out = before;
+    }
+  }
+
+  // 4) Reimu: avoid “心情の分類（二択）”質問がカウンセラーっぽくなるのを抑える
+  if (params.chatMode === "roleplay" && params.characterId === "reimu") {
+    // If the exchange is about tiredness/low energy, don't force the user into “A or B”.
+    // Replace with a single concrete question.
+    const fatigue = /(疲れ|だる|しんど|モヤモヤ|憂鬱|眠|やる気)/i;
+    if (fatigue.test(lowerRecentUser)) {
+      out = out.replace(
+        /(疲れ|だる|しんど|モヤモヤ|憂鬱|眠|やる気)[^。\n]{0,120}(?:どっち寄り|どっちに近い)[？?]/g,
+        "で、いま一番面倒なのは何？",
+      );
     }
   }
 

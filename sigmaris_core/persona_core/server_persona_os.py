@@ -1130,12 +1130,8 @@ async def persona_intent(req: PersonaIntentRequest, auth: Optional[AuthContext] 
     # Character-scoped polish: keep clarify question in-character when possible (no extra inference).
     try:
         if parsed.needs_clarify and (req.character_id or "").strip() == "reimu" and (req.chat_mode or "").strip() == "roleplay":
-            q = (parsed.clarify_question or "").strip()
-            # Keep it ONE short question. If the classifier produced a non-question, replace it.
-            q = (q.splitlines()[0].strip() if q else "")
-            if (not q) or ("。" in q) or (not q.endswith(("？", "?"))):
-                q = "で、何があったのよ？"
-            parsed.clarify_question = q
+            # Hard rule for Reimu roleplay: ONE short confirm-question only (avoid polite multi-question drift).
+            parsed.clarify_question = "で、何があったのよ？"
     except Exception:
         pass
 
