@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from .roleplay_character_policy_types import RoleplayCharacterPolicy
-from .roleplay_character_policies import koishi as koishi_policy
+from .roleplay_character_policies.registry import get_character_policy
 
 
 def _norm_str(v: Any) -> str:
@@ -36,8 +36,9 @@ def get_roleplay_character_policy(metadata: Dict[str, Any]) -> RoleplayCharacter
         )
 
     # ---- Per-character policies (extend over time) ----
-    if character_id == "koishi":
-        return koishi_policy.get_policy()
+    p = get_character_policy(character_id, has_external_persona)
+    if p is not None:
+        return p
 
     return RoleplayCharacterPolicy(
         enabled=True,

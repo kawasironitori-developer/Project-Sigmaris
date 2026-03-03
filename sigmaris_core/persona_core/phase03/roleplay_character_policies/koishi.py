@@ -3,7 +3,7 @@ from __future__ import annotations
 from ..roleplay_character_policy_types import RoleplayCharacterPolicy
 
 
-def get_policy() -> RoleplayCharacterPolicy:
+def get_policy(has_external_persona: bool) -> RoleplayCharacterPolicy:
     # Koishi often uses short 2-choice prompts; the generic naturalness layer can over-sanitize them.
     return RoleplayCharacterPolicy(
         enabled=True,
@@ -16,4 +16,3 @@ def get_policy() -> RoleplayCharacterPolicy:
         max_tokens_cap=520,
         stop_memory_injection=True,
     )
-
