@@ -122,6 +122,7 @@ export default function EntryPageContent() {
         locationName: g.name,
         world: ch.world,
         ui: ch.ui,
+        promptVersion: ch.promptVersion,
       })),
     }));
 

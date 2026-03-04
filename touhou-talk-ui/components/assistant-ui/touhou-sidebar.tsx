@@ -19,6 +19,7 @@ type Character = {
   id: string;
   name: string;
   title: string;
+  promptVersion?: string;
   ui?: {
     avatar?: string;
   };
@@ -148,8 +149,15 @@ export function TouhouSidebar({
                           <div className="truncate font-gensou text-sm text-sidebar-foreground">
                             {ch.name}
                           </div>
-                          <div className="truncate text-xs text-sidebar-foreground/60">
-                            {ch.title}
+                          <div className="flex items-center gap-2">
+                            <div className="min-w-0 flex-1 truncate text-xs text-sidebar-foreground/60">
+                              {ch.title}
+                            </div>
+                            {ch.promptVersion ? (
+                              <span className="shrink-0 rounded-full border border-sidebar-border bg-sidebar-accent/30 px-2 py-0.5 text-[10px] font-semibold text-sidebar-foreground/80">
+                                {ch.promptVersion}
+                              </span>
+                            ) : null}
                           </div>
                         </div>
 

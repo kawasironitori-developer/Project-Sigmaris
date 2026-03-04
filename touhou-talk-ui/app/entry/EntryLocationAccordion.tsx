@@ -7,6 +7,7 @@ type EntryCharacter = {
   id: string;
   name: string;
   title: string;
+  promptVersion?: string;
   layer: string;
   locationId: string;
   locationName: string;
@@ -99,6 +100,7 @@ function CharacterCard({
           <Chip>{layerLabel(ch.layer)}</Chip>
           <Chip>{ch.locationName}</Chip>
           <Chip>ロールプレイ</Chip>
+          {ch.promptVersion ? <Chip>{ch.promptVersion}</Chip> : null}
         </div>
 
         <div className="mt-3 text-lg font-semibold leading-tight">

@@ -4,6 +4,7 @@ export type CharacterDef = {
   id: string;
   name: string;
   title: string;
+  promptVersion?: string;
   enabled?: boolean; // true(default) / false(貅門ｙ荳ｭ: UI縺ｧ驕ｸ謚樔ｸ榊庄)
   world?: {
     map: string; // gensokyo / deep / higan 縺ｪ縺ｩ
