@@ -46,25 +46,19 @@ export default function EntryInfoSection() {
               キャラカードに表示される{" "}
               <code className="rounded bg-muted px-1 py-0.5">B-YYYYMMDD</code>{" "}
               /{" "}
-              <code className="rounded bg-muted px-1 py-0.5">beta-YYYYMMDD</code>
-              は、ロールプレイ用プロンプトの調整版です（現状は{" "}
+              <code className="rounded bg-muted px-1 py-0.5">beta</code>
+              は、ロールプレイ用プロンプトの調整状態を表します（現状は{" "}
               <span className="font-medium text-foreground/80">2種類</span>）。
             </p>
 
             <ul className="ml-4 list-disc space-y-1">
               <li>
                 <code className="rounded bg-muted px-1 py-0.5">B-YYYYMMDD</code>
-                ：作り込み済み（再現度優先／会話の崩れを抑えるガード込み）。現在は{" "}
-                <span className="font-medium text-foreground/80">
-                  霊夢・魔理沙・アリス・こいし
-                </span>{" "}
-                が該当します。
+                ：作り込み済み（再現度優先／会話の崩れを抑えるガード込み）
               </li>
               <li>
-                <code className="rounded bg-muted px-1 py-0.5">
-                  beta-YYYYMMDD
-                </code>
-                ：調整途中のベータ表記です（今後内容が変わる場合があります）。
+                <code className="rounded bg-muted px-1 py-0.5">beta</code>
+                ：調整中のベータ表記です（今後内容が変わる場合があります）
               </li>
             </ul>
 
