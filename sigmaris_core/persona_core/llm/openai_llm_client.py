@@ -585,10 +585,17 @@ class OpenAILLMClient(LLMClientLike):
         except Exception:
             rules = None
             disclosures = None
+            md = {}
+
+        # In-character roleplay should not surface internal disclosures (breaks immersion).
+        try:
+            is_character_roleplay = bool((md or {}).get("character_id")) and str((md or {}).get("chat_mode") or "") == "roleplay"
+        except Exception:
+            is_character_roleplay = False
 
         if isinstance(rules, list) and rules:
             system_prompt += "\n\n# Guardrail Rules\n" + "\n".join(f"- {str(r)}" for r in rules[:10])
-        if isinstance(disclosures, list) and disclosures:
+        if isinstance(disclosures, list) and disclosures and not is_character_roleplay:
             # Keep it short: one disclosure sentence at the top if possible.
             system_prompt += (
                 "\n\n# Mandatory Disclosure\n"

@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -41,6 +41,18 @@ function nowStamp() {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+function resolveTouhouUiRoot() {
+  const cwd = process.cwd();
+  // Running inside touhou-talk-ui
+  if (existsSync(join(cwd, "tools", "reimu_quality_runner.ts")) && existsSync(join(cwd, "lib", "touhouPersona.ts"))) {
+    return cwd;
+  }
+  // Running from monorepo root
+  const nested = join(cwd, "touhou-talk-ui");
+  if (existsSync(join(nested, "tools", "reimu_quality_runner.ts"))) return nested;
+  return cwd;
 }
 
 function coreBaseUrl() {
@@ -352,15 +364,17 @@ async function main() {
   const base = String(args["core-url"] || coreBaseUrl());
   const accessToken = typeof args["access-token"] === "string" ? String(args["access-token"]) : null;
   const userId = typeof args["user-id"] === "string" ? String(args["user-id"]) : "bench-user";
-  const characterId = "reimu";
+  const characterId = typeof args["character"] === "string" ? String(args["character"]) : "reimu";
   const chatMode: TouhouChatMode = "roleplay";
   const maxTurnsRaw = typeof args["max-turns"] === "string" ? Number(args["max-turns"]) : 120;
   const maxTurns = Number.isFinite(maxTurnsRaw) && maxTurnsRaw > 0 ? Math.floor(maxTurnsRaw) : 120;
 
-  const artifactsDir = join(process.cwd(), "touhou-talk-ui", "artifacts", "reimu_quality", nowStamp());
+  const uiRoot = resolveTouhouUiRoot();
+  const artifactsDir = join(uiRoot, "artifacts", `${characterId}_quality`, nowStamp());
   mkdirSync(artifactsDir, { recursive: true });
 
-  const casesPath = typeof args["cases"] === "string" ? String(args["cases"]) : join(process.cwd(), "touhou-talk-ui", "tools", "reimu_quality_cases.json");
+  const casesPath =
+    typeof args["cases"] === "string" ? String(args["cases"]) : join(uiRoot, "tools", "reimu_quality_cases.json");
   const raw = await readFile(casesPath, "utf-8");
   const cases = JSON.parse(raw) as Case[];
   const take = typeof args["take"] === "string" ? Math.max(1, Math.min(200, Number(args["take"]))) : 20;
@@ -370,7 +384,7 @@ async function main() {
   const jsonl: string[] = [];
 
   md.push(
-    `# 霊夢 品質テスト (cases)`,
+    `# ${characterId} 品質テスト (cases)`,
     `- core: ${base}`,
     `- cases: ${casesPath}`,
     `- cases_count: ${targetCases.length}`,
@@ -384,11 +398,13 @@ async function main() {
   const styleCounts: Record<string, number> = {};
   let turnCount = 0;
 
+  const useDirector = chatMode === "roleplay" && characterId === "reimu";
+
   for (let caseIdx = 0; caseIdx < targetCases.length; caseIdx++) {
     if (turnCount >= maxTurns) break;
 
     const c = targetCases[caseIdx];
-    const sessionId = `reimu_quality_${Date.now()}_${caseIdx}_${Math.random().toString(16).slice(2)}`;
+    const sessionId = `${characterId}_quality_${Date.now()}_${caseIdx}_${Math.random().toString(16).slice(2)}`;
     const history: Msg[] = [];
     const turns =
       Array.isArray(c.turns) && c.turns.length > 0
@@ -405,15 +421,26 @@ async function main() {
       turnCount++;
 
       const t0 = performance.now();
-      const intent = await fetchIntent({
-        base,
-        accessToken,
-        sessionId,
-        characterId,
-        chatMode,
-        message: userText,
-        history,
-      });
+      const intent = useDirector
+        ? await fetchIntent({
+            base,
+            accessToken,
+            sessionId,
+            characterId,
+            chatMode,
+            message: userText,
+            history,
+          })
+        : ({
+            intent: "chitchat",
+            confidence: 0.0,
+            output_style: "normal",
+            allowed_humor: true,
+            urgency: "normal",
+            needs_clarify: false,
+            clarify_question: "",
+            safety_risk: "none",
+          } as IntentResponse);
       const tIntent = performance.now();
 
       intentCounts[intent.intent] = (intentCounts[intent.intent] ?? 0) + 1;
@@ -431,14 +458,18 @@ async function main() {
         turnTuningLines.push("- 賽銭/寄付ネタは最大1文まで（連発しない）。");
       }
 
-      const directorOverlay = reimuDirectorOverlay(intent);
-      const personaSystem = [personaSystemBase, turnTuningLines.length ? `# Turn constraints\n${turnTuningLines.join("\n")}` : null, directorOverlay]
+      const directorOverlay = useDirector ? reimuDirectorOverlay(intent) : "";
+      const personaSystem = [
+        personaSystemBase,
+        turnTuningLines.length ? `# Turn constraints\n${turnTuningLines.join("\n")}` : null,
+        directorOverlay || null,
+      ]
         .filter(Boolean)
         .join("\n\n");
 
       const gen = genParamsFor(characterId);
       const data: ChatResponse =
-        intent.needs_clarify && intent.intent === "unclear" && intent.clarify_question?.trim()
+        useDirector && intent.needs_clarify && intent.intent === "unclear" && intent.clarify_question?.trim()
           ? { reply: intent.clarify_question.trim() }
           : await chatOnce({
               base,
