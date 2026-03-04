@@ -63,7 +63,7 @@
     "id": "aya",
     "name": "射命丸 文",
     "title": "伝統の幻想ブン屋",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "world": {
       "map": "gensokyo",
       "location": "youkai_mountain"
@@ -83,7 +83,7 @@
     "id": "momiji",
     "name": "犬走 椛",
     "title": "山のテングの見張り番",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "world": {
       "map": "gensokyo",
       "location": "youkai_mountain"
@@ -103,7 +103,7 @@
     "id": "nitori",
     "name": "河城 にとり",
     "title": "河童の発明家",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "world": {
       "map": "gensokyo",
       "location": "youkai_mountain"
@@ -123,7 +123,7 @@
     "id": "youmu",
     "name": "魂魄 妖夢",
     "title": "半人半霊の庭師",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "world": {
       "map": "higan",
       "location": "hakugyokurou"
@@ -143,7 +143,7 @@
     "id": "remilia",
     "name": "レミリア・スカーレット",
     "title": "永遠に紅い幼き月",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "world": {
       "map": "gensokyo",
       "location": "scarlet_mansion"
@@ -163,7 +163,7 @@
     "id": "sakuya",
     "name": "十六夜 咲夜",
     "title": "紅魔館のメイド",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "world": {
       "map": "gensokyo",
       "location": "scarlet_mansion"
@@ -183,7 +183,7 @@
     "id": "flandre",
     "name": "フランドール・スカーレット",
     "title": "紅魔館のもう一人の主",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "world": {
       "map": "gensokyo",
       "location": "scarlet_mansion"
@@ -203,7 +203,7 @@
     "id": "satori",
     "name": "古明地 さとり",
     "title": "地霊殿の主",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "world": {
       "map": "deep",
       "location": "chireiden"
@@ -243,7 +243,7 @@
     "id": "sanae",
     "name": "東風谷 早苗",
     "title": "現代の風祝",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": true,
     "world": {
       "map": "gensokyo",
@@ -264,7 +264,7 @@
     "id": "kanako",
     "name": "八坂 神奈子",
     "title": "山坂と湖の権化",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": false,
     "world": {
       "map": "gensokyo",
@@ -285,7 +285,7 @@
     "id": "suwako",
     "name": "洩矢 諏訪子",
     "title": "土着神の頂点",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": true,
     "world": {
       "map": "gensokyo",
@@ -306,7 +306,7 @@
     "id": "meiling",
     "name": "紅 美鈴",
     "title": "華人小娘",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": true,
     "world": {
       "map": "gensokyo",
@@ -327,7 +327,7 @@
     "id": "patchouli",
     "name": "パチュリー・ノーレッジ",
     "title": "知識と日陰の少女",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": true,
     "world": {
       "map": "gensokyo",
@@ -348,7 +348,7 @@
     "id": "koakuma",
     "name": "小悪魔",
     "title": "紅魔館の司書補佐",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": false,
     "world": {
       "map": "gensokyo",
@@ -369,7 +369,7 @@
     "id": "kaguya",
     "name": "蓬莱山 輝夜",
     "title": "永遠の姫君",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": false,
     "world": {
       "map": "gensokyo",
@@ -390,7 +390,7 @@
     "id": "eirin",
     "name": "八意 永琳",
     "title": "月の頭脳",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": false,
     "world": {
       "map": "gensokyo",
@@ -411,7 +411,7 @@
     "id": "reisen",
     "name": "鈴仙・優曇華院・イナバ",
     "title": "月の兎",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": true,
     "world": {
       "map": "gensokyo",
@@ -432,7 +432,7 @@
     "id": "tewi",
     "name": "因幡 てゐ",
     "title": "幸運の白兎",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": false,
     "world": {
       "map": "gensokyo",
@@ -453,7 +453,7 @@
     "id": "mokou",
     "name": "藤原 妹紅",
     "title": "不死の人間",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": false,
     "world": {
       "map": "gensokyo",
@@ -474,7 +474,7 @@
     "id": "keine",
     "name": "上白沢 慧音",
     "title": "歴史を喰らう半獣",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": false,
     "world": {
       "map": "gensokyo",
@@ -495,7 +495,7 @@
     "id": "rin",
     "name": "火焔猫 燐",
     "title": "お燐",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": true,
     "world": {
       "map": "deep",
@@ -516,7 +516,7 @@
     "id": "okuu",
     "name": "霊烏路 空",
     "title": "地獄の太陽",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": true,
     "world": {
       "map": "deep",
@@ -537,7 +537,7 @@
     "id": "yuugi",
     "name": "星熊 勇儀",
     "title": "鬼の豪傑",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": false,
     "world": {
       "map": "deep",
@@ -558,7 +558,7 @@
     "id": "parsee",
     "name": "水橋 パルスィ",
     "title": "嫉妬深い橋姫",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": false,
     "world": {
       "map": "deep",
@@ -579,7 +579,7 @@
     "id": "yamame",
     "name": "黒谷 ヤマメ",
     "title": "土着の土蜘蛛",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": false,
     "world": {
       "map": "deep",
@@ -600,7 +600,7 @@
     "id": "yuyuko",
     "name": "西行寺 幽々子",
     "title": "華胥の亡霊",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": true,
     "world": {
       "map": "higan",
@@ -621,7 +621,7 @@
     "id": "komachi",
     "name": "小野塚 小町",
     "title": "三途の水先案内人",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": false,
     "world": {
       "map": "higan",
@@ -642,7 +642,7 @@
     "id": "eiki",
     "name": "四季映姫・ヤマザナドゥ",
     "title": "楽園の最高裁判長",
-    "promptVersion": "B-20260305",
+    "promptVersion": "?-20260305",
     "enabled": false,
     "world": {
       "map": "higan",

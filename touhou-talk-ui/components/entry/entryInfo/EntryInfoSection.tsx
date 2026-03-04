@@ -44,7 +44,8 @@ export default function EntryInfoSection() {
           <div className="mt-3 space-y-2 text-sm leading-relaxed text-muted-foreground">
             <p>
               キャラカードに表示される{" "}
-              <code className="rounded bg-muted px-1 py-0.5">B-YYYYMMDD</code>
+              <code className="rounded bg-muted px-1 py-0.5">B-YYYYMMDD</code>{" "}
+              / <code className="rounded bg-muted px-1 py-0.5">β-YYYYMMDD</code>
               は、ロールプレイ用プロンプトの調整版です。
             </p>
             <p>
@@ -53,6 +54,10 @@ export default function EntryInfoSection() {
               は更新日です（例：{" "}
               <code className="rounded bg-muted px-1 py-0.5">B-20260305</code>
               ）。
+            </p>
+            <p>
+              <span className="font-medium text-foreground/80">β</span>{" "}
+              は調整中のベータ表記です（今後内容が変わる場合があります）。
             </p>
           </div>
         </div>
