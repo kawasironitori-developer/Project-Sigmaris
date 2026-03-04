@@ -827,6 +827,34 @@ _SAFETY_RE = re.compile(
     re.IGNORECASE,
 )
 
+_VAGUE_BUT_VALID_RE = re.compile(
+    r"^(?:"
+    r"(?:特に|べつに|別に)?(?:決めてない|決まってない|決めてねえ|決まってねえ)"
+    r"|(?:特に|べつに|別に)?(?:ない|何もない|なんもない)"
+    r"|(?:なんでも|どっちでも|どちらでも)(?:いい|いいよ|OK|おけ|可|かまわない)"
+    r"|(?:わからない|分からない|知らない|覚えてない|覚えていない)"
+    r"|(?:未定|まだ|あとで|そのうち)"
+    r")"
+    r"(?:[。．!！…]+)?$"
+)
+
+_SHORT_ACK_RE = re.compile(r"^(?:うん|そう|なるほど|はい|ええ|うーん|んー|ん|まぁ|まあ|ふーん)(?:[。．!！…]*)$")
+
+
+def _looks_like_question(text: str) -> bool:
+    s = (text or "").strip()
+    if not s:
+        return False
+    # Avoid false positives on decorative punctuation; require a real question mark at the end.
+    return bool(re.search(r"[？\?]\s*$", s))
+
+
+def _last_assistant_content(history: List[Dict[str, str]]) -> str:
+    for m in reversed(history or []):
+        if (m or {}).get("role") == "assistant":
+            return str((m or {}).get("content") or "").strip()
+    return ""
+
 
 def _flatten_history_for_intent(history: Optional[List[Dict[str, Any]]]) -> List[Dict[str, str]]:
     """
@@ -1127,11 +1155,36 @@ async def persona_intent(req: PersonaIntentRequest, auth: Optional[AuthContext] 
     if parsed is None:
         parsed = PersonaIntentResponse(intent="unclear", confidence=0.0, output_style="normal", needs_clarify=True)
 
-    # Character-scoped polish: keep clarify question in-character when possible (no extra inference).
+    # Post-classification polish:
+    # - reduce "詰まり" by suppressing false needs_clarify when the user is answering a question.
+    # - keep clarify questions in-character without assuming an "incident" happened.
     try:
-        if parsed.needs_clarify and (req.character_id or "").strip() == "reimu" and (req.chat_mode or "").strip() == "roleplay":
-            # Hard rule for Reimu roleplay: ONE short confirm-question only (avoid polite multi-question drift).
-            parsed.clarify_question = "で、何があったのよ？"
+        # Hard guard: never ask for clarification on meta/safety.
+        if getattr(parsed, "intent", None) in ("meta", "safety"):
+            parsed.needs_clarify = False
+            parsed.clarify_question = ""
+
+        last_a = _last_assistant_content(history)
+        msg = (message or "").strip()
+
+        # If the assistant just asked a question and the user answered with a non-trivial message,
+        # do not force clarify mode (even if the classifier got confused).
+        if _looks_like_question(last_a) and msg and not _SHORT_ACK_RE.match(msg):
+            parsed.needs_clarify = False
+            parsed.clarify_question = ""
+
+        # Reimu roleplay: if the user gives a vague-but-valid answer to a question, keep the flow (no clarify).
+        if (req.character_id or "").strip() == "reimu" and (req.chat_mode or "").strip() == "roleplay":
+            if _looks_like_question(last_a) and _VAGUE_BUT_VALID_RE.match(msg or ""):
+                parsed.intent = "chitchat"
+                parsed.output_style = "normal"
+                parsed.allowed_humor = True
+                parsed.urgency = "low"
+                parsed.needs_clarify = False
+                parsed.clarify_question = ""
+            elif parsed.needs_clarify:
+                # Hard rule for Reimu roleplay: ONE short confirm-question only (avoid event-assumption drift).
+                parsed.clarify_question = "で、何が知りたいのよ？"
     except Exception:
         pass
 

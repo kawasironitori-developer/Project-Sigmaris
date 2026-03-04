@@ -59,11 +59,11 @@ function clampText(s: string, n: number) {
 }
 
 function effectiveOutputStyle(intent: IntentResponse): OutputStyle {
-  return intent.needs_clarify ? "normal" : intent.output_style;
+  return intent.needs_clarify && intent.intent === "unclear" ? "normal" : intent.output_style;
 }
 
 function outputStyleBlock(style: OutputStyle, intent: IntentResponse): string {
-  if (intent.needs_clarify) {
+  if (intent.needs_clarify && intent.intent === "unclear") {
     return [
       "# Output style (FORCED)",
       "- このターンは「確認質問を1つだけ」出して止める（助言/煽り/賽銭/長文は禁止）。",
@@ -105,7 +105,8 @@ function reimuDirectorOverlay(intent: IntentResponse): string {
     "- 余計な一言（決め台詞の暴発）を入れない。脈絡がある時だけ言う。",
   ];
   if (!intent.allowed_humor) base.push("", "# Humor gate (FORCED)", "- このターンは冗談/煽り/賽銭の小突きは入れない。");
-  if (intent.needs_clarify && intent.clarify_question?.trim()) base.push("", "# Clarify question (FORCED)", `- 出力する質問はこれ：${intent.clarify_question.trim()}`);
+  if (intent.needs_clarify && intent.intent === "unclear" && intent.clarify_question?.trim())
+    base.push("", "# Clarify question (FORCED)", `- 出力する質問はこれ：${intent.clarify_question.trim()}`);
   if (intent.intent === "incident") base.push("", "# Incident constraint (FORCED)", "- 原因候補の列挙は最大3つまで（長い羅列・番号リスト禁止）。");
   if (intent.intent === "advice" || intent.intent === "task") base.push("", "# Advice constraint (FORCED)", "- 手順/候補列挙は最大3つ。4つ以上は出さない。");
   if (intent.intent === "advice" || intent.intent === "task") base.push("", "# Question constraint (FORCED)", "- 質問は1つだけ。心情の二択/三択で分類させない（事実を1つ聞く）。");
@@ -116,7 +117,7 @@ function lintOutputStyle(params: { style: OutputStyle; intent: IntentResponse; r
   const raw = String(params.reply ?? "").trim();
   if (!raw) return { ok: false, reason: "empty" };
 
-  if (params.intent.needs_clarify) {
+  if (params.intent.needs_clarify && params.intent.intent === "unclear") {
     const lines = raw.split("\n").map((s) => s.trim()).filter(Boolean);
     const joined = lines.join(" ");
     const qCount = (joined.match(/[？?]/g) ?? []).length;
@@ -156,17 +157,45 @@ function coerceToForcedStyle(params: { style: OutputStyle; intent: IntentRespons
   const raw = String(params.reply ?? "").trim();
   if (!raw) return { reply: raw, applied: false };
 
-  if (params.intent.needs_clarify && (params.intent.clarify_question || "").trim()) {
+  if (params.intent.needs_clarify && params.intent.intent === "unclear" && (params.intent.clarify_question || "").trim()) {
     return { reply: String(params.intent.clarify_question).trim(), applied: true };
   }
 
   if (style === "normal") {
     const lines = raw.split("\n").map((s) => s.trim()).filter(Boolean);
-    if (lines.length > 10) {
-      const compact = lines.join(" ").replace(/\s+/g, " ").trim();
-      return { reply: compact, applied: compact !== raw };
+    if (lines.length <= 10) return { reply: raw, applied: false };
+
+    let bulletCount = 0;
+    let numberedCount = 0;
+    const kept: string[] = [];
+    for (const line of lines) {
+      if (line.startsWith("- ")) {
+        if (bulletCount < 3) kept.push(line);
+        bulletCount++;
+        continue;
+      }
+      if (/^\d+[.)]\s*/.test(line)) {
+        if (numberedCount < 3) kept.push(line);
+        numberedCount++;
+        continue;
+      }
+      kept.push(line);
     }
-    return { reply: raw, applied: false };
+
+    const merged: string[] = [];
+    for (const line of kept) {
+      const last = merged[merged.length - 1];
+      const lineIsList = line.startsWith("- ") || /^\d+[.)]\s*/.test(line);
+      const lastIsList = typeof last === "string" && (last.startsWith("- ") || /^\d+[.)]\s*/.test(last));
+      if (!last || lineIsList || lastIsList) {
+        merged.push(line);
+        continue;
+      }
+      merged[merged.length - 1] = `${last} ${line}`.replace(/\s+/g, " ").trim();
+    }
+
+    const next = merged.slice(0, 10).join("\n").trim();
+    return { reply: next, applied: next !== raw };
   }
 
   if (style === "bullet_3") {
@@ -409,7 +438,7 @@ async function main() {
 
       const gen = genParamsFor(characterId);
       const data: ChatResponse =
-        intent.needs_clarify && intent.clarify_question?.trim()
+        intent.needs_clarify && intent.intent === "unclear" && intent.clarify_question?.trim()
           ? { reply: intent.clarify_question.trim() }
           : await chatOnce({
               base,
@@ -430,11 +459,13 @@ async function main() {
       const lint1 = lintOutputStyle({ style, intent, reply: replyFinal });
       let forcedOk = lint1.ok;
       let forcedReason = lint1.reason;
+      let coerceApplied = false;
 
       if (!lint1.ok) {
         lintFails++;
         const coerced = coerceToForcedStyle({ style, intent, reply: replyFinal });
         if (coerced.applied) {
+          coerceApplied = true;
           replyFinal = coerced.reply.trim();
           const lint2 = lintOutputStyle({ style, intent, reply: replyFinal });
           forcedOk = lint2.ok;
@@ -452,6 +483,9 @@ async function main() {
         user: userText,
         intent,
         style_effective: style,
+        lint1_ok: lint1.ok,
+        lint1_reason: lint1.reason,
+        coerce_applied: coerceApplied,
         forced_ok: forcedOk,
         forced_reason: forcedReason,
         rewrite: false,
@@ -465,7 +499,7 @@ async function main() {
         `- intent: ${intent.intent} (conf=${intent.confidence?.toFixed?.(2) ?? intent.confidence})`,
         `- output_style: ${intent.output_style} (effective=${style})`,
         `- needs_clarify: ${intent.needs_clarify ? "true" : "false"}`,
-        `- forced_ok: ${forcedOk ? "true" : "false"}${forcedReason ? ` (${forcedReason})` : ""}`,
+        `- forced_ok: ${forcedOk ? "true" : "false"}${forcedReason ? ` (${forcedReason})` : ""}${coerceApplied ? " [coerced]" : ""}`,
         `- ms: intent=${rec.ms.intent}, chat=${rec.ms.chat}, total=${rec.ms.total}`,
         "",
         `User: ${userText}`,

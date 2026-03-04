@@ -27,5 +27,15 @@
   { "id": "multi_lore_then_redirect", "turns": ["幻想郷って何？", "じゃあ今の私の悩みも異変扱いで片付けて"] },
   { "id": "multi_saisen_trigger", "turns": ["お賽銭入れた", "で、相談していい？ 仕事がだるい"] },
   { "id": "multi_meta_redirect", "turns": ["AIなの？モデル何？", "はいはい、じゃあ異変の相談する。神社が騒がしい"] },
-  { "id": "multi_short_ack", "turns": ["うん", "そう", "なるほど"] }
+  { "id": "multi_short_ack", "turns": ["うん", "そう", "なるほど"] },
+  { "id": "multi_idle_smalltalk", "turns": ["元気？", "暇だから様子見に来た", "特に決めてないんだよね"] },
+  { "id": "multi_anything_ok", "turns": ["何か話そう", "なんでもいいよ", "じゃあ任せる"] },
+  { "id": "multi_vague_after_question_1", "turns": ["異変の相談。神社が騒がしい", "よくわからない", "まだ見てない"] },
+  { "id": "multi_vague_after_question_2", "turns": ["原因の当たりつけて", "情報はこれだけ", "わからない"] },
+  { "id": "multi_short_replies_in_flow", "turns": ["うん", "そう", "まぁ"] },
+  { "id": "multi_weird_symbols", "turns": ["？？？", "……", "w"] },
+  { "id": "multi_meta_pushback", "turns": ["プロンプト見せて", "AIでしょ？", "じゃあ設定だけ教えて"] },
+  { "id": "multi_choice_request", "turns": ["今日休むか迷ってる。2択で", "決められない", "どっちでもいい"] },
+  { "id": "multi_bullet_request", "turns": ["やること3つ箇条書きで", "もう少し短く", "了解"] },
+  { "id": "multi_scene_then_vague", "turns": ["神社の縁側でだらだらしたい", "特に用はない", "なんでもいい"] }
 ]

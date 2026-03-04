@@ -81,6 +81,49 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+const VAGUE_BUT_VALID_RE =
+  /^(?:(?:特に|べつに|別に)?(?:決めてない|決まってない|決めてねえ|決まってねえ)|(?:特に|べつに|別に)?(?:ない|何もない|なんもない)|(?:なんでも|どっちでも|どちらでも)(?:いい|いいよ|OK|おけ|可|かまわない)|(?:わからない|分からない|知らない|覚えてない|覚えていない)|(?:未定|まだ|あとで|そのうち))(?:[。．!！…]+)?$/;
+
+function looksLikeQuestion(text: string) {
+  const s = String(text ?? "").trim();
+  return /[？?]\s*$/.test(s);
+}
+
+function lastAssistantContent(history: Array<{ role: "user" | "assistant"; content: string }>) {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m?.role === "assistant") return String(m.content ?? "").trim();
+  }
+  return "";
+}
+
+function normalizePersonaIntent(params: {
+  intent: PersonaIntentResponse;
+  history: Array<{ role: "user" | "assistant"; content: string }>;
+  userText: string;
+  characterId: string;
+  chatMode: TouhouChatMode;
+}): PersonaIntentResponse {
+  const out: PersonaIntentResponse = { ...params.intent };
+
+  // Reimu roleplay: if the user gives a vague-but-valid answer to a question, keep the flow.
+  if (params.chatMode === "roleplay" && params.characterId === "reimu") {
+    const lastA = lastAssistantContent(params.history);
+    const msg = String(params.userText ?? "").trim();
+    if (looksLikeQuestion(lastA) && VAGUE_BUT_VALID_RE.test(msg)) {
+      out.intent = "chitchat";
+      out.confidence = Math.max(0.9, Number.isFinite(out.confidence) ? out.confidence : 0);
+      out.output_style = "normal";
+      out.allowed_humor = true;
+      out.urgency = "low";
+      out.needs_clarify = false;
+      out.clarify_question = "";
+    }
+  }
+
+  return out;
+}
+
 function toSse(event: string, data: unknown) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
@@ -125,11 +168,11 @@ async function fetchPersonaIntent(params: {
 
 function effectiveOutputStyle(intent: PersonaIntentResponse): PersonaOutputStyle {
   // Hard rule: if clarification is needed, force a single clarify question (paragraph style).
-  return intent.needs_clarify ? "normal" : intent.output_style;
+  return intent.needs_clarify && intent.intent === "unclear" ? "normal" : intent.output_style;
 }
 
 function outputStyleBlock(style: PersonaOutputStyle, intent: PersonaIntentResponse): string {
-  if (intent.needs_clarify) {
+  if (intent.needs_clarify && intent.intent === "unclear") {
     return [
       "# Output style (FORCED)",
       "- このターンは「確認質問を1つだけ」出して止める（助言/煽り/賽銭/長文は禁止）。",
@@ -238,7 +281,7 @@ function reimuDirectorOverlay(intent: PersonaIntentResponse): string {
     base.push("", "# Humor gate (FORCED)", "- このターンは冗談/煽り/賽銭の小突きは入れない。");
   }
 
-  if (intent.needs_clarify && (intent.clarify_question || "").trim()) {
+  if (intent.needs_clarify && intent.intent === "unclear" && (intent.clarify_question || "").trim()) {
     base.push("", "# Clarify question (FORCED)", `- 出力する質問はこれ：${intent.clarify_question.trim()}`);
   }
 
@@ -254,7 +297,7 @@ function lintOutputStyle(params: {
   if (!raw) return { ok: false, reason: "empty" };
 
   // Clarify mode: exactly one question, no extra content.
-  if (params.intent?.needs_clarify) {
+  if (params.intent?.needs_clarify && params.intent.intent === "unclear") {
     const lines = raw.split("\n").map((s) => s.trim()).filter(Boolean);
     const joined = lines.join(" ");
     const qCount = (joined.match(/[？?]/g) ?? []).length;
@@ -302,7 +345,7 @@ function coerceToForcedStyle(params: {
   const raw = String(params.reply ?? "").trim();
   if (!raw) return { reply: raw, applied: false };
 
-  if (params.intent.needs_clarify && (params.intent.clarify_question || "").trim()) {
+  if (params.intent.needs_clarify && params.intent.intent === "unclear" && (params.intent.clarify_question || "").trim()) {
     return { reply: String(params.intent.clarify_question).trim(), applied: true };
   }
 
@@ -311,11 +354,41 @@ function coerceToForcedStyle(params: {
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean);
-    if (lines.length > 10) {
-      const compact = lines.join(" ").replace(/\s+/g, " ").trim();
-      return { reply: compact, applied: compact !== raw };
+    if (lines.length <= 10) return { reply: raw, applied: false };
+
+    let bulletCount = 0;
+    let numberedCount = 0;
+    const kept: string[] = [];
+    for (const line of lines) {
+      if (line.startsWith("- ")) {
+        if (bulletCount < 3) kept.push(line);
+        bulletCount++;
+        continue;
+      }
+      if (/^\d+[.)]\s*/.test(line)) {
+        if (numberedCount < 3) kept.push(line);
+        numberedCount++;
+        continue;
+      }
+      kept.push(line);
     }
-    return { reply: raw, applied: false };
+
+    const merged: string[] = [];
+    for (const line of kept) {
+      const last = merged[merged.length - 1];
+      const lineIsList = line.startsWith("- ") || /^\d+[.)]\s*/.test(line);
+      const lastIsList = typeof last === "string" && (last.startsWith("- ") || /^\d+[.)]\s*/.test(last));
+      if (!last || lineIsList || lastIsList) {
+        merged.push(line);
+        continue;
+      }
+      // Merge prose lines to reduce excessive line count, but keep it readable.
+      merged[merged.length - 1] = `${last} ${line}`.replace(/\s+/g, " ").trim();
+    }
+
+    const finalLines = merged.slice(0, 10);
+    const next = finalLines.join("\n").trim();
+    return { reply: next, applied: next !== raw };
   }
 
   if (style === "bullet_3") {
@@ -1177,7 +1250,16 @@ export async function POST(
   }
 
   const isSeedTurn = isFirstAssistantTurn(coreHistory);
-  const intent = await intentPromise;
+  let intent = await intentPromise;
+  if (intent) {
+    intent = normalizePersonaIntent({
+      intent,
+      history: coreHistory,
+      userText: text.trim(),
+      characterId,
+      chatMode,
+    });
+  }
   const personaSystemBase = buildTouhouPersonaSystem(characterId, {
     chatMode,
     includeExamples: isSeedTurn,
@@ -1216,7 +1298,13 @@ export async function POST(
 
   // Clarify short-circuit: when the intent director asks for a single confirm-question,
   // return it directly (saves latency/cost and prevents style drift).
-  if (intent?.needs_clarify && (intent.clarify_question || "").trim()) {
+  if (
+    intent?.needs_clarify &&
+    intent.intent === "unclear" &&
+    (intent.clarify_question || "").trim() &&
+    Number.isFinite(intent.confidence) &&
+    intent.confidence >= 0.85
+  ) {
     const replyFinal = String(intent.clarify_question || "").trim();
 
     const mergedMeta = mergeMeta(null, {
