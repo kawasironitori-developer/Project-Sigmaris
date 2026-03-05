@@ -70,6 +70,52 @@ function clampText(s: string, n: number) {
   return t.slice(0, Math.max(0, n - 1)) + "…";
 }
 
+function looksLikeQuestion(text: string) {
+  const s = String(text ?? "").trim();
+  return /[？?]\s*$/.test(s);
+}
+
+function lastAssistantContent(history: Msg[]) {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m?.role === "assistant") return String(m.content ?? "").trim();
+  }
+  return "";
+}
+
+// Vague-but-valid answers that should not trigger "clarify" spirals.
+// NOTE: allow casual suffixes like 「んだよね」「かな」 etc.
+const VAGUE_BUT_VALID_RE =
+  /^(?:(?:特に|べつに|別に)?(?:決めてない|決まってない|決めてねえ|決まってねえ)|(?:特に|べつに|別に)?(?:ない|何もない|なんもない)|(?:なんでも|どっちでも|どちらでも)(?:いい|いいよ|OK|おけ|可|かまわない)|(?:わからない|分からない|知らない|覚えてない|覚えていない)|(?:未定|まだ|あとで|そのうち))(?:\s*(?:んだ|んだけど|んだよ|んだよね|んだよねぇ|だよ|だよね|だね|だな|かな|かも|けど|けどさ|けどね|だけど|だけどさ|だけどね|よ|よね|ね|な|とか))?(?:[。．!！…〜]+)?$/;
+
+function normalizePersonaIntent(params: {
+  intent: IntentResponse;
+  history: Msg[];
+  userText: string;
+  characterId: string;
+  chatMode: TouhouChatMode;
+}): IntentResponse {
+  const out: IntentResponse = { ...params.intent };
+
+  // Reimu roleplay: if the user gives a vague-but-valid answer to a question, keep the flow.
+  if (params.chatMode === "roleplay" && params.characterId === "reimu") {
+    const lastA = lastAssistantContent(params.history);
+    const msg = String(params.userText ?? "").trim();
+    if (looksLikeQuestion(lastA) && VAGUE_BUT_VALID_RE.test(msg)) {
+      out.intent = "chitchat";
+      out.confidence = Math.max(0.9, Number.isFinite(out.confidence) ? out.confidence : 0);
+      out.output_style = "normal";
+      out.allowed_humor = true;
+      out.urgency = "low";
+      out.needs_clarify = false;
+      out.clarify_question = "";
+      out.safety_risk = "none";
+    }
+  }
+
+  return out;
+}
+
 function effectiveOutputStyle(intent: IntentResponse): OutputStyle {
   return intent.needs_clarify && intent.intent === "unclear" ? "normal" : intent.output_style;
 }
@@ -83,7 +129,12 @@ function outputStyleBlock(style: OutputStyle, intent: IntentResponse): string {
     ].join("\n");
   }
   if (style === "bullet_3") {
-    return ["# Output style (FORCED)", "- 返信は「- 」で始まる箇条書きちょうど3行のみ。", "- 空行や4行目は禁止。各行は短く。"].join("\n");
+    return [
+      "# Output style (FORCED)",
+      "- 返信は「- 」で始まる箇条書きちょうど3行のみ（3行で終わる）。",
+      "- 空行や4行目は禁止。質問や締めの一言も追加しない。",
+      "- 各行は短く。",
+    ].join("\n");
   }
   if (style === "choice_2") {
     return [
@@ -116,12 +167,71 @@ function reimuDirectorOverlay(intent: IntentResponse): string {
     "- ユーザーの精神状態を推測/分析して断定しない（心理分析っぽい説明は禁止）。",
     "- 余計な一言（決め台詞の暴発）を入れない。脈絡がある時だけ言う。",
   ];
-  if (!intent.allowed_humor) base.push("", "# Humor gate (FORCED)", "- このターンは冗談/煽り/賽銭の小突きは入れない。");
-  if (intent.needs_clarify && intent.intent === "unclear" && intent.clarify_question?.trim())
+
+  if (intent.intent === "meta") {
+    base.push(
+      "",
+      "# Meta handling (FORCED)",
+      "- 用語定義（「〜とは」）や仕組み説明はしない。理由も1文以内。",
+      "- 返答は2〜4文以内。",
+      "- 1文目は短い拒否（霊夢口調）。",
+      "- 最後はメタ以外の話題に戻す質問を1つだけ。",
+    );
+  } else if (intent.intent === "safety") {
+    base.push(
+      "",
+      "# Safety handling (FORCED)",
+      "- 安全ポリシーに従い、危険な依頼は拒否する。",
+      "- 霊夢として短く受け、代替の安全な選択肢を最小限で提示して質問で止める。",
+    );
+  } else if (intent.intent === "incident") {
+    base.push(
+      "",
+      "# Incident handling",
+      "- 「また異変？」の低テンションから入って、最小3手で片付け方を出す。",
+      "- 断言しすぎない。足りない情報は質問1つで補う。",
+      "- 原因候補の列挙は最大3つまで（長い羅列・番号リスト禁止）。",
+    );
+  } else if (intent.intent === "lore") {
+    base.push(
+      "",
+      "# Lore handling",
+      "- 知ってる範囲だけ。曖昧なら霊夢口調で濁す（捏造しない）。",
+      "- 1刺しまでの皮肉はOK。ただし講釈はしない。",
+    );
+  } else if (intent.intent === "roleplay_scene") {
+    base.push(
+      "",
+      "# Roleplay scene handling",
+      "- 情景は短く。地の文で長く語らない。",
+      "- 会話を前に進める質問で止める。",
+    );
+  } else if (intent.intent === "task" || intent.intent === "advice") {
+    base.push(
+      "",
+      "# Advice/task handling",
+      "- 実務的に。3手まで。感情の断定/心理分析/長文はしない。",
+      "- 候補列挙や手順は最大3つ。4つ以上は出さない。",
+      "- 質問は1つだけ。心情の二択/三択で分類させない（事実を1つ聞く）。",
+    );
+  } else if (intent.intent === "banter") {
+    base.push(
+      "",
+      "# Banter handling",
+      "- 軽い皮肉はOK（1刺しまで）。追撃しない。粘着しない。",
+      "- 相手が不快になりそうなら即引く（allowed_humor=false の時は煽り禁止）。",
+    );
+  } else {
+    base.push("", "# Default handling", "- 受け→短い確認→必要なら最小3手→質問で止める。");
+  }
+
+  if (!intent.allowed_humor) {
+    base.push("", "# Humor gate (FORCED)", "- このターンは冗談/煽り/賽銭の小突きは入れない。");
+  }
+
+  if (intent.needs_clarify && intent.intent === "unclear" && (intent.clarify_question || "").trim()) {
     base.push("", "# Clarify question (FORCED)", `- 出力する質問はこれ：${intent.clarify_question.trim()}`);
-  if (intent.intent === "incident") base.push("", "# Incident constraint (FORCED)", "- 原因候補の列挙は最大3つまで（長い羅列・番号リスト禁止）。");
-  if (intent.intent === "advice" || intent.intent === "task") base.push("", "# Advice constraint (FORCED)", "- 手順/候補列挙は最大3つ。4つ以上は出さない。");
-  if (intent.intent === "advice" || intent.intent === "task") base.push("", "# Question constraint (FORCED)", "- 質問は1つだけ。心情の二択/三択で分類させない（事実を1つ聞く）。");
+  }
   return base.join("\n").trim();
 }
 
@@ -213,6 +323,10 @@ function coerceToForcedStyle(params: { style: OutputStyle; intent: IntentRespons
   if (style === "bullet_3") {
     const lines = raw.split("\n").map((s) => s.trim()).filter(Boolean);
     const bullets = lines.filter((l) => l.startsWith("- ")).map((l) => l.replace(/\s+/g, " ").trim());
+    if (bullets.length >= 3) {
+      const next = bullets.slice(0, 3).join("\n").trim();
+      return { reply: next, applied: next !== raw };
+    }
     const picked = (bullets.length ? bullets : lines)
       .join(" ")
       .split(/[。！？?!\n]/)
@@ -370,7 +484,10 @@ async function main() {
   const maxTurns = Number.isFinite(maxTurnsRaw) && maxTurnsRaw > 0 ? Math.floor(maxTurnsRaw) : 120;
 
   const uiRoot = resolveTouhouUiRoot();
-  const artifactsDir = join(uiRoot, "artifacts", `${characterId}_quality`, nowStamp());
+  const suite = typeof args["suite"] === "string" ? String(args["suite"]).trim() : "";
+  const artifactsDir = suite
+    ? join(uiRoot, "artifacts", `${characterId}_quality`, suite, nowStamp())
+    : join(uiRoot, "artifacts", `${characterId}_quality`, nowStamp());
   mkdirSync(artifactsDir, { recursive: true });
 
   const casesPath =
@@ -421,7 +538,7 @@ async function main() {
       turnCount++;
 
       const t0 = performance.now();
-      const intent = useDirector
+      let intent = useDirector
         ? await fetchIntent({
             base,
             accessToken,
@@ -441,6 +558,13 @@ async function main() {
             clarify_question: "",
             safety_risk: "none",
           } as IntentResponse);
+      intent = normalizePersonaIntent({
+        intent,
+        history,
+        userText,
+        characterId,
+        chatMode,
+      });
       const tIntent = performance.now();
 
       intentCounts[intent.intent] = (intentCounts[intent.intent] ?? 0) + 1;

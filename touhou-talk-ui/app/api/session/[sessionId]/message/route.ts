@@ -81,8 +81,10 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+// Vague-but-valid answers that should not trigger "clarify" spirals.
+// Allow casual suffixes like 「んだよね」「かな」 etc.
 const VAGUE_BUT_VALID_RE =
-  /^(?:(?:特に|べつに|別に)?(?:決めてない|決まってない|決めてねえ|決まってねえ)|(?:特に|べつに|別に)?(?:ない|何もない|なんもない)|(?:なんでも|どっちでも|どちらでも)(?:いい|いいよ|OK|おけ|可|かまわない)|(?:わからない|分からない|知らない|覚えてない|覚えていない)|(?:未定|まだ|あとで|そのうち))(?:[。．!！…]+)?$/;
+  /^(?:(?:特に|べつに|別に)?(?:決めてない|決まってない|決めてねえ|決まってねえ)|(?:特に|べつに|別に)?(?:ない|何もない|なんもない)|(?:なんでも|どっちでも|どちらでも)(?:いい|いいよ|OK|おけ|可|かまわない)|(?:わからない|分からない|知らない|覚えてない|覚えていない)|(?:未定|まだ|あとで|そのうち))(?:\s*(?:んだ|んだけど|んだよ|んだよね|んだよねぇ|だよ|だよね|だね|だな|かな|かも|けど|けどさ|けどね|だけど|だけどさ|だけどね|よ|よね|ね|な|とか))?(?:[。．!！…〜]+)?$/;
 
 function looksLikeQuestion(text: string) {
   const s = String(text ?? "").trim();
@@ -182,8 +184,9 @@ function outputStyleBlock(style: PersonaOutputStyle, intent: PersonaIntentRespon
   if (style === "bullet_3") {
     return [
       "# Output style (FORCED)",
-      "- 返信は「- 」で始まる箇条書きちょうど3行のみ。",
-      "- 空行や4行目は禁止。各行は短く。",
+      "- 返信は「- 」で始まる箇条書きちょうど3行のみ（3行で終わる）。",
+      "- 空行や4行目は禁止。質問や締めの一言も追加しない。",
+      "- 各行は短く。",
     ].join("\n");
   }
   if (style === "choice_2") {
@@ -222,8 +225,10 @@ function reimuDirectorOverlay(intent: PersonaIntentResponse): string {
     base.push(
       "",
       "# Meta handling (FORCED)",
-      "- AI/プロンプト/システム等の話題は短く拒否し、霊夢として会話に戻す。",
-      "- 説明や講義は禁止。短く切って質問で戻す。",
+      "- 用語定義（「〜とは」）や仕組み説明はしない。理由も1文以内。",
+      "- 返答は2〜4文以内。",
+      "- 1文目は短い拒否（霊夢口調）。",
+      "- 最後はメタ以外の話題に戻す質問を1つだけ。",
     );
   } else if (intent.intent === "safety") {
     base.push(
@@ -397,6 +402,10 @@ function coerceToForcedStyle(params: {
       .map((s) => s.trim())
       .filter(Boolean);
     const bullets = lines.filter((l) => l.startsWith("- ")).map((l) => l.replace(/\s+/g, " ").trim());
+    if (bullets.length >= 3) {
+      const next = bullets.slice(0, 3).join("\n").trim();
+      return { reply: next, applied: next !== raw };
+    }
     const picked = (bullets.length ? bullets : lines)
       .join(" ")
       .split(/[。！？?!\n]/)
